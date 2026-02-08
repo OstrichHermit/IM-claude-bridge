@@ -2,11 +2,14 @@
 
 <div align="center">
 
-**[English](#english) | [简体中文](#简体中文)**
+**[简体中文](#简体中文) | [English](#english)**
 
 </div>
 
 ---
+
+<details>
+<summary><b>简体中文</b> | <a href="#english">English</a></summary>
 
 ## 简体中文
 
@@ -447,7 +450,12 @@ MIT License
 
 欢迎提交 Issue 和 Pull Request！
 
+</details>
+
 ---
+
+<details>
+<summary><b>English</b> | <a href="#简体中文">简体中文</a></summary>
 
 ## English
 
@@ -887,3 +895,5 @@ MIT License
 ## Contributing
 
 Issues and Pull Requests are welcome!
+
+</details>
