@@ -91,6 +91,96 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 
 ---
 
+## 💡 推荐工作区设置
+
+为了完整发挥 Claude Code 的能力并实现良好的工作区隔离，建议按照以下结构设置您的工作区：
+
+### 推荐的目录结构
+
+```
+D:/Workspace/DiscordBridge/                    # 主工作区（可自定义位置）
+├── .claude/                                    # Claude Code 配置目录
+│   └── settings.local.json                   # 本地设置（工具使用权限）
+├── discord-claude-bridge/                     # 桥接项目（本仓库）
+│   ├── bot/
+│   ├── bridge/
+│   ├── shared/
+│   ├── config/
+│   └── docs/
+│       └── skills/
+│           └── discord-bridge-maintenance/    # 维护 Skill
+└── sessions/                                  # Claude Code 会话目录（自动生成）
+    ├── channel_1234567890/                   # 频道会话
+    └── user_9876543210/                       # 用户会话
+```
+
+### 设置步骤
+
+#### 1. 创建主工作区目录
+
+```bash
+# Windows (PowerShell)
+New-Item -ItemType Directory -Path "D:\Workspace\DiscordBridge"
+Set-Location "D:\Workspace\DiscordBridge"
+
+# Linux/Mac
+mkdir -p ~/Workspace/DiscordBridge
+cd ~/Workspace/DiscordBridge
+```
+
+#### 2. 克隆项目到工作区
+
+```bash
+# 在工作区目录中执行
+git clone https://github.com/OstrichHermit/discord-claude-bridge.git
+```
+
+#### 3. 配置 Claude Code 工具权限
+
+创建 `.claude/settings.local.json` 文件：
+
+```json
+{
+  "mcpEnabled": true,
+  "allowedTools": [
+    "bash",
+    "editor",
+    "computer",
+    "browser"
+  ],
+  "allowedCommands": [
+    "python",
+    "pip",
+    "git",
+    "claude"
+  ]
+}
+```
+
+**Windows 用户快速创建配置**：
+
+```powershell
+# PowerShell 命令
+mkdir .claude
+@'
+{
+  "mcpEnabled": true,
+  "allowedTools": ["bash", "editor", "computer", "browser"],
+  "allowedCommands": ["python", "pip", "git", "claude"]
+}
+'@ | Out-File -FilePath .claude\settings.local.json -Encoding utf8
+```
+
+### 这样做的好处
+
+- ✅ **完整的工具权限**：Claude Code 可以使用所有必要的工具（Bash、编辑器、浏览器等）
+- ✅ **工作区隔离**：桥接项目和会话数据在独立的工作区中，不会影响其他项目
+- ✅ **Skill 自动加载**：维护 Skill 在同一工作区，Claude Code 可以自动识别和加载
+- ✅ **会话持久化**：所有 Discord 对话的会话数据集中管理
+- ✅ **便于维护**：所有相关文件在一个目录中，方便备份和管理
+
+---
+
 ## 快速开始
 
 ### 1. 前置要求
@@ -99,7 +189,11 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 - Discord Bot Token
 - Claude Code CLI
 
-### 2. 安装依赖
+### 2. 推荐的工作区设置
+
+（请参考上方的"推荐工作区设置"章节）
+
+### 3. 安装依赖
 
 ```bash
 pip install -r requirements.txt
@@ -424,6 +518,96 @@ Claude Code will automatically load the Skill and provide targeted help.
 
 ---
 
+## 💡 Recommended Workspace Setup
+
+To fully leverage Claude Code capabilities and achieve proper workspace isolation, we recommend setting up your workspace as follows:
+
+### Recommended Directory Structure
+
+```
+D:/Workspace/DiscordBridge/                    # Main workspace (customizable location)
+├── .claude/                                    # Claude Code config directory
+│   └── settings.local.json                   # Local settings (tool permissions)
+├── discord-claude-bridge/                     # Bridge project (this repo)
+│   ├── bot/
+│   ├── bridge/
+│   ├── shared/
+│   ├── config/
+│   └── docs/
+│       └── skills/
+│           └── discord-bridge-maintenance/    # Maintenance Skill
+└── sessions/                                  # Claude Code session directories (auto-generated)
+    ├── channel_1234567890/                   # Channel sessions
+    └── user_9876543210/                       # User sessions
+```
+
+### Setup Steps
+
+#### 1. Create Main Workspace Directory
+
+```bash
+# Windows (PowerShell)
+New-Item -ItemType Directory -Path "D:\Workspace\DiscordBridge"
+Set-Location "D:\Workspace\DiscordBridge"
+
+# Linux/Mac
+mkdir -p ~/Workspace/DiscordBridge
+cd ~/Workspace/DiscordBridge
+```
+
+#### 2. Clone Project to Workspace
+
+```bash
+# Execute in workspace directory
+git clone https://github.com/OstrichHermit/discord-claude-bridge.git
+```
+
+#### 3. Configure Claude Code Tool Permissions
+
+Create `.claude/settings.local.json` file:
+
+```json
+{
+  "mcpEnabled": true,
+  "allowedTools": [
+    "bash",
+    "editor",
+    "computer",
+    "browser"
+  ],
+  "allowedCommands": [
+    "python",
+    "pip",
+    "git",
+    "claude"
+  ]
+}
+```
+
+**Quick Setup for Windows Users**:
+
+```powershell
+# PowerShell command
+mkdir .claude
+@'
+{
+  "mcpEnabled": true,
+  "allowedTools": ["bash", "editor", "computer", "browser"],
+  "allowedCommands": ["python", "pip", "git", "claude"]
+}
+'@ | Out-File -FilePath .claude\settings.local.json -Encoding utf8
+```
+
+### Benefits
+
+- ✅ **Full Tool Permissions**: Claude Code can use all necessary tools (Bash, Editor, Browser, etc.)
+- ✅ **Workspace Isolation**: Bridge project and session data in independent workspace, won't affect other projects
+- ✅ **Auto-load Skill**: Maintenance Skill in same workspace, Claude Code can automatically recognize and load it
+- ✅ **Session Persistence**: All Discord conversation session data centrally managed
+- ✅ **Easy Maintenance**: All related files in one directory, easy to backup and manage
+
+---
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -432,13 +616,17 @@ Claude Code will automatically load the Skill and provide targeted help.
 - Discord Bot Token
 - Claude Code CLI
 
-### 2. Install Dependencies
+### 2. Recommended Workspace Setup
+
+(Please refer to "Recommended Workspace Setup" section above)
+
+### 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Discord Bot
+### 4. Configure Discord Bot
 
 #### Create Discord Application
 
