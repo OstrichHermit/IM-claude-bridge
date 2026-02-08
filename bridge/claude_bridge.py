@@ -43,7 +43,14 @@ class ClaudeBridge:
 
         try:
             # 调用 Claude Code CLI
-            response = await self.call_claude_cli(message.content, session_key, working_dir)
+            response = await self.call_claude_cli(
+                message.content,
+                session_key,
+                working_dir,
+                username=message.username,
+                user_id=message.discord_user_id,
+                is_dm=message.is_dm
+            )
 
             if response:
                 # 更新消息，添加响应
@@ -77,7 +84,7 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, working_dir: str = None) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
@@ -86,12 +93,19 @@ class ClaudeBridge:
             prompt: 用户提示词
             session_key: 会话 key（可选），用于保持对话上下文
             working_dir: 工作目录，每个会话使用独立目录以保持对话历史
+            username: 发送者用户名（频道模式下需要）
+            user_id: 发送者用户 ID（频道模式下需要）
+            is_dm: 是否为私聊消息
         """
         retries = 0
         max_retries = self.config.max_retries
 
         # 使用传入的 working_dir，如果没有则使用默认配置
         cwd = working_dir or self.config.working_directory
+
+        # 在频道模式下，附加发送者信息到提示词
+        if not is_dm and username and user_id:
+            prompt = f"{username}（{user_id}）说：{prompt}"
 
         while retries < max_retries:
             try:
