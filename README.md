@@ -5,7 +5,7 @@
 <details>
 <summary>简体中文版本</summary>
 
-## 简体中文
+## 简介
 
 将 Discord 消息桥接到本地 Claude Code 的双向通信系统。
 
@@ -451,7 +451,7 @@ MIT License
 <details>
 <summary>English version</summary>
 
-## English
+## Introduction
 
 A bidirectional communication system that bridges Discord messages to your local Claude Code CLI.
 
