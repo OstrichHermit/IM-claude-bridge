@@ -1,33 +1,53 @@
 @echo off
-REM Discord Bridge 系统重启脚本
-REM 功能：结束当前运行的 Python 进程，然后重新启动服务
+REM Discord Bridge System Restart Script
+REM Close all related windows and restart services
 
 echo ========================================
-echo   Discord Bridge 系统重启
+echo   Discord Bridge System Restart
 echo ========================================
 echo.
 
-REM 查找并结束与 discord-claude-bridge 相关的 Python 进程
-echo [1/3] 正在查找并结束旧的 Python 进程...
+REM Close all related windows
+echo [1/4] Closing all Discord Bridge windows...
+
+taskkill /FI "WINDOWTITLE eq Discord Bot*" /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Claude Bridge*" /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Discord Bridge Startup*" /F >nul 2>&1
+
+echo   - Service windows closed
+
+REM Terminate all Python processes
+echo [2/4] Terminating old Python processes...
 
 for /f "tokens=2" %%a in ('tasklist ^| findstr /i "python.exe"') do (
     taskkill /F /PID %%a >nul 2>&1
     if errorlevel 1 (
-        echo   - 进程 %%a 未运行或已结束
+        echo   - Process %%a not running or already closed
     ) else (
-        echo   - 已结束进程 %%a
+        echo   - Terminated process %%a
     )
 )
 
 echo.
-echo [2/3] 等待进程完全退出...
+echo [3/4] Waiting for processes to exit...
 timeout /t 2 /nobreak >nul
 
 echo.
-echo [3/3] 启动 Discord Bridge 服务...
-start.bat
+echo [4/4] Starting Discord Bridge services...
+
+REM Start Discord Bot
+start "Discord Bot" cmd /k python bot\discord_bot.py
+
+timeout /t 2 /nobreak >nul
+
+REM Start Claude Bridge
+start "Claude Bridge" cmd /k python bridge\claude_bridge.py
 
 echo.
 echo ========================================
-echo   系统重启完成
+echo   System Restart Complete
 echo ========================================
+echo.
+echo Note: Service windows will keep running
+echo.
+pause
