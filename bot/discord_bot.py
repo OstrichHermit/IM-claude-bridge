@@ -33,6 +33,7 @@ class DiscordBot(commands.Bot):
         self.config = config
         self.message_queue = MessageQueue(config.database_path)
         self.response_check_task = None
+        self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
@@ -43,6 +44,72 @@ class DiscordBot(commands.Bot):
 
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
+
+        # 发送启动通知
+        await self.send_startup_notification()
+
+    async def send_startup_notification(self):
+        """发送启动通知"""
+        notification_channel_id = self.config.startup_notification_channel
+        notification_user_id = self.config.startup_notification_user
+
+        # 如果都没有配置，跳过通知
+        if not notification_channel_id and not notification_user_id:
+            print("ℹ️  未配置启动通知，跳过")
+            return
+
+        # 创建启动成功消息
+        embed = discord.Embed(
+            title="🚀 Discord Claude Bridge 启动成功",
+            description="桥接系统已就绪，可以开始使用！",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="📝 会话模式", value=f"`{self.config.session_mode}`", inline=True)
+        embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=True)
+        embed.add_field(name="⏱️  超时时间", value=f"{self.config.claude_timeout} 秒", inline=True)
+
+        embed.add_field(name="📋 可用命令", value="`!reset` - 重置会话\n`!status` - 查看状态", inline=False)
+
+        embed.set_footer(text=f"Bot: {self.user.name} | 启动时间: {discord.utils.format_dt(discord.utils.utcnow(), style='R')}")
+
+        # 发送到频道
+        if notification_channel_id:
+            try:
+                channel = self.get_channel(int(notification_channel_id))
+                if not channel:
+                    print(f"⚠️  找不到启动通知频道: {notification_channel_id}")
+                else:
+                    await channel.send(embed=embed)
+                    print(f"✅ 已向频道 #{channel.name} 发送启动通知")
+            except ValueError:
+                print(f"⚠️  启动通知频道 ID 格式错误: {notification_channel_id}")
+            except Exception as e:
+                print(f"❌ 发送到频道失败: {e}")
+
+        # 发送到用户私聊
+        if notification_user_id:
+            try:
+                user = self.get_user(int(notification_user_id))
+                if not user:
+                    try:
+                        user = await self.fetch_user(int(notification_user_id))
+                    except discord.NotFound:
+                        print(f"⚠️  找不到启动通知用户: {notification_user_id}")
+                        return
+                    except discord.HTTPException as e:
+                        print(f"⚠️  获取用户失败: {e}")
+                        return
+
+                # 创建或获取 DM 频道
+                dm_channel = await user.create_dm()
+                await dm_channel.send(embed=embed)
+                print(f"✅ 已向用户 {user.display_name} 发送启动通知（私聊）")
+
+            except ValueError:
+                print(f"⚠️  启动通知用户 ID 格式错误: {notification_user_id}")
+            except Exception as e:
+                print(f"❌ 发送到用户私聊失败: {e}")
 
     async def add_commands(self):
         """注册 Bot 命令"""
@@ -174,19 +241,26 @@ class DiscordBot(commands.Bot):
                     is_dm=is_dm
                 )
 
-                # 添加到消息队列
+                # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
                 message_id = self.message_queue.add_message(msg)
 
                 print(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50]}... ({'私聊' if is_dm else '频道'})")
 
                 # 发送确认消息
-                await message.reply(
-                    f"✅ 消息已接收！正在转发给 Claude Code...\n"
+                confirmation_msg = await message.reply(
+                    f"✅ 消息已接收！正在等待 Claude Bridge 接收...\n"
                     f"消息 ID: {message_id}"
                 )
 
-                # 更新消息状态为处理中
-                self.message_queue.update_status(message_id, MessageStatus.PROCESSING)
+                # 记录到待处理列表（用于追踪接收状态和超时）
+                self.pending_messages[message_id] = {
+                    "channel": message.channel,
+                    "user_message": message,
+                    "confirmation_msg": confirmation_msg,
+                    "start_time": asyncio.get_event_loop().time(),
+                    "content": content[:50],
+                    "notified_processing": False  # 是否已发送"正在处理中"通知
+                }
 
         except Exception as e:
             print(f"❌ 处理消息时出错: {e}")
@@ -195,145 +269,211 @@ class DiscordBot(commands.Bot):
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
 
     async def check_responses(self):
-        """定期检查 Claude 的响应"""
+        """定期检查 Claude 的响应和消息状态"""
         await self.wait_until_ready()
 
         while not self.is_closed():
             try:
-                # 直接查询数据库获取待发送的响应
-                import sqlite3
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
+                current_time = asyncio.get_event_loop().time()
 
-                cursor.execute("""
-                    SELECT m.id, m.discord_channel_id, m.discord_message_id,
-                           m.response, m.username, m.content, m.is_dm, m.discord_user_id
-                    FROM messages m
-                    WHERE m.direction = ? AND m.status = ?
-                    ORDER BY m.created_at ASC
-                """, (MessageDirection.TO_CLAUDE.value, MessageStatus.PROCESSING.value))
+                # 检查待处理消息的状态
+                messages_to_remove = []
+                for msg_id, tracking_info in list(self.pending_messages.items()):
+                    elapsed_time = current_time - tracking_info["start_time"]
 
-                rows = cursor.fetchall()
-                conn.close()
+                    # 查询数据库中消息的最新状态
+                    import sqlite3
+                    conn = sqlite3.connect(self.config.database_path)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT status, response, error FROM messages WHERE id = ?
+                    """, (msg_id,))
+                    result = cursor.fetchone()
+                    conn.close()
 
-                for row in rows:
-                    msg_id, channel_id, original_msg_id, response, username, content, is_dm, user_id = row
+                    if not result:
+                        # 消息不存在，从追踪中移除
+                        messages_to_remove.append(msg_id)
+                        continue
 
-                    if response:  # 如果有响应
+                    status, response, error = result
+
+                    # 状态 1: PENDING - 等待 Claude Bridge 接收
+                    if status == MessageStatus.PENDING.value:
+                        if not tracking_info.get("notified_pending_timeout") and elapsed_time > 30:
+                            # 超过 30 秒仍未被接收
+                            try:
+                                await tracking_info["confirmation_msg"].edit(
+                                    content=f"⏱️ 消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n"
+                                            f"Claude Bridge 可能未运行。\n"
+                                            f"建议：检查服务状态或重新发送消息。"
+                                )
+                                tracking_info["notified_pending_timeout"] = True
+                            except Exception as e:
+                                print(f"⚠️ 无法编辑确认消息: {e}")
+                            print(f"⚠️ [消息 #{msg_id}] PENDING 超时（{int(elapsed_time)}秒）")
+
+                    # 状态 2: PROCESSING 且无 response - 正在调用 Claude Code
+                    elif status == MessageStatus.PROCESSING.value and not response:
+                        if not tracking_info.get("notified_processing"):
+                            # 首次检测到正在处理
+                            try:
+                                await tracking_info["confirmation_msg"].edit(
+                                    content=f"🔄 消息 #{msg_id} 正在处理中...\n"
+                                            f"Claude Code 正在工作，请稍候。"
+                                )
+                                tracking_info["notified_processing"] = True
+                                print(f"🔄 [消息 #{msg_id}] 开始调用 Claude Code")
+                            except Exception as e:
+                                print(f"⚠️ 无法编辑确认消息: {e}")
+
+                    # 状态 3: PROCESSING 且有 response - 收到响应
+                    elif status == MessageStatus.PROCESSING.value and response:
                         try:
-                            # 区分私聊和频道消息
-                            if is_dm:
-                                # 私聊：通过用户获取 DM 频道（使用 fetch_user 从 API 获取）
-                                user = self.get_user(user_id)
-                                if not user:
-                                    try:
-                                        user = await self.fetch_user(user_id)
-                                    except discord.NotFound:
-                                        print(f"⚠️  找不到用户 {user_id}")
+                            # 获取完整消息信息
+                            conn = sqlite3.connect(self.config.database_path)
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                SELECT discord_channel_id, discord_message_id, username,
+                                       content, is_dm, discord_user_id
+                                FROM messages WHERE id = ?
+                            """, (msg_id,))
+                            msg_info = cursor.fetchone()
+                            conn.close()
+
+                            if msg_info:
+                                channel_id, original_msg_id, username, content, is_dm, user_id = msg_info
+
+                                # 区分私聊和频道消息
+                                if is_dm:
+                                    user = self.get_user(user_id)
+                                    if not user:
+                                        try:
+                                            user = await self.fetch_user(user_id)
+                                        except discord.NotFound:
+                                            print(f"⚠️  找不到用户 {user_id}")
+                                            messages_to_remove.append(msg_id)
+                                            continue
+                                        except discord.HTTPException as e:
+                                            print(f"⚠️  获取用户 {user_id} 失败: {e}")
+                                            messages_to_remove.append(msg_id)
+                                            continue
+                                    channel = await user.create_dm()
+                                else:
+                                    channel = self.get_channel(channel_id)
+                                    if not channel:
+                                        print(f"⚠️  找不到频道 {channel_id}")
+                                        messages_to_remove.append(msg_id)
                                         continue
-                                    except discord.HTTPException as e:
-                                        print(f"⚠️  获取用户 {user_id} 失败: {e}")
-                                        continue
-                                # 创建或获取 DM 频道
-                                channel = await user.create_dm()
-                            else:
-                                # 服务器频道：直接获取频道
-                                channel = self.get_channel(channel_id)
-                                if not channel:
-                                    print(f"⚠️  找不到频道 {channel_id}")
-                                    continue
 
-                            # Discord Embed 字段值长度限制为 1024 字符
-                            # 描述长度限制为 4096 字符
-                            max_desc_length = 4000  # Embed 描述留一些余量
-                            max_field_length = 1000  # Embed 字段留一些余量
+                                # Discord Embed 字段值长度限制为 1024 字符
+                                # 描述长度限制为 4096 字符
+                                max_desc_length = 4000
+                                max_field_length = 1000
 
-                            # 创建 Embed
-                            embed = discord.Embed(
-                                title=f"✨ Claude Code 的回复",
-                                description=f"消息 ID: {msg_id}",
-                                color=discord.Color.green()
-                            )
+                                # 创建 Embed
+                                embed = discord.Embed(
+                                    title=f"✨ Claude Code 的回复",
+                                    description=f"消息 ID: {msg_id}",
+                                    color=discord.Color.green()
+                                )
 
-                            # 分割长响应
-                            if len(response) <= max_desc_length:
-                                # 短消息，直接放在描述中
-                                embed.description = f"**消息 ID: {msg_id}**\n\n{response}"
-                                await channel.send(embed=embed)
-                            else:
-                                # 长消息，分割成多个字段
-                                chunks = []
-                                current_chunk = ""
-                                lines = response.split('\n')
+                                # 分割长响应
+                                if len(response) <= max_desc_length:
+                                    embed.description = f"**消息 ID: {msg_id}**\n\n{response}"
+                                    await channel.send(embed=embed)
+                                else:
+                                    chunks = []
+                                    current_chunk = ""
+                                    lines = response.split('\n')
 
-                                for line in lines:
-                                    # 尝试按行分割
-                                    if len(current_chunk) + len(line) + 1 <= max_field_length:
-                                        current_chunk += line + '\n'
-                                    else:
-                                        if current_chunk:
-                                            chunks.append(current_chunk)
-                                        current_chunk = line + '\n'
+                                    for line in lines:
+                                        if len(current_chunk) + len(line) + 1 <= max_field_length:
+                                            current_chunk += line + '\n'
+                                        else:
+                                            if current_chunk:
+                                                chunks.append(current_chunk)
+                                            current_chunk = line + '\n'
 
-                                if current_chunk:
-                                    chunks.append(current_chunk)
+                                    if current_chunk:
+                                        chunks.append(current_chunk)
 
-                                # 第一个分块放在描述中
-                                if chunks:
-                                    embed.description = f"**消息 ID: {msg_id}**\n\n{chunks[0]}"
-                                    chunks.pop(0)
+                                    if chunks:
+                                        embed.description = f"**消息 ID: {msg_id}**\n\n{chunks[0]}"
+                                        chunks.pop(0)
 
-                                # 后续分块作为字段添加（最多 25 个字段）
-                                for i, chunk in enumerate(chunks[:25], 1):
-                                    embed.add_field(
-                                        name=f"续 ({i}/{len(chunks)})" if len(chunks) > 1 else "续",
-                                        value=chunk,
-                                        inline=False
-                                    )
-
-                                await channel.send(embed=embed)
-
-                                # 如果还有剩余内容（超过 25 个字段），需要额外的 Embed
-                                if len(chunks) > 25:
-                                    remaining_chunks = chunks[25:]
-                                    for extra_idx in range(0, len(remaining_chunks), 25):
-                                        extra_embed = discord.Embed(
-                                            title=f"✨ Claude Code 的回复 (续)",
-                                            color=discord.Color.green()
+                                    for i, chunk in enumerate(chunks[:25], 1):
+                                        embed.add_field(
+                                            name=f"续 ({i}/{len(chunks)})" if len(chunks) > 1 else "续",
+                                            value=chunk,
+                                            inline=False
                                         )
-                                        batch = remaining_chunks[extra_idx:extra_idx+25]
-                                        for i, chunk in enumerate(batch, 1):
-                                            extra_embed.add_field(
-                                                name=f"部分 {extra_idx + i}",
-                                                value=chunk,
-                                                inline=False
+
+                                    await channel.send(embed=embed)
+
+                                    if len(chunks) > 25:
+                                        remaining_chunks = chunks[25:]
+                                        for extra_idx in range(0, len(remaining_chunks), 25):
+                                            extra_embed = discord.Embed(
+                                                title=f"✨ Claude Code 的回复 (续)",
+                                                color=discord.Color.green()
                                             )
-                                        await channel.send(embed=extra_embed)
-                                        print(f"[消息 #{msg_id}] 发送额外 Embed {extra_idx//25 + 1}")
+                                            batch = remaining_chunks[extra_idx:extra_idx+25]
+                                            for i, chunk in enumerate(batch, 1):
+                                                extra_embed.add_field(
+                                                    name=f"部分 {extra_idx + i}",
+                                                    value=chunk,
+                                                    inline=False
+                                                )
+                                            await channel.send(embed=extra_embed)
+                                            print(f"[消息 #{msg_id}] 发送额外 Embed {extra_idx//25 + 1}")
 
-                            # 更新状态为已完成
-                            self.message_queue.update_status(
-                                msg_id,
-                                MessageStatus.COMPLETED
-                            )
+                                # 更新状态为已完成
+                                self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
+                                print(f"[消息 #{msg_id}] 已发送响应到 Discord")
 
-                            print(f"[消息 #{msg_id}] 已发送响应到 Discord")
+                                # 发送响应成功提示
+                                try:
+                                    await tracking_info["confirmation_msg"].edit(
+                                        content=f"✅ 消息 #{msg_id} 响应成功！"
+                                    )
+                                except Exception as e:
+                                    print(f"⚠️ 无法编辑确认消息: {e}")
+
+                                messages_to_remove.append(msg_id)
 
                         except Exception as e:
                             print(f"❌ 发送响应时出错: {e}")
                             import traceback
                             traceback.print_exc()
-                            self.message_queue.update_status(
-                                msg_id,
-                                MessageStatus.FAILED,
-                                error=str(e)
+                            self.message_queue.update_status(msg_id, MessageStatus.FAILED, error=str(e))
+                            messages_to_remove.append(msg_id)
+
+                    # 状态 4: FAILED - 处理失败
+                    elif status == MessageStatus.FAILED.value:
+                        try:
+                            error_msg = error or "未知错误"
+                            await tracking_info["channel"].send(
+                                f"❌ 消息 #{msg_id} 处理失败\n"
+                                f"错误: {error_msg}"
                             )
+                        except Exception as e:
+                            print(f"⚠️ 无法发送失败提示: {e}")
+                        messages_to_remove.append(msg_id)
+                        print(f"❌ [消息 #{msg_id}] 处理失败: {error}")
+
+                # 清理已处理的消息
+                for msg_id in messages_to_remove:
+                    if msg_id in self.pending_messages:
+                        del self.pending_messages[msg_id]
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except Exception as e:
                 print(f"❌ 检查响应时出错: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(5)
 
     async def on_close(self):

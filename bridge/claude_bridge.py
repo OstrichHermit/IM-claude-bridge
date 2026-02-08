@@ -41,6 +41,10 @@ class ClaudeBridge:
             print(f"[消息 #{message.id}] 使用会话: {session_key}")
             print(f"[消息 #{message.id}] 工作目录: {working_dir}")
 
+        # 先更新状态为 PROCESSING（无 response），让 Discord Bot 知道正在调用 Claude
+        self.message_queue.update_status(message.id, MessageStatus.PROCESSING)
+        print(f"[消息 #{message.id}] 已更新状态为 PROCESSING")
+
         try:
             # 调用 Claude Code CLI
             response = await self.call_claude_cli(

@@ -106,3 +106,13 @@ class Config:
     def message_retention_hours(self) -> int:
         """获取消息保留时间（小时）"""
         return self._config.get('queue', {}).get('message_retention_hours', 24)
+
+    @property
+    def startup_notification_channel(self) -> str:
+        """获取启动通知频道 ID"""
+        return self._config.get('discord', {}).get('startup_notification_channel', '')
+
+    @property
+    def startup_notification_user(self) -> str:
+        """获取启动通知用户 ID（私聊）"""
+        return self._config.get('discord', {}).get('startup_notification_user', '')
