@@ -1,0 +1,36 @@
+# Discord Bot 配置
+discord:
+  token: "YOUR_DISCORD_BOT_TOKEN_HERE"
+  # 从 https://discord.com/developers/applications 获取
+  command_prefix: "@"
+  # 允许的频道 ID 列表（空列表表示所有频道）
+  allowed_channels: []
+  # 允许的用户 ID 列表（空列表表示所有用户）
+  allowed_users: []
+
+# Claude Code 桥接配置
+claude:
+  # claude 可执行文件路径（如果已在 PATH 中可省略）
+  executable: "claude"
+  # 每次对话的超时时间（秒）
+  timeout: 300
+  # 最大重试次数
+  max_retries: 3
+  # 工作目录（可选，留空则使用当前目录）
+  # 对于需要访问特定项目文件的任务很有用
+  working_directory: ""
+  # 会话模式（可选）
+  # - "channel": 每个 Discord 频道独立的会话（推荐）
+  # - "user": 每个用户独立的会话
+  # - "global": 全局共享会话
+  # - "none": 每次都是新对话（默认）
+  session_mode: "channel"
+
+# 消息队列配置
+queue:
+  # 消息数据库路径
+  database_path: "./shared/messages.db"
+  # 消息轮询间隔（毫秒）
+  poll_interval: 500
+  # 消息保留时间（小时，0 = 永久保留）
+  message_retention_hours: 24
