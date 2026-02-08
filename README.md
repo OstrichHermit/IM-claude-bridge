@@ -1,15 +1,9 @@
 # Discord Claude Bridge
 
-<div align="center">
-
-**[简体中文](#简体中文) | [English](#english)**
-
-</div>
-
 ---
 
 <details>
-<summary><b>简体中文</b> | <a href="#english">English</a></summary>
+<summary>简体中文版本</summary>
 
 ## 简体中文
 
@@ -455,7 +449,7 @@ MIT License
 ---
 
 <details>
-<summary><b>English</b> | <a href="#简体中文">简体中文</a></summary>
+<summary>English version</summary>
 
 ## English
 
