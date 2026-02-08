@@ -32,11 +32,54 @@ discord-claude-bridge/
 ├── config/
 │   ├── config.example.yaml # 配置文件示例
 │   └── config.yaml         # 实际配置文件（需创建）
+├── docs/
+│   └── skills/
+│       └── discord-bridge-maintenance/  # Claude Code Skill（维护工具）
+│           ├── SKILL.md                 # 核心 Skill 指导文档
+│           ├── references/              # 参考文档（架构、配置、故障排查）
+│           └── scripts/                 # 维护脚本（启动、清理、诊断）
 ├── requirements.txt        # Python 依赖
 ├── start.bat              # Windows 启动脚本
 ├── start.sh               # Linux/Mac 启动脚本
 └── README.md              # 本文件
 ```
+
+## 🤖 Claude Code Skill
+
+本项目包含一个专门的维护 Skill（`discord-bridge-maintenance`），用于帮助维护和调试 Discord Bridge。
+
+### 安装 Skill
+
+将 Skill 安装到 Claude Code：
+
+```bash
+# 复制 Skill 到 Claude Code skills 目录
+cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# Windows 用户
+xcopy /E /I docs\skills\discord-bridge-maintenance %USERPROFILE%\.claude\skills\discord-bridge-maintenance
+```
+
+### Skill 功能
+
+安装后，当您需要维护或调试 Discord Bridge 时，Claude Code 会自动加载此 Skill，提供：
+
+- **快速诊断流程**：服务状态检查、数据库状态查看、日志分析
+- **配置管理**：详细的配置项说明和修改指导
+- **故障排查**：常见问题解决方案（Bot 无响应、权限错误、Claude CLI 错误等）
+- **维护脚本**：一键启动服务、清理队列、验证配置
+
+### 使用方法
+
+在 Claude Code 中，只需描述您遇到的问题，例如：
+
+- "Discord Bot 不响应消息"
+- "我想添加新的管理员用户"
+- "如何修改会话模式"
+
+Claude Code 会自动加载 Skill 并提供针对性的帮助。
+
+---
 
 ## 快速开始
 
