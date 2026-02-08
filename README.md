@@ -42,7 +42,7 @@ discord-claude-bridge/
 ├── config/
 │   ├── config.example.yaml # 配置文件示例
 │   └── config.yaml         # 实际配置文件（需创建）
-├── .claude/
+├── docs/
 │   └── skills/
 │       └── discord-bridge-maintenance/  # Claude Code Skill（维护工具）
 │           ├── SKILL.md                 # 核心 Skill 指导文档
@@ -60,9 +60,17 @@ discord-claude-bridge/
 
 ### 安装 Skill
 
-Skill 已包含在项目的 `.claude/skills/` 目录中，无需额外安装。
+将 Skill 复制到 Claude Code 的 skills 目录：
 
-如果您将项目放在推荐的 `/workspace/` 目录下，Claude Code 会自动识别并加载此 Skill。
+```bash
+# 复制 Skill 到 Claude Code skills 目录
+cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# Windows 用户
+xcopy /E /I docs\skills\discord-bridge-maintenance %USERPROFILE%\.claude\skills\discord-bridge-maintenance
+```
+
+**推荐做法**：将项目放在 `/workspace/` 目录下，并将 Skill 复制到工作区的 `.claude/skills/` 目录中，这样可以实现更好的工作区隔离。
 
 ### Skill 功能
 
@@ -94,15 +102,15 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 ```
 /workspace/                                     # 主工作区（推荐使用此路径）
 ├── .claude/                                    # Claude Code 配置目录
-│   ├── settings.local.json                   # 本地设置（工具使用权限）
-│   └── skills/                                # Skills 目录
-│       └── discord-bridge-maintenance/        # 维护 Skill（包含在项目中）
+│   └── settings.local.json                   # 本地设置（工具使用权限）
 ├── discord-claude-bridge/                     # 桥接项目（本仓库）
 │   ├── bot/
 │   ├── bridge/
 │   ├── shared/
 │   ├── config/
-│   └── .claude/                                # 项目内的 Skill（已移除）
+│   └── docs/
+│       └── skills/
+│           └── discord-bridge-maintenance/    # 维护 Skill（从项目复制到 .claude/skills/）
 └── sessions/                                  # Claude Code 会话目录（自动生成）
     ├── channel_1234567890/                   # 频道会话
     └── user_9876543210/                       # 用户会话
@@ -129,9 +137,18 @@ cd /workspace
 git clone https://github.com/OstrichHermit/discord-claude-bridge.git
 ```
 
-项目已包含维护 Skill 在 `.claude/skills/` 目录中，Claude Code 会自动识别。
+#### 3. 复制 Skill 到 Claude Code
 
-#### 3. 配置 Claude Code 工具权限
+```bash
+# 在工作区根目录创建 .claude/skills/ 并复制 Skill
+mkdir -p .claude/skills
+cp -r discord-claude-bridge/docs/skills/discord-bridge-maintenance .claude/skills/
+
+# Windows 用户
+xcopy /E /I discord-claude-bridge\docs\skills\discord-bridge-maintenance .claude\skills\discord-bridge-maintenance
+```
+
+#### 4. 配置 Claude Code 工具权限
 
 创建 `.claude/settings.local.json` 文件：
 
@@ -466,7 +483,7 @@ discord-claude-bridge/
 ├── config/
 │   ├── config.example.yaml # Configuration file example
 │   └── config.yaml         # Actual configuration file (to be created)
-├── .claude/
+├── docs/
 │   └── skills/
 │       └── discord-bridge-maintenance/  # Claude Code Skill (maintenance tool)
 │           ├── SKILL.md                 # Core Skill guide
@@ -484,9 +501,17 @@ This project includes a dedicated maintenance Skill (`discord-bridge-maintenance
 
 ### Install Skill
 
-The Skill is already included in the `.claude/skills/` directory of the project, no additional installation needed.
+Copy the Skill to Claude Code's skills directory:
 
-If you place the project in the recommended `/workspace/` directory, Claude Code will automatically recognize and load this Skill.
+```bash
+# Copy Skill to Claude Code skills directory
+cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# Windows users
+xcopy /E /I docs\skills\discord-bridge-maintenance %USERPROFILE%\.claude\skills\discord-bridge-maintenance
+```
+
+**Recommended**: Place the project in `/workspace/` directory and copy the Skill to the workspace's `.claude/skills/` directory for better workspace isolation.
 
 ### Skill Features
 
@@ -518,15 +543,15 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
 ```
 /workspace/                                     # Main workspace (recommended path)
 ├── .claude/                                    # Claude Code config directory
-│   ├── settings.local.json                   # Local settings (tool permissions)
-│   └── skills/                                # Skills directory
-│       └── discord-bridge-maintenance/        # Maintenance Skill (included in project)
+│   └── settings.local.json                   # Local settings (tool permissions)
 ├── discord-claude-bridge/                     # Bridge project (this repo)
 │   ├── bot/
 │   ├── bridge/
 │   ├── shared/
 │   ├── config/
-│   └── .claude/                                # Project-included Skill (moved)
+│   └── docs/
+│       └── skills/
+│           └── discord-bridge-maintenance/    # Maintenance Skill (copy from project to .claude/skills/)
 └── sessions/                                  # Claude Code session directories (auto-generated)
     ├── channel_1234567890/                   # Channel sessions
     └── user_9876543210/                       # User sessions
@@ -553,9 +578,18 @@ cd /workspace
 git clone https://github.com/OstrichHermit/discord-claude-bridge.git
 ```
 
-The project includes the maintenance Skill in `.claude/skills/` directory, which Claude Code will automatically recognize.
+#### 3. Copy Skill to Claude Code
 
-#### 3. Configure Claude Code Tool Permissions
+```bash
+# Create .claude/skills/ in workspace root and copy Skill
+mkdir -p .claude/skills
+cp -r discord-claude-bridge/docs/skills/discord-bridge-maintenance .claude/skills/
+
+# Windows users
+xcopy /E /I discord-claude-bridge\docs\skills\discord-bridge-maintenance .claude\skills\discord-bridge-maintenance
+```
+
+#### 4. Configure Claude Code Tool Permissions
 
 Create `.claude/settings.local.json` file:
 
