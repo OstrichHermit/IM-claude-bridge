@@ -1,5 +1,15 @@
 # Discord Claude Bridge
 
+<div align="center">
+
+**[English](#english) | [简体中文](#简体中文)**
+
+</div>
+
+---
+
+## 简体中文
+
 将 Discord 消息桥接到本地 Claude Code 的双向通信系统。
 
 ## 功能特性
@@ -328,3 +338,336 @@ MIT License
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+---
+
+## English
+
+A bidirectional communication system that bridges Discord messages to your local Claude Code CLI.
+
+## Features
+
+- ✅ Receive @Bot messages from Discord
+- ✅ Forward messages to local Claude Code CLI
+- ✅ Receive Claude Code responses and send back to Discord
+- ✅ Async processing based on message queue
+- ✅ Support permission control (channels, users)
+- ✅ Message persistence and status tracking
+
+## System Architecture
+
+```
+Discord <---> Discord Bot <---> SQLite Message Queue <---> Claude Bridge Service <---> Claude Code CLI
+```
+
+## Project Structure
+
+```
+discord-claude-bridge/
+├── bot/
+│   └── discord_bot.py      # Discord Bot main program
+├── bridge/
+│   └── claude_bridge.py    # Claude Code bridge service
+├── shared/
+│   ├── config.py           # Configuration management
+│   ├── message_queue.py    # Message queue system
+│   └── messages.db         # Message database (generated at runtime)
+├── config/
+│   ├── config.example.yaml # Configuration file example
+│   └── config.yaml         # Actual configuration file (to be created)
+├── docs/
+│   └── skills/
+│       └── discord-bridge-maintenance/  # Claude Code Skill (maintenance tool)
+│           ├── SKILL.md                 # Core Skill guide
+│           ├── references/              # Documentation (architecture, config, troubleshooting)
+│           └── scripts/                 # Maintenance scripts (start, clean, diagnostics)
+├── requirements.txt        # Python dependencies
+├── start.bat              # Windows startup script
+├── start.sh               # Linux/Mac startup script
+└── README.md              # This file
+```
+
+## 🤖 Claude Code Skill
+
+This project includes a dedicated maintenance Skill (`discord-bridge-maintenance`) to help you maintain and debug Discord Bridge.
+
+### Install Skill
+
+Install the Skill to Claude Code:
+
+```bash
+# Copy Skill to Claude Code skills directory
+cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# Windows users
+xcopy /E /I docs\skills\discord-bridge-maintenance %USERPROFILE%\.claude\skills\discord-bridge-maintenance
+```
+
+### Skill Features
+
+Once installed, when you need to maintain or debug Discord Bridge, Claude Code will automatically load this Skill and provide:
+
+- **Quick diagnostic workflow**: Service status check, database status view, log analysis
+- **Configuration management**: Detailed configuration item explanations and modification guidance
+- **Troubleshooting**: Solutions to common problems (Bot unresponsive, permission errors, Claude CLI errors, etc.)
+- **Maintenance scripts**: One-click service start, queue cleanup, configuration verification
+
+### Usage
+
+In Claude Code, simply describe the problem you encounter, for example:
+
+- "Discord Bot is not responding to messages"
+- "I want to add a new admin user"
+- "How to change session mode"
+
+Claude Code will automatically load the Skill and provide targeted help.
+
+---
+
+## Quick Start
+
+### 1. Prerequisites
+
+- Python 3.8+
+- Discord Bot Token
+- Claude Code CLI
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure Discord Bot
+
+#### Create Discord Application
+
+1. Visit [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click "New Application" to create an app
+3. Create a Bot in the "Bot" page and copy the Token
+4. In "OAuth2" -> "URL Generator", check:
+   - `bot`
+   - `messages.read`
+   - `messages.write`
+5. Use the generated URL to invite Bot to your server
+
+#### Configure Permissions
+
+In the Bot page of Developer Portal:
+- **Privileged Gateway Intents**:
+  - ✅ Message Content Intent
+  - ✅ Server Members Intent (optional)
+
+### 4. Configure Project
+
+Copy and edit the configuration file:
+
+```bash
+cd config
+copy config.example.yaml config.yaml
+notepad config.yaml  # or use other editor
+```
+
+Edit `config.yaml`:
+
+```yaml
+discord:
+  token: "YOUR_DISCORD_BOT_TOKEN_HERE"  # Replace with your Token
+  command_prefix: "@"
+  allowed_channels: []                   # Empty list = all channels
+  allowed_users: []                      # Empty list = all users
+
+claude:
+  executable: "claude-code"              # Claude Code CLI command
+  timeout: 300                           # Timeout (seconds)
+  max_retries: 3                         # Max retry count
+
+queue:
+  database_path: "./shared/messages.db"
+  poll_interval: 500                     # Poll interval (ms)
+  message_retention_hours: 24            # Message retention time
+```
+
+### 5. Start Services
+
+**Windows:**
+```bash
+start.bat
+```
+
+**Linux/Mac:**
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+Or start the two components separately:
+
+```bash
+# Terminal 1: Start Discord Bot
+python bot/discord_bot.py
+
+# Terminal 2: Start Claude Bridge service
+python bridge/claude_bridge.py
+```
+
+### 6. Usage
+
+In Discord:
+
+```
+@YourBot Please help me analyze this code
+```
+
+The Bot will:
+1. Receive the message
+2. Show "Message received" confirmation
+3. Forward to local Claude Code for processing
+4. Send Claude's actual response back to Discord
+
+### 7. Verify Claude Code CLI
+
+Before starting the service, ensure Claude Code CLI is available:
+
+```bash
+# Test command
+claude -p "Hello, please reply briefly"
+
+# If you see Claude's response, the CLI is properly installed
+```
+
+## Configuration Options
+
+### Permission Control
+
+**Restrict specific channels**:
+```yaml
+allowed_channels: [123456789012345678, 987654321098765432]
+```
+
+**Restrict specific users**:
+```yaml
+allowed_users: [123456789012345678, 987654321098765432]
+```
+
+### Claude Code Integration
+
+This project implements real Claude Code CLI calls and supports **continuous conversation**!
+
+**How it works**:
+- Uses `claude -p "prompt"` command for non-interactive calls
+- Automatically captures Claude's response and returns to Discord
+- Supports retry mechanism and timeout control
+- **Supports session persistence to maintain conversation context**
+- Implements conversation isolation by creating independent working directories for each session
+
+**Optional configuration**:
+
+```yaml
+claude:
+  executable: "claude"              # Claude CLI command (usually just "claude")
+  timeout: 300                       # Single request timeout (seconds)
+  max_retries: 3                     # Failure retry count
+  working_directory: ""              # Base working directory (optional)
+  session_mode: "channel"            # Session mode (see below)
+```
+
+**Session mode explanation**:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `"channel"` | Each Discord channel has independent session | **Recommended**: Conversations in the same channel maintain context |
+| `"user"` | Each user has independent session | User's conversations remain consistent across different channels |
+| `"global"` | Globally shared session | Everyone shares the same conversation context |
+| `"none"` | New conversation each time | Default mode, no context maintained |
+
+**Working directory explanation**:
+- Leave empty (default): Use project root directory
+- Set to specific path: Let Claude access specific project files
+- Example: `working_directory: "D:/MyProject"`
+- Session directories are automatically created in `{working_directory}/sessions/{session_key}/`
+
+**Continuous conversation example**:
+```
+You: @OH-Bot My name is Zhang San
+Bot: ✅ Message received...
+Bot: ✨ Response from Claude: Hello Zhang San! Nice to meet you.
+
+You: @OH-Bot What's my name?
+Bot: ✅ Message received...
+Bot: ✨ Response from Claude: Your name is Zhang San. (Claude remembers the previous conversation!)
+```
+
+## Troubleshooting
+
+### Bot Unresponsive
+
+1. Check if Discord Token is correct
+2. Confirm Bot has sufficient permissions
+3. Confirm Message Content Intent is enabled
+
+### Claude Code Not Responding
+
+1. Test if CLI is available:
+   ```bash
+   claude -p "test"
+   ```
+2. Check if Claude Code is logged in:
+   ```bash
+   claude --version
+   ```
+3. View detailed error logs in the bridge service window
+4. If prompted that claude command is not found:
+   - Ensure Claude Code is installed
+   - Restart terminal/command window
+   - Check PATH environment variable
+
+### Permission Errors
+
+1. Check channel/user IDs in configuration file
+2. Confirm Bot has corresponding permissions in the server
+
+## Development Notes
+
+### Message State Flow
+
+```
+PENDING -> PROCESSING -> COMPLETED
+                |
+                v
+             FAILED
+```
+
+### Database Structure
+
+```sql
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY,
+    direction TEXT,              -- 'to_claude' or 'to_discord'
+    content TEXT,                -- Message content
+    status TEXT,                 -- Message status
+    discord_channel_id INTEGER,  -- Discord channel ID
+    discord_message_id INTEGER,  -- Discord message ID
+    discord_user_id INTEGER,     -- User ID
+    username TEXT,               -- Username
+    response TEXT,               -- Claude's response
+    error TEXT,                  -- Error message
+    created_at TIMESTAMP,        -- Creation time
+    updated_at TIMESTAMP         -- Update time
+);
+```
+
+## Security Recommendations
+
+- Don't commit `config.yaml` to version control
+- Regularly clean message database
+- Use restricted user/channel permissions in production
+- Use environment variables for sensitive information
+
+## License
+
+MIT License
+
+## Contributing
+
+Issues and Pull Requests are welcome!
