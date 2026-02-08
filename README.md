@@ -98,7 +98,7 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 ### 推荐的目录结构
 
 ```
-D:/Workspace/DiscordBridge/                    # 主工作区（可自定义位置）
+/workspace/                                     # 主工作区（推荐使用此路径）
 ├── .claude/                                    # Claude Code 配置目录
 │   └── settings.local.json                   # 本地设置（工具使用权限）
 ├── discord-claude-bridge/                     # 桥接项目（本仓库）
@@ -116,16 +116,16 @@ D:/Workspace/DiscordBridge/                    # 主工作区（可自定义位�
 
 ### 设置步骤
 
-#### 1. 创建主工作区目录
+#### 1. 创建工作区目录
 
 ```bash
 # Windows (PowerShell)
-New-Item -ItemType Directory -Path "D:\Workspace\DiscordBridge"
-Set-Location "D:\Workspace\DiscordBridge"
+New-Item -ItemType Directory -Path "/workspace"
+Set-Location "/workspace"
 
 # Linux/Mac
-mkdir -p ~/Workspace/DiscordBridge
-cd ~/Workspace/DiscordBridge
+sudo mkdir /workspace
+cd /workspace
 ```
 
 #### 2. 克隆项目到工作区
@@ -178,6 +178,7 @@ mkdir .claude
 - ✅ **Skill 自动加载**：维护 Skill 在同一工作区，Claude Code 可以自动识别和加载
 - ✅ **会话持久化**：所有 Discord 对话的会话数据集中管理
 - ✅ **便于维护**：所有相关文件在一个目录中，方便备份和管理
+- ✅ **路径简洁**：使用 `/workspace/` 作为根目录，路径更简洁易记
 
 ---
 
@@ -525,7 +526,7 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
 ### Recommended Directory Structure
 
 ```
-D:/Workspace/DiscordBridge/                    # Main workspace (customizable location)
+/workspace/                                     # Main workspace (recommended path)
 ├── .claude/                                    # Claude Code config directory
 │   └── settings.local.json                   # Local settings (tool permissions)
 ├── discord-claude-bridge/                     # Bridge project (this repo)
@@ -543,16 +544,16 @@ D:/Workspace/DiscordBridge/                    # Main workspace (customizable lo
 
 ### Setup Steps
 
-#### 1. Create Main Workspace Directory
+#### 1. Create Workspace Directory
 
 ```bash
 # Windows (PowerShell)
-New-Item -ItemType Directory -Path "D:\Workspace\DiscordBridge"
-Set-Location "D:\Workspace\DiscordBridge"
+New-Item -ItemType Directory -Path "/workspace"
+Set-Location "/workspace"
 
 # Linux/Mac
-mkdir -p ~/Workspace/DiscordBridge
-cd ~/Workspace/DiscordBridge
+sudo mkdir /workspace
+cd /workspace
 ```
 
 #### 2. Clone Project to Workspace
@@ -605,6 +606,7 @@ mkdir .claude
 - ✅ **Auto-load Skill**: Maintenance Skill in same workspace, Claude Code can automatically recognize and load it
 - ✅ **Session Persistence**: All Discord conversation session data centrally managed
 - ✅ **Easy Maintenance**: All related files in one directory, easy to backup and manage
+- ✅ **Clean Path**: Using `/workspace/` as root makes paths simple and easy to remember
 
 ---
 
