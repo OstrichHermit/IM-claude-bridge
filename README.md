@@ -47,6 +47,7 @@ discord-claude-bridge/
 │           └── scripts/                 # 维护脚本（启动、清理、诊断）
 ├── requirements.txt        # Python 依赖
 ├── start.bat              # Windows 启动脚本
+├── restart.bat            # Windows 重启脚本
 ├── start.sh               # Linux/Mac 启动脚本
 └── README.md              # 本文件
 ```
@@ -283,6 +284,22 @@ python bot/discord_bot.py
 python bridge/claude_bridge.py
 ```
 
+### 5.1 重启服务
+
+**Windows（推荐）:**
+```bash
+restart.bat
+```
+
+`restart.bat` 脚本会自动：
+1. 关闭所有 Discord Bridge 窗口
+2. 终止旧的 Python 进程
+3. 重新启动 Discord Bot 和 Claude Bridge 服务
+
+**手动重启:**
+1. 关闭两个服务窗口（或按 Ctrl+C）
+2. 重新运行 `start.bat`
+
 ### 6. 使用方法
 
 在 Discord 中：
@@ -493,6 +510,7 @@ discord-claude-bridge/
 │           └── scripts/                 # Maintenance scripts (start, clean, diagnostics)
 ├── requirements.txt        # Python dependencies
 ├── start.bat              # Windows startup script
+├── restart.bat            # Windows restart script
 ├── start.sh               # Linux/Mac startup script
 └── README.md              # This file
 ```
@@ -728,6 +746,22 @@ python bot/discord_bot.py
 # Terminal 2: Start Claude Bridge service
 python bridge/claude_bridge.py
 ```
+
+### 5.1 Restart Services
+
+**Windows (Recommended):**
+```bash
+restart.bat
+```
+
+The `restart.bat` script will automatically:
+1. Close all Discord Bridge windows
+2. Terminate old Python processes
+3. Restart Discord Bot and Claude Bridge services
+
+**Manual Restart:**
+1. Close both service windows (or press Ctrl+C)
+2. Re-run `start.bat`
 
 ### 6. Usage
 
