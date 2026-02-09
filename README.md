@@ -119,7 +119,9 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 ```
 /workspace/                                     # 主工作区（推荐使用此路径）
 ├── .claude/                                    # Claude Code 配置目录
-│   └── settings.local.json                   # 本地设置（工具使用权限）
+│   ├── settings.local.json                   # 本地设置（工具使用权限）
+│   └── skills/                               # **Skill 目录（重要！）**
+│       └── discord-bridge-maintenance/       # 维护 Skill（从项目复制）
 └── discord-claude-bridge/                     # 桥接项目（本仓库）
     ├── bot/
     ├── bridge/
@@ -128,8 +130,13 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
     ├── config/
     └── docs/
         └── skills/
-            └── discord-bridge-maintenance/    # 维护 Skill（从项目复制到 .claude/skills/）
+            └── discord-bridge-maintenance/    # Skill 源文件（需要复制到 .claude/skills/）
 ```
+
+**⚠️ 重要说明**：
+- Skill 必须放在 `.claude/skills/` 目录下才能被 Claude Code 自动加载
+- 不要直接使用项目中的 `docs/skills/` 目录
+- 需要将 Skill 复制到工作区根目录的 `.claude/skills/` 中
 
 ### 设置步骤
 
@@ -695,7 +702,9 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
 ```
 /workspace/                                     # Main workspace (recommended path)
 ├── .claude/                                    # Claude Code config directory
-│   └── settings.local.json                   # Local settings (tool permissions)
+│   ├── settings.local.json                   # Local settings (tool permissions)
+│   └── skills/                               # **Skill directory (important!)**
+│       └── discord-bridge-maintenance/       # Maintenance Skill (copy from project)
 └── discord-claude-bridge/                     # Bridge project (this repo)
     ├── bot/
     ├── bridge/
@@ -704,8 +713,13 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
     ├── config/
     └── docs/
         └── skills/
-            └── discord-bridge-maintenance/    # Maintenance Skill (copy from project to .claude/skills/)
+            └── discord-bridge-maintenance/    # Skill source files (copy to .claude/skills/)
 ```
+
+**⚠️ Important**:
+- Skill MUST be placed in `.claude/skills/` directory to be auto-loaded by Claude Code
+- Do NOT use the `docs/skills/` directory in the project directly
+- Need to copy the Skill to `.claude/skills/` in the workspace root directory
 
 ### Setup Steps
 
