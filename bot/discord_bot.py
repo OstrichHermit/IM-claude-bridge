@@ -434,22 +434,25 @@ class DiscordBot(commands.Bot):
                                 print(f"⚠️ 无法编辑确认消息: {e}")
                             print(f"⚠️ [消息 #{msg_id}] PENDING 超时（{int(elapsed_time)}秒）")
 
-                    # 状态 2: PROCESSING 且无 response - 正在调用 Claude Code
+                    # 状态 2: PROCESSING 且无 response - 正在调用 Claude Code（不更新提示，继续显示"⏳ 消息处理中"）
                     elif status == MessageStatus.PROCESSING.value and not response:
-                        if not tracking_info.get("notified_processing"):
-                            # 首次检测到正在处理
+                        # 不更新 Discord 提示，保持"⏳ 消息处理中"
+                        print(f"🔄 [消息 #{msg_id}] 正在调用 Claude Code CLI...")
+
+                    # 状态 3: PROCESSING 且有 response - 收到响应
+                    elif status == MessageStatus.PROCESSING.value and response:
+                        # 先更新提示为"Claude Code正在处理中"
+                        if not tracking_info.get("notified_got_response"):
                             try:
                                 await tracking_info["confirmation_msg"].edit(
                                     content=f"🔄 Claude Code 正在处理中...\n"
                                             f"消息 #{msg_id} 已接收，AI 正在思考，请稍候。"
                                 )
-                                tracking_info["notified_processing"] = True
-                                print(f"🔄 [消息 #{msg_id}] 开始调用 Claude Code")
+                                tracking_info["notified_got_response"] = True
+                                print(f"🔄 [消息 #{msg_id}] Claude Code CLI 调用成功，已收到响应")
                             except Exception as e:
                                 print(f"⚠️ 无法编辑确认消息: {e}")
-
-                    # 状态 3: PROCESSING 且有 response - 收到响应
-                    elif status == MessageStatus.PROCESSING.value and response:
+                        # 然后发送响应
                         try:
                             # 获取完整消息信息
                             conn = sqlite3.connect(self.config.database_path)
