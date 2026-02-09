@@ -574,12 +574,12 @@ class DiscordBot(commands.Bot):
                     elif status == MessageStatus.FAILED.value:
                         try:
                             error_msg = error or "未知错误"
-                            await tracking_info["channel"].send(
-                                f"❌ 消息 #{msg_id} 处理失败\n"
-                                f"错误: {error_msg}"
+                            await tracking_info["confirmation_msg"].edit(
+                                content=f"❌ 消息 #{msg_id} 处理失败\n"
+                                        f"错误: {error_msg}"
                             )
                         except Exception as e:
-                            print(f"⚠️ 无法发送失败提示: {e}")
+                            print(f"⚠️ 无法编辑确认消息: {e}")
                         messages_to_remove.append(msg_id)
                         print(f"❌ [消息 #{msg_id}] 处理失败: {error}")
 

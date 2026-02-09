@@ -104,15 +104,15 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 /workspace/                                     # 主工作区（推荐使用此路径）
 ├── .claude/                                    # Claude Code 配置目录
 │   └── settings.local.json                   # 本地设置（工具使用权限）
-├── discord-claude-bridge/                     # 桥接项目（本仓库）
-│   ├── bot/
-│   ├── bridge/
-│   ├── shared/
-│   │   └── messages.db                       # 消息数据库（运行时生成）
-│   ├── config/
-│   └── docs/
-│       └── skills/
-│           └── discord-bridge-maintenance/    # 维护 Skill（从项目复制到 .claude/skills/）
+└── discord-claude-bridge/                     # 桥接项目（本仓库）
+    ├── bot/
+    ├── bridge/
+    ├── shared/
+    │   └── messages.db                       # 消息数据库（运行时生成）
+    ├── config/
+    └── docs/
+        └── skills/
+            └── discord-bridge-maintenance/    # 维护 Skill（从项目复制到 .claude/skills/）
 ```
 
 ### 设置步骤
@@ -545,15 +545,15 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
 /workspace/                                     # Main workspace (recommended path)
 ├── .claude/                                    # Claude Code config directory
 │   └── settings.local.json                   # Local settings (tool permissions)
-├── discord-claude-bridge/                     # Bridge project (this repo)
-│   ├── bot/
-│   ├── bridge/
-│   ├── shared/
-│   │   └── messages.db                       # Message database (generated at runtime)
-│   ├── config/
-│   └── docs/
-│       └── skills/
-│           └── discord-bridge-maintenance/    # Maintenance Skill (copy from project to .claude/skills/)
+└── discord-claude-bridge/                     # Bridge project (this repo)
+    ├── bot/
+    ├── bridge/
+    ├── shared/
+    │   └── messages.db                       # Message database (generated at runtime)
+    ├── config/
+    └── docs/
+        └── skills/
+            └── discord-bridge-maintenance/    # Maintenance Skill (copy from project to .claude/skills/)
 ```
 
 ### Setup Steps
