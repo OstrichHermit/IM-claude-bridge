@@ -58,7 +58,8 @@ class ClaudeBridge:
                 username=message.username,
                 user_id=message.discord_user_id,
                 is_dm=message.is_dm,
-                message_id=message.id
+                message_id=message.id,
+                channel_id=message.discord_channel_id
             )
 
             if response:
@@ -97,7 +98,7 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None, channel_id: int = None) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
@@ -113,6 +114,7 @@ class ClaudeBridge:
             user_id: 发送者用户 ID（频道模式下需要）
             is_dm: 是否为私聊消息
             message_id: 消息 ID，用于实时更新状态
+            channel_id: 频道 ID（频道模式下需要）
         """
         import json
 
@@ -122,9 +124,12 @@ class ClaudeBridge:
         # 使用传入的 working_dir，如果没有则使用默认配置
         cwd = working_dir or self.config.working_directory
 
-        # 在频道模式下，附加发送者信息到提示词
+        # 在频道模式下，附加发送者信息和频道 ID 到提示词
         if not is_dm and username and user_id:
-            prompt = f"{username}（{user_id}）说：{prompt}"
+            if channel_id:
+                prompt = f"来自频道（{channel_id}）的{username}（{user_id}）说：{prompt}"
+            else:
+                prompt = f"{username}（{user_id}）说：{prompt}"
 
         while retries < max_retries:
             try:

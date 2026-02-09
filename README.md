@@ -20,6 +20,12 @@
 - ✅ 消息追踪系统（实时状态提示）
 - ✅ 启动通知功能
 - ✅ 会话管理（`/new` 命令重置会话）
+- ✅ **MCP 服务器** - 支持 Claude Code 通过 MCP 协议发送文件到 Discord
+  - 发送文件到 Discord 用户私聊或频道
+  - 批量发送多个文件（最多 10 个）
+  - 列出 Bot 可访问的频道和服务器
+  - 支持 Embed 精美卡片格式
+  - **动态频道解析** - 自动从消息中解析频道 ID，无需手动指定
 
 ## 系统架构
 
@@ -35,6 +41,14 @@ discord-claude-bridge/
 │   └── discord_bot.py      # Discord Bot 主程序
 ├── bridge/
 │   └── claude_bridge.py    # Claude Code 桥接服务
+├── mcp_server/
+│   ├── server.py           # MCP 服务器主程序
+│   ├── tools/              # MCP 工具层
+│   │   ├── discord_tools.py  # Discord 文件发送工具
+│   │   └── __init__.py
+│   └── services/           # MCP 服务层
+│       ├── discord_service.py  # Discord 服务实现
+│       └── __init__.py
 ├── shared/
 │   ├── config.py           # 配置管理
 │   ├── message_queue.py    # 消息队列系统
@@ -52,6 +66,8 @@ discord-claude-bridge/
 ├── start.bat              # Windows 启动脚本
 ├── restart.bat            # Windows 重启脚本
 ├── start.sh               # Linux/Mac 启动脚本
+├── MCP_SETUP.md           # MCP 服务器配置指南
+├── claude_desktop_config.example.json  # MCP 配置示例
 └── README.md              # 本文件
 ```
 
@@ -395,7 +411,142 @@ Bot: ✨ 来自 Claude 的回复: 抱歉，我不知道您的名字。（会话�
 Bot: ✅ 消息 #Z 响应成功！
 ```
 
-## 故障排查
+---
+
+## 🔌 MCP 服务器集成
+
+本项目包含一个 **MCP (Model Context Protocol) 服务器**，允许 Claude Code 通过 MCP 协议直接发送文件到 Discord。
+
+### MCP 功能
+
+通过 MCP 服务器，Claude Code 可以：
+
+- 📎 **发送文件到 Discord** - 支持用户私聊和频道
+- 📦 **批量发送文件** - 一次最多发送 10 个文件
+- 📋 **列出频道** - 查看 Bot 可访问的所有频道和服务器
+- 🎨 **Embed 格式** - 使用精美的卡片格式发送内容
+- 🎯 **自动识别频道** - 从消息格式中自动解析频道 ID
+
+### 可用工具
+
+MCP 服务器提供以下 3 个工具：
+
+1. **`mcp_send_file_to_discord`** - 发送单个文件到 Discord
+   - 支持发送到用户私聊或频道
+   - 可选 Embed 精美格式
+
+2. **`mcp_send_multiple_files_to_discord`** - 批量发送文件到 Discord
+   - 一次最多发送 10 个文件
+   - 自动跳过不存在的文件
+
+3. **`mcp_list_discord_channels`** - 列出 Bot 可访问的频道
+   - 返回所有可访问的服务器和频道信息
+
+### 快速配置
+
+#### 1. 编辑 Claude Code 配置文件
+
+配置文件位置：
+
+**Windows:**
+```
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+**macOS/Linux:**
+```
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+#### 2. 添加 MCP 服务器
+
+```json
+{
+  "mcpServers": {
+    "discord-bridge": {
+      "command": "python",
+      "args": [
+        "D:\\AgentWorkspace\\discord-claude-bridge\\mcp_server\\server.py",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "PYTHONPATH": "D:\\AgentWorkspace\\discord-claude-bridge"
+      }
+    }
+  }
+}
+```
+
+**提示：** 可以参考项目根目录的 `claude_desktop_config.example.json` 文件。
+
+#### 3. 重启 Claude Code
+
+完全关闭并重新启动 Claude Code 应用。
+
+### 使用示例
+
+配置完成后，在 Claude Code 中可以直接发送文件到 Discord：
+
+#### 示例 1：发送到当前频道（自动解析）⭐
+
+当你在 Discord 频道中与 Claude 对话时，它可以自动识别当前频道并发送文件：
+
+```
+你（在 Discord 频道中）：请把根目录下的新闻汇总 PDF 发过来
+Claude：好的，正在发送...
+[自动识别频道 ID 并发送文件]
+```
+
+**工作原理**：
+- Discord Bot 转发消息时包含频道 ID：`来自频道（1466858871720251425）的鸵鸟居士说：请把根目录下的新闻汇总 PDF 发过来`
+- Claude Code 从消息中解析频道 ID
+- 调用 MCP 工具发送文件到该频道
+
+#### 示例 2：指定频道发送
+
+```
+你：请将 D:\charts\sales.png 发送到 Discord 频道 123456789
+```
+
+#### 示例 3：发送到用户私聊
+
+```
+你：把这个文件发给用户 987654321
+```
+
+#### 示例 4：批量发送
+
+```
+你：将这些图片打包发送：image1.png, image2.png
+```
+
+#### 示例 5：使用精美格式
+
+```
+你：用卡片格式发送报告到我的私聊
+```
+
+### MCP 工具列表
+
+- `mcp__discord-bridge__mcp_send_file_to_discord` - 发送单个文件
+- `mcp__discord-bridge__mcp_send_multiple_files_to_discord` - 批量发送文件（最多 10 个）
+- `mcp__discord-bridge__mcp_list_discord_channels` - 列出可访问的频道
+
+### 详细文档
+
+完整的 MCP 配置和使用指南，请参阅：
+
+**[MCP_SETUP.md](MCP_SETUP.md)** - Discord Bridge MCP 服务器配置指南
+
+包含内容：
+- 详细的配置步骤
+- 所有 MCP 工具说明
+- 故障排查指南
+- 安全建议
+- 高级配置选项
+
+---
 
 ### Bot 无响应
 
@@ -835,6 +986,141 @@ Bot: 🔄 Processing...
 Bot: ✨ Response from Claude: Sorry, I don't know your name. (Session reset, no memory of previous conversation)
 Bot: ✅ Message #Z responded successfully!
 ```
+
+---
+
+## 🔌 MCP Server Integration
+
+This project includes an **MCP (Model Context Protocol) server** that allows Claude Code to send files directly to Discord through the MCP protocol.
+
+### MCP Features
+
+Through the MCP server, Claude Code can:
+
+- 📎 **Send files to Discord** - Support user DM and channels
+- 📦 **Batch send files** - Send up to 10 files at once
+- 📋 **List channels** - View all channels and servers accessible by the Bot
+- 🎨 **Embed format** - Send content in beautiful card format
+- 🎯 **Auto-recognize channel** - Automatically parse channel ID from message format
+
+### Available Tools
+
+The MCP server provides the following 3 tools:
+
+1. **`mcp_send_file_to_discord`** - Send single file to Discord
+   - Support sending to user DM or channel
+   - Optional Embed beautiful format
+
+2. **`mcp_send_multiple_files_to_discord`** - Batch send files to Discord
+   - Send up to 10 files at once
+   - Automatically skip non-existent files
+
+3. **`mcp_list_discord_channels`** - List Bot accessible channels
+   - Return all accessible servers and channel information
+
+### Quick Configuration
+
+#### 1. Edit Claude Code Configuration File
+
+Configuration file location:
+
+**Windows:**
+```
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+**macOS/Linux:**
+```
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+#### 2. Add MCP Server
+
+```json
+{
+  "mcpServers": {
+    "discord-bridge": {
+      "command": "python",
+      "args": [
+        "D:\\AgentWorkspace\\discord-claude-bridge\\mcp_server\\server.py",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "PYTHONPATH": "D:\\AgentWorkspace\\discord-claude-bridge"
+      }
+    }
+  }
+}
+```
+
+**Tip:** You can refer to the `claude_desktop_config.example.json` file in the project root directory.
+
+#### 3. Restart Claude Code
+
+Completely close and restart the Claude Code application.
+
+### Usage Examples
+
+After configuration, you can send files directly to Discord in Claude Code:
+
+#### Example 1: Auto-recognize Channel (Recommended)
+
+```
+You (in Discord channel): Please send the news summary PDF from root directory
+Claude: OK, sending...
+[Automatically recognize channel ID and send file]
+```
+
+**How it works**:
+- Discord Bot includes channel ID when forwarding message: `From channel (1466858871720251425) OstrichHermit said: Please send the news summary PDF from root directory`
+- Claude Code parses channel ID from message
+- Call MCP tool to send file to that channel
+
+#### Example 2: Specify Channel
+
+```
+You: Please send D:\charts\sales.png to Discord channel 123456789
+```
+
+#### Example 3: Send to User DM
+
+```
+You: Send this file to user 987654321
+```
+
+#### Example 4: Batch Send
+
+```
+You: Send these images in batch: image1.png, image2.png
+```
+
+#### Example 5: Use Beautiful Format
+
+```
+You: Send report to my DM in card format
+```
+
+### MCP Tool List
+
+- `mcp__discord-bridge__mcp_send_file_to_discord` - Send single file
+- `mcp__discord-bridge__mcp_send_multiple_files_to_discord` - Batch send files (up to 10)
+- `mcp__discord-bridge__mcp_list_discord_channels` - List accessible channels
+
+### Detailed Documentation
+
+For complete MCP configuration and usage guide, please refer to:
+
+**[MCP_SETUP.md](MCP_SETUP.md)** - Discord Bridge MCP Server Configuration Guide
+
+Includes:
+- Detailed configuration steps
+- All MCP tool descriptions
+- Troubleshooting guide
+- Security recommendations
+- Advanced configuration options
+
+---
 
 ## Troubleshooting
 

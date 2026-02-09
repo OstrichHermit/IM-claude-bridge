@@ -35,6 +35,7 @@ class DiscordBot(commands.Bot):
         self.config = config
         self.message_queue = MessageQueue(config.database_path)
         self.response_check_task = None
+        self.file_request_check_task = None
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
 
     async def setup_hook(self):
@@ -74,6 +75,9 @@ class DiscordBot(commands.Bot):
 
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
+
+        # 启动文件请求检查任务
+        self.file_request_check_task = asyncio.create_task(self.check_file_requests())
 
         # 发送启动通知
         await self.send_startup_notification()
@@ -613,10 +617,115 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
+    async def check_file_requests(self):
+        """定期检查并处理文件发送请求"""
+        await self.wait_until_ready()
+
+        print("📁 文件发送检查任务已启动")
+
+        while not self.is_closed():
+            try:
+                # 获取下一个待处理的文件请求
+                from shared.message_queue import FileRequestStatus
+                file_request = self.message_queue.get_next_file_request()
+
+                if file_request:
+                    print(f"📁 处理文件请求 #{file_request.id}")
+                    # 标记为处理中
+                    self.message_queue.update_file_request_status(
+                        file_request.id,
+                        FileRequestStatus.PROCESSING
+                    )
+
+                    try:
+                        import os
+                        import json
+
+                        # 准备文件列表
+                        valid_files = []
+                        for file_path in file_request.file_paths:
+                            if os.path.exists(file_path):
+                                valid_files.append(discord.File(file_path))
+
+                        if not valid_files:
+                            raise FileNotFoundError("没有有效的文件")
+
+                        # 确定发送目标
+                        if file_request.user_id:
+                            # 发送到用户私聊
+                            user = self.get_user(file_request.user_id)
+                            if not user:
+                                user = await self.fetch_user(file_request.user_id)
+                            target_channel = await user.create_dm()
+                            target_info = f"用户 {user.display_name}"
+                        elif file_request.channel_id:
+                            # 发送到频道
+                            target_channel = self.get_channel(file_request.channel_id)
+                            if not target_channel:
+                                raise ValueError(f"找不到频道: {file_request.channel_id}")
+                            target_info = f"频道 {target_channel.name}"
+                        else:
+                            raise ValueError("必须指定 user_id 或 channel_id")
+
+                        # 发送文件
+                        if file_request.use_embed:
+                            embed = discord.Embed(
+                                title=f"📎 文件发送",
+                                description=file_request.message or f"文件: {len(valid_files)} 个",
+                                color=discord.Color.green()
+                            )
+                            sent_msg = await target_channel.send(
+                                embed=embed,
+                                files=valid_files if len(valid_files) > 1 else valid_files
+                            )
+                        else:
+                            content = file_request.message if file_request.message else f"📎 发送 {len(valid_files)} 个文件"
+                            sent_msg = await target_channel.send(
+                                content=content,
+                                files=valid_files if len(valid_files) > 1 else valid_files
+                            )
+
+                        # 标记为完成
+                        result = json.dumps({
+                            "success": True,
+                            "message": f"成功发送 {len(valid_files)} 个文件到 {target_info}",
+                            "message_id": str(sent_msg.id)
+                        }, ensure_ascii=False)
+                        self.message_queue.update_file_request_status(
+                            file_request.id,
+                            FileRequestStatus.COMPLETED,
+                            result=result
+                        )
+                        print(f"✅ 文件请求 #{file_request.id} 处理完成")
+
+                    except Exception as e:
+                        # 标记为失败
+                        error_msg = json.dumps({
+                            "success": False,
+                            "error": str(e)
+                        }, ensure_ascii=False)
+                        self.message_queue.update_file_request_status(
+                            file_request.id,
+                            FileRequestStatus.FAILED,
+                            error=error_msg
+                        )
+                        print(f"❌ 文件请求 #{file_request.id} 处理失败: {e}")
+
+                # 等待一段时间再检查
+                await asyncio.sleep(self.config.poll_interval / 1000)
+
+            except Exception as e:
+                print(f"❌ 检查文件请求时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
     async def on_close(self):
         """Bot 关闭时的清理"""
         if self.response_check_task:
             self.response_check_task.cancel()
+        if self.file_request_check_task:
+            self.file_request_check_task.cancel()
 
 
 def main():
