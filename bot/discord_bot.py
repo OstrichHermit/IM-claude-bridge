@@ -232,13 +232,10 @@ class DiscordBot(commands.Bot):
                 title="📊 Claude Bridge 状态",
                 color=discord.Color.blue()
             )
-            embed.add_field(name="会话模式", value="`global` - 全局共享会话", inline=False)
 
-            # 显示 session key 和 session ID
-            session_info = f"**Key**: `{session_key}`\n"
-            if session_id:
-                session_info += f"**ID**: `{session_id}`\n"
-            session_info += f"**已创建**: {'是' if session_created else '否'}"
+            # 显示 session ID 和状态（不显示 Key）
+            session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
+            session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
             embed.add_field(name="当前会话", value=session_info, inline=False)
 
             embed.add_field(name="工作目录", value=f"`{self.config.working_directory}`", inline=False)
