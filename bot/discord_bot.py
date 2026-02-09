@@ -123,6 +123,11 @@ class DiscordBot(commands.Bot):
             print("ℹ️  未配置启动通知，跳过")
             return
 
+        # 获取当前会话信息
+        session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
+            self.config.working_directory
+        )
+
         # 创建启动成功消息
         embed = discord.Embed(
             title="🚀 Discord Claude Bridge 启动成功",
@@ -130,13 +135,15 @@ class DiscordBot(commands.Bot):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="📝 会话模式", value="`global` (全局共享)", inline=True)
-        embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=True)
-        embed.add_field(name="⏱️  超时时间", value=f"{self.config.claude_timeout} 秒", inline=True)
+        # 显示会话信息
+        session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
+        session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
+        embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
-        embed.add_field(name="📋 可用命令", value="`/reset` - 重置会话\n`/status` - 查看状态\n`/restart` - 重启服务", inline=False)
+        embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/restart` - 重启服务", inline=False)
 
-        embed.set_footer(text=f"Bot: {self.user.name} | 启动时间: {discord.utils.format_dt(discord.utils.utcnow(), style='R')}")
+        embed.set_footer(text=f"Bot: {self.user.name}")
 
         # 发送到频道
         if notification_channel_id:
@@ -179,7 +186,7 @@ class DiscordBot(commands.Bot):
     async def add_commands(self):
         """注册斜杠命令"""
 
-        @self.tree.command(name="reset", description="重置全局会话，开始新的对话上下文")
+        @self.tree.command(name="new", description="开始新的对话上下文（重置全局会话）")
         async def reset_command(interaction: discord.Interaction):
             """重置全局 Claude 会话"""
             # 检查用户权限
@@ -293,7 +300,7 @@ class DiscordBot(commands.Bot):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
-        print(f"✓ 斜杠命令: /reset, /status, /restart")
+        print(f"✓ 斜杠命令: /new, /status, /restart")
 
     async def on_message(self, message: discord.Message):
         """处理接收到的消息"""
