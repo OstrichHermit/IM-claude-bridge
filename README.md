@@ -426,36 +426,6 @@ Bot: ✅ 消息 #Z 响应成功！
 1. 检查配置文件中的频道/用户 ID
 2. 确认 Bot 在服务器中有相应权限
 
-## 开发说明
-
-### 消息状态流转
-
-```
-PENDING -> PROCESSING -> COMPLETED
-                |
-                v
-             FAILED
-```
-
-### 数据库结构
-
-```sql
-CREATE TABLE messages (
-    id INTEGER PRIMARY KEY,
-    direction TEXT,              -- 'to_claude' 或 'to_discord'
-    content TEXT,                -- 消息内容
-    status TEXT,                 -- 消息状态
-    discord_channel_id INTEGER,  -- Discord 频道 ID
-    discord_message_id INTEGER,  -- Discord 消息 ID
-    discord_user_id INTEGER,     -- 用户 ID
-    username TEXT,               -- 用户名
-    response TEXT,               -- Claude 的响应
-    error TEXT,                  -- 错误信息
-    created_at TIMESTAMP,        -- 创建时间
-    updated_at TIMESTAMP         -- 更新时间
-);
-```
-
 ## 安全建议
 
 - 不要提交 `config.yaml` 到版本控制
@@ -898,36 +868,6 @@ Bot: ✅ Message #Z responded successfully!
 
 1. Check channel/user IDs in configuration file
 2. Confirm Bot has corresponding permissions in the server
-
-## Development Notes
-
-### Message State Flow
-
-```
-PENDING -> PROCESSING -> COMPLETED
-                |
-                v
-             FAILED
-```
-
-### Database Structure
-
-```sql
-CREATE TABLE messages (
-    id INTEGER PRIMARY KEY,
-    direction TEXT,              -- 'to_claude' or 'to_discord'
-    content TEXT,                -- Message content
-    status TEXT,                 -- Message status
-    discord_channel_id INTEGER,  -- Discord channel ID
-    discord_message_id INTEGER,  -- Discord message ID
-    discord_user_id INTEGER,     -- User ID
-    username TEXT,               -- Username
-    response TEXT,               -- Claude's response
-    error TEXT,                  -- Error message
-    created_at TIMESTAMP,        -- Creation time
-    updated_at TIMESTAMP         -- Update time
-);
-```
 
 ## Security Recommendations
 
