@@ -28,7 +28,7 @@ Discord Claude Bridge 是一个双向桥接系统，包含以下组件：
 - 权限验证（用户和频道白名单）
 - 将消息写入队列并轮询获取响应
 - 支持长消息分割和 Embed 格式
-- **消息追踪系统**：实时状态提示（PENDING → PROCESSING → 响应成功）
+- **消息追踪系统**：实时状态提示（PENDING → PROCESSING → AI_STARTED → COMPLETED）
 - **启动通知**：Bot 启动时发送通知（可配置频道或私聊）
 - **斜杠命令**：`/new` 重置会话、`/status` 查看状态、`/restart` 重启服务
 
@@ -38,14 +38,29 @@ Discord Claude Bridge 是一个双向桥接系统，包含以下组件：
 - 处理超时和重试机制
 - **全局会话模式**：所有对话共享同一个上下文
 - **Session ID 管理**：使用 `--session-id` 参数精确控制会话
-- `/new` 命令可重置会话，开始新的对话上下文
+- **频道自动识别**：在消息格式中包含频道 ID，方便 Claude Code 识别
+  - 频道消息：`来自频道（{channel_id}）的{username}（{user_id}）说：{message}`
+  - 私聊消息：保持原格式 `{username}（{user_id}）说：{message}`
 
-### 3. Message Queue (`shared/message_queue.py`)
+### 3. MCP Server (`mcp_server/`)
+- **MCP 服务器**：为 Claude Code 提供文件发送到 Discord 的能力
+- **工具层** (`tools/discord_tools.py`)：
+  - `mcp_send_file_to_discord`：发送单个文件
+  - `mcp_send_multiple_files_to_discord`：批量发送（最多 10 个）
+  - `mcp_list_discord_channels`：列出可访问的频道
+- **服务层** (`services/discord_service.py`)：
+  - 通过消息队列与 Discord Bot 通信
+  - 无需创建新的 Discord 客户端
+  - 支持用户私聊和频道发送
+  - 支持 Embed 精美格式
+
+### 4. Message Queue (`shared/message_queue.py`)
 - SQLite 数据库存储消息
-- 消息状态管理（pending → processing → completed/failed）
+- 消息状态管理（pending → processing → ai_started → completed/failed）
 - 会话管理（sessions 表）
+- 文件请求表（file_requests）：支持 MCP 发送文件
 
-### 4. Config (`shared/config.py`)
+### 5. Config (`shared/config.py`)
 - 从 `config/config.yaml` 加载配置
 - 提供 Discord Token、权限、Claude 参数等配置
 
@@ -154,6 +169,48 @@ claude:
    queue:
      poll_interval: 300  # 减少到 300 毫秒
    ```
+
+### MCP 工具无法发送文件
+
+**症状**：Claude Code 调用 MCP 工具时失败或无响应
+
+**可能原因**：
+1. MCP 服务器未启动或配置错误
+2. Discord Bot 未运行
+3. 权限配置问题（工具未被允许）
+
+**诊断**：
+```bash
+# 1. 检查 Claude Code 配置
+# 查看 Claude Code 配置文件中是否正确配置了 MCP 服务器
+# Windows: %APPDATA%\Claude\claude_desktop_config.json
+# macOS/Linux: ~/Library/Application Support/Claude/claude_desktop_config.json
+
+# 2. 检查 Discord Bot 是否运行
+Get-Process | Where-Object {$_.ProcessName -like "*python*" -and $_.MainWindowTitle -like "*discord*"}
+
+# 3. 测试 MCP 服务器
+python test_setup.py
+```
+
+**解决**：
+1. 确保 MCP 服务器配置正确（参考 `MCP_SETUP.md`）
+2. 确认工具权限已添加到 `settings.local.json`：
+   ```json
+   {
+     "permissions": {
+       "allow": [
+         "mcp__discord-bridge__mcp_send_file_to_discord",
+         "mcp__discord-bridge__mcp_send_multiple_files_to_discord",
+         "mcp__discord-bridge__mcp_list_discord_channels"
+       ]
+     }
+   }
+   ```
+3. 重启 Claude Code 应用
+4. 确保 Discord Bot 正在运行
+
+**详细配置**：查看 `MCP_SETUP.md`
 
 ## 配置管理
 
@@ -341,12 +398,57 @@ Bot: ✅ 会话已重置！开始新的对话上下文。
 3. 之后的对话将使用新的上下文
 ```
 
+### 示例 4：配置 MCP 服务器
+```
+用户：我想让 Claude Code 能够发送文件到 Discord
+
+使用此 Skill：
+1. 阅读 MCP_SETUP.md 了解详细配置步骤
+2. 编辑 Claude Code 配置文件：
+   - Windows: %APPDATA%\Claude\claude_desktop_config.json
+   - macOS/Linux: ~/Library/Application Support/Claude/claude_desktop_config.json
+3. 添加 MCP 服务器配置：
+   {
+     "mcpServers": {
+       "discord-bridge": {
+         "command": "python",
+         "args": ["D:\\AgentWorkspace\\discord-claude-bridge\\mcp_server\\server.py"],
+         "env": {"PYTHONPATH": "D:\\AgentWorkspace\\discord-claude-bridge"}
+       }
+     }
+   }
+4. 在 .claude/settings.local.json 中添加工具权限：
+   {
+     "permissions": {
+       "allow": [
+         "mcp__discord-bridge__mcp_send_file_to_discord",
+         "mcp__discord-bridge__mcp_send_multiple_files_to_discord",
+         "mcp__discord-bridge__mcp_list_discord_channels"
+       ]
+     }
+   }
+5. 重启 Claude Code 应用
+```
+
+### 示例 5：使用 MCP 发送文件
+```
+用户（在 Discord 频道中）：请把根目录下的新闻汇总 PDF 发过来
+
+Claude Code 会自动：
+1. 从消息格式中解析频道 ID：`来自频道（1466858871720251425）的鸵鸟居士说：...`
+2. 调用 MCP 工具 `mcp_send_file_to_discord`
+3. 发送文件到该频道，无需手动指定频道 ID
+```
+
 ## 重要提示
 
 - **两个服务必须同时运行**：Discord Bot 和 Claude Bridge 都需要运行才能正常工作
 - **私聊使用 fetch_user**：不要使用 `get_user()`，它无法获取不在缓存中的用户
 - **数据库位置**：默认在 `shared/messages.db`，确保程序有写入权限
 - **Claude CLI 路径**：如果不在 PATH 中，必须在配置中指定完整路径
-- **消息追踪**：Bot 会自动追踪每条消息的状态并实时更新
+- **消息追踪**：Bot 会自动追踪每条消息的状态并实时更新（PENDING → PROCESSING → AI_STARTED → COMPLETED）
 - **斜杠命令**：使用 `/new` 重置会话，`/status` 查看状态，`/restart` 重启服务
 - **启动通知**：Bot 启动时会发送通知到配置的频道或用户
+- **MCP 服务器**：为 Claude Code 提供文件发送能力，需要单独配置（参考 `MCP_SETUP.md`）
+- **频道自动识别**：消息格式包含频道 ID，Claude Code 可自动识别并发送回原频道
+- **工具权限**：使用 MCP 工具前，必须在 `settings.local.json` 中添加相应权限
