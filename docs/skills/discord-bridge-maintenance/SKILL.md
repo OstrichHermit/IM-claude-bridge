@@ -28,12 +28,16 @@ Discord Claude Bridge 是一个双向桥接系统，包含以下组件：
 - 权限验证（用户和频道白名单）
 - 将消息写入队列并轮询获取响应
 - 支持长消息分割和 Embed 格式
+- **消息追踪系统**：实时状态提示（PENDING → PROCESSING → 响应成功）
+- **启动通知**：Bot 启动时发送通知（可配置频道或私聊）
+- **斜杠命令**：`/new` 重置会话、`/status` 查看状态、`/restart` 重启服务
 
 ### 2. Claude Bridge (`bridge/claude_bridge.py`)
 - 从队列获取待处理消息
 - 调用 Claude CLI (`claude -p "prompt"`)
 - 处理超时和重试机制
 - 支持多种会话模式（none/channel/user/global）
+- **Session ID 管理**：使用 `--session-id` 参数精确控制会话
 
 ### 3. Message Queue (`shared/message_queue.py`)
 - SQLite 数据库存储消息
@@ -59,22 +63,16 @@ Get-Process | Where-Object {$_.ProcessName -like "*python*"}
 ```
 
 ### 2. 检查数据库状态
-使用脚本：
+直接查询数据库：
 ```bash
-python scripts/clean_queue.py status
+# SQLite 查询
+sqlite3 shared/messages.db "SELECT status, COUNT(*) FROM messages GROUP BY status"
+
+# 或在 Python 中
+python -c "import sqlite3; conn = sqlite3.connect('shared/messages.db'); print(conn.execute('SELECT status, COUNT(*) FROM messages GROUP BY status').fetchall())"
 ```
 
-输出显示：
-- 各状态消息数量（pending/processing/completed/failed）
-- 最近的消息列表
-
-### 3. 查看错误日志
-使用脚本：
-```bash
-python scripts/view_logs.py errors
-```
-
-### 4. 验证配置
+### 3. 验证配置
 ```bash
 python scripts/test_config.py
 ```
@@ -90,14 +88,14 @@ python scripts/test_config.py
 
 **解决方案**：
 ```bash
-# 1. 重启服务
-python scripts/start_services.py
+# 1. 重启服务（Windows）
+restart.bat
 
-# 2. 重置卡住的消息
-python scripts/clean_queue.py reset
+# 2. 手动重置卡住的消息
+sqlite3 shared/messages.db "UPDATE messages SET status = 'pending' WHERE status = 'processing'"
 
-# 3. 查看日志排查
-python scripts/view_logs.py errors
+# 3. 查看日志
+# 直接查看控制台输出或检查日志文件
 ```
 
 ### 权限错误
@@ -189,32 +187,35 @@ discord-claude-bridge/config/config.yaml
 
 ### 启动服务
 ```bash
-python scripts/start_services.py
+# Windows
+start.bat
+
+# Linux/Mac
+chmod +x start.sh
+./start.sh
 ```
-同时启动 Discord Bot 和 Claude Bridge
 
-### 清理队列
+### 重启服务
 ```bash
-# 查看队列状态
-python scripts/clean_queue.py status
+# Windows（推荐）
+restart.bat
+```
 
-# 清理旧消息（24 小时前）
-python scripts/clean_queue.py clean 24
+`restart.bat` 会自动：
+1. 关闭所有 Discord Bridge 窗口
+2. 终止旧的 Python 进程
+3. 重新启动 Discord Bot 和 Claude Bridge
+
+### 清理数据库
+```bash
+# 直接操作 SQLite
+sqlite3 shared/messages.db
+
+# 清理旧消息（示例：删除 24 小时前的已完成消息）
+DELETE FROM messages WHERE status = 'completed' AND created_at < datetime('now', '-24 hours');
 
 # 重置卡住的消息
-python scripts/clean_queue.py reset
-
-# 清空所有消息
-python scripts/clean_queue.py clear
-```
-
-### 查看日志
-```bash
-# 查看错误日志
-python scripts/view_logs.py errors
-
-# 查看所有日志
-python scripts/view_logs.py all
+UPDATE messages SET status = 'pending' WHERE status = 'processing';
 ```
 
 ### 验证配置
@@ -308,11 +309,11 @@ CREATE TABLE sessions (
 用户：Discord Bot 在线但不回复消息
 
 使用此 Skill：
-1. 运行 python scripts/clean_queue.py status 查看队列
-2. 运行 python scripts/view_logs.py errors 查看错误
-3. 检查服务是否运行：Get-Process python
-4. 如果服务未运行：python scripts/start_services.py
-5. 如果有 processing 状态的消息：python scripts/clean_queue.py reset
+1. 检查服务是否运行：Get-Process python
+2. 检查数据库状态：sqlite3 shared/messages.db "SELECT status, COUNT(*) FROM messages GROUP BY status"
+3. 如果服务未运行：restart.bat
+4. 如果有 processing 状态的消息：手动重置或重启服务
+5. 查看控制台输出排查错误
 ```
 
 ### 示例 2：添加新用户
@@ -324,7 +325,7 @@ CREATE TABLE sessions (
 2. 右键点击朋友 → 复制用户 ID
 3. 编辑 config/config.yaml
 4. 添加用户 ID 到 allowed_users 列表
-5. 重启 Discord Bot
+5. 重启服务：restart.bat
 ```
 
 ### 示例 3：修改会话模式
@@ -334,8 +335,18 @@ CREATE TABLE sessions (
 使用此 Skill：
 1. 编辑 config/config.yaml
 2. 设置 session_mode: "user"
-3. 重启 Claude Bridge
+3. 重启服务：restart.bat
 4. 验证：sessions/user_{id}/ 目录被创建
+```
+
+### 示例 4：重置会话
+```
+用户：我想重新开始一个新对话
+
+在 Discord 中：
+1. 发送斜杠命令：/new
+2. Bot 会删除当前会话并创建新的 session_id
+3. 之后的对话将使用新的上下文
 ```
 
 ## 重要提示
@@ -344,3 +355,6 @@ CREATE TABLE sessions (
 - **私聊使用 fetch_user**：不要使用 `get_user()`，它无法获取不在缓存中的用户
 - **数据库位置**：默认在 `shared/messages.db`，确保程序有写入权限
 - **Claude CLI 路径**：如果不在 PATH 中，必须在配置中指定完整路径
+- **消息追踪**：Bot 会自动追踪每条消息的状态并实时更新
+- **斜杠命令**：使用 `/new` 重置会话，`/status` 查看状态，`/restart` 重启服务
+- **启动通知**：Bot 启动时会发送通知到配置的频道或用户

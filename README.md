@@ -17,6 +17,9 @@
 - ✅ 基于消息队列的异步处理
 - ✅ 支持权限控制（频道、用户）
 - ✅ 消息持久化和状态跟踪
+- ✅ 消息追踪系统（实时状态提示）
+- ✅ 启动通知功能
+- ✅ 会话管理（`/new` 命令重置会话）
 
 ## 系统架构
 
@@ -309,10 +312,14 @@ restart.bat
 ```
 
 Bot 会：
-1. 接收消息
-2. 显示"消息已接收"确认
-3. 转发给本地 Claude Code 处理
-4. 将 Claude 的真实回复发送回 Discord
+1. 接收消息并显示"⏳ 消息已接收"
+2. 转发给本地 Claude Code 处理（显示"🔄 正在处理中"）
+3. 将 Claude 的真实回复发送回 Discord（显示"✅ 消息 #X 响应成功！"）
+
+**可用命令**：
+- `/new` - 开始新的对话上下文（重置会话）
+- `/status` - 查看系统状态
+- `/restart` - 重启服务
 
 ### 7. 验证 Claude Code CLI
 
@@ -480,6 +487,9 @@ A bidirectional communication system that bridges Discord messages to your local
 - ✅ Async processing based on message queue
 - ✅ Support permission control (channels, users)
 - ✅ Message persistence and status tracking
+- ✅ Message tracking system (real-time status updates)
+- ✅ Startup notification feature
+- ✅ Session management (`/new` command to reset session)
 
 ## System Architecture
 
@@ -772,10 +782,14 @@ In Discord:
 ```
 
 The Bot will:
-1. Receive the message
-2. Show "Message received" confirmation
-3. Forward to local Claude Code for processing
-4. Send Claude's actual response back to Discord
+1. Receive message and show "⏳ Message received"
+2. Forward to local Claude Code for processing (show "🔄 Processing")
+3. Send Claude's actual response back to Discord (show "✅ Message #X responded successfully!")
+
+**Available commands**:
+- `/new` - Start new conversation context (reset session)
+- `/status` - View system status
+- `/restart` - Restart service
 
 ### 7. Verify Claude Code CLI
 
