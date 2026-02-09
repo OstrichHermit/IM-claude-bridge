@@ -69,7 +69,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=True)
         embed.add_field(name="⏱️  超时时间", value=f"{self.config.claude_timeout} 秒", inline=True)
 
-        embed.add_field(name="📋 可用命令", value="`!reset` - 重置会话\n`!status` - 查看状态", inline=False)
+        embed.add_field(name="📋 可用命令", value="`!reset` - 重置会话\n`!status` - 查看状态\n`!restart` - 重启服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name} | 启动时间: {discord.utils.format_dt(discord.utils.utcnow(), style='R')}")
 
@@ -174,12 +174,56 @@ class DiscordBot(commands.Bot):
 
             await ctx.send(embed=embed)
 
+        @self.command(name='restart')
+        async def restart_command(ctx: commands.Context):
+            """重启 Discord Bridge 服务"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if ctx.author.id not in self.config.allowed_users:
+                    await ctx.send(f"❌ {ctx.author.mention}，您没有权限执行此操作。")
+                    return
+
+            # 发送确认消息
+            await ctx.send(
+                f"🔄 {ctx.author.mention}，正在重启 Discord Bridge 服务...\n"
+                f"请稍候，服务将在几秒钟后重新启动。"
+            )
+            print(f"[重启命令] 用户 {ctx.author.display_name} 触发了服务重启")
+
+            # 执行重启脚本
+            import subprocess
+            import os
+
+            try:
+                # 获取项目根目录
+                script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                restart_script = os.path.join(script_dir, 'restart.bat')
+
+                if os.path.exists(restart_script):
+                    # 在后台执行重启脚本
+                    subprocess.Popen(
+                        restart_script,
+                        shell=True,
+                        cwd=script_dir,
+                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                    )
+                    print(f"✅ 重启脚本已执行: {restart_script}")
+                else:
+                    await ctx.send(f"❌ 找不到重启脚本 `restart.bat`")
+                    print(f"⚠️  重启脚本不存在: {restart_script}")
+
+            except Exception as e:
+                await ctx.send(f"❌ 重启失败: {str(e)}")
+                print(f"❌ 执行重启脚本时出错: {e}")
+                import traceback
+                traceback.print_exc()
+
     async def on_ready(self):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
         print(f"✓ 命令前缀: @{self.user.name} ")
-        print(f"✓ 可用命令: !reset, !status")
+        print(f"✓ 可用命令: !reset, !status, !restart")
 
     async def on_message(self, message: discord.Message):
         """处理接收到的消息"""
