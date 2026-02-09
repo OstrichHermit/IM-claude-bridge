@@ -36,8 +36,9 @@ Discord Claude Bridge 是一个双向桥接系统，包含以下组件：
 - 从队列获取待处理消息
 - 调用 Claude CLI (`claude -p "prompt"`)
 - 处理超时和重试机制
-- 支持多种会话模式（none/channel/user/global）
+- **全局会话模式**：所有对话共享同一个上下文
 - **Session ID 管理**：使用 `--session-id` 参数精确控制会话
+- `/new` 命令可重置会话，开始新的对话上下文
 
 ### 3. Message Queue (`shared/message_queue.py`)
 - SQLite 数据库存储消息
@@ -173,8 +174,7 @@ discord-claude-bridge/config/config.yaml
 - `executable`：Claude CLI 路径
 - `timeout`：超时时间（秒，默认 300）
 - `max_retries`：最大重试次数（默认 3）
-- `session_mode`：会话模式（none/channel/user/global）
-- `working_directory`：工作目录
+- `working_directory`：工作目录（留空则使用项目根目录）
 
 #### 队列配置
 - `database_path`：数据库路径
@@ -255,16 +255,19 @@ CREATE TABLE sessions (
 )
 ```
 
-## 会话模式
+## 会话管理
 
-根据 `session_mode` 配置，Claude CLI 的工作目录不同：
+项目使用**全局会话模式**：
+- 所有 Discord 消息共享同一个 Claude Code 会话
+- 对话上下文持续保持，直到使用 `/new` 命令重置
+- Session ID 存储在数据库的 `sessions` 表中
+- `/new` 命令会删除当前会话并生成新的 Session ID
 
-| 模式 | 工作目录 | 适用场景 |
-|------|----------|----------|
-| `none` | 临时目录 | 测试、无状态查询 |
-| `channel` | `sessions/channel_{id}/` | 多频道独立对话 |
-| `user` | `sessions/user_{id}/` | 个性化对话 |
-| `global` | 项目根目录 | 单一对话上下文 |
+**会话重置示例**：
+```
+用户: /new
+Bot: ✅ 会话已重置！开始新的对话上下文。
+```
 
 ## 权限控制
 
@@ -328,18 +331,7 @@ CREATE TABLE sessions (
 5. 重启服务：restart.bat
 ```
 
-### 示例 3：修改会话模式
-```
-用户：我希望每个用户有独立的对话历史
-
-使用此 Skill：
-1. 编辑 config/config.yaml
-2. 设置 session_mode: "user"
-3. 重启服务：restart.bat
-4. 验证：sessions/user_{id}/ 目录被创建
-```
-
-### 示例 4：重置会话
+### 示例 3：重置会话
 ```
 用户：我想重新开始一个新对话
 

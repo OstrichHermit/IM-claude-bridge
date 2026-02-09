@@ -354,8 +354,9 @@ allowed_users: [123456789012345678, 987654321098765432]
 - 使用 `claude -p "提示词"` 命令进行非交互式调用
 - 自动捕获 Claude 的响应并返回给 Discord
 - 支持重试机制和超时控制
-- **支持会话持久化，保持对话上下文**
-- 通过为每个会话创建独立工作目录实现对话隔离
+- **全局会话模式**：所有对话共享同一个上下文，保持对话连续性
+- 使用 `--session-id <uuid>` 参数精确控制会话
+- `/new` 命令可重置会话，开始新的对话上下文
 
 **可选配置**：
 
@@ -364,34 +365,36 @@ claude:
   executable: "claude"              # Claude CLI 命令（通常就是 "claude"）
   timeout: 300                       # 单次请求超时时间（秒）
   max_retries: 3                     # 失败重试次数
-  working_directory: ""              # 基础工作目录（可选）
-  session_mode: "channel"            # 会话模式（见下文说明）
+  working_directory: ""              # 工作目录（可选）
 ```
-
-**会话模式说明**：
-
-| 模式 | 说明 | 适用场景 |
-|------|------|----------|
-| `"channel"` | 每个 Discord 频道独立会话 | **推荐**：同一频道的对话能保持上下文 |
-| `"user"` | 每个用户独立会话 | 用户在不同频道的对话保持一致 |
-| `"global"` | 全局共享会话 | 所有人共享同一个对话上下文 |
-| `"none"` | 每次都是新对话 | 默认模式，不保持上下文 |
 
 **工作目录说明**：
 - 留空（默认）：使用项目根目录
 - 设置为特定路径：让 Claude 可以访问特定项目文件
 - 例如：`working_directory: "D:/MyProject"`
-- 会话目录会自动创建在 `{working_directory}/sessions/{session_key}/`
 
 **持续对话示例**：
 ```
 你: @OH-Bot 我的名字是张三
-Bot: ✅ 消息已接收...
+Bot: ⏳ 消息已接收...
+Bot: 🔄 正在处理中...
 Bot: ✨ 来自 Claude 的回复: 你好张三！很高兴认识你。
+Bot: ✅ 消息 #X 响应成功！
 
 你: @OH-Bot 我叫什么名字？
-Bot: ✅ 消息已接收...
+Bot: ⏳ 消息已接收...
+Bot: 🔄 正在处理中...
 Bot: ✨ 来自 Claude 的回复: 你叫张三。（Claude 记住了之前的对话！）
+Bot: ✅ 消息 #Y 响应成功！
+
+你: /new
+Bot: ✅ 会话已重置！开始新的对话上下文。
+
+你: @OH-Bot 我叫什么名字？
+Bot: ⏳ 消息已接收...
+Bot: 🔄 正在处理中...
+Bot: ✨ 来自 Claude 的回复: 抱歉，我不知道您的名字。（会话已重置，不记得之前的对话）
+Bot: ✅ 消息 #Z 响应成功！
 ```
 
 ## 故障排查
@@ -824,8 +827,9 @@ This project implements real Claude Code CLI calls and supports **continuous con
 - Uses `claude -p "prompt"` command for non-interactive calls
 - Automatically captures Claude's response and returns to Discord
 - Supports retry mechanism and timeout control
-- **Supports session persistence to maintain conversation context**
-- Implements conversation isolation by creating independent working directories for each session
+- **Global session mode**: All conversations share the same context for continuity
+- Uses `--session-id <uuid>` parameter for precise session control
+- `/new` command resets session to start fresh conversation context
 
 **Optional configuration**:
 
@@ -834,34 +838,36 @@ claude:
   executable: "claude"              # Claude CLI command (usually just "claude")
   timeout: 300                       # Single request timeout (seconds)
   max_retries: 3                     # Failure retry count
-  working_directory: ""              # Base working directory (optional)
-  session_mode: "channel"            # Session mode (see below)
+  working_directory: ""              # Working directory (optional)
 ```
-
-**Session mode explanation**:
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `"channel"` | Each Discord channel has independent session | **Recommended**: Conversations in the same channel maintain context |
-| `"user"` | Each user has independent session | User's conversations remain consistent across different channels |
-| `"global"` | Globally shared session | Everyone shares the same conversation context |
-| `"none"` | New conversation each time | Default mode, no context maintained |
 
 **Working directory explanation**:
 - Leave empty (default): Use project root directory
 - Set to specific path: Let Claude access specific project files
 - Example: `working_directory: "D:/MyProject"`
-- Session directories are automatically created in `{working_directory}/sessions/{session_key}/`
 
 **Continuous conversation example**:
 ```
 You: @OH-Bot My name is Zhang San
-Bot: ✅ Message received...
+Bot: ⏳ Message received...
+Bot: 🔄 Processing...
 Bot: ✨ Response from Claude: Hello Zhang San! Nice to meet you.
+Bot: ✅ Message #X responded successfully!
 
 You: @OH-Bot What's my name?
-Bot: ✅ Message received...
+Bot: ⏳ Message received...
+Bot: 🔄 Processing...
 Bot: ✨ Response from Claude: Your name is Zhang San. (Claude remembers the previous conversation!)
+Bot: ✅ Message #Y responded successfully!
+
+You: /new
+Bot: ✅ Session reset! Starting new conversation context.
+
+You: @OH-Bot What's my name?
+Bot: ⏳ Message received...
+Bot: 🔄 Processing...
+Bot: ✨ Response from Claude: Sorry, I don't know your name. (Session reset, no memory of previous conversation)
+Bot: ✅ Message #Z responded successfully!
 ```
 
 ## Troubleshooting
