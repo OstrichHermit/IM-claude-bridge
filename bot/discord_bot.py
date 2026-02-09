@@ -440,8 +440,8 @@ class DiscordBot(commands.Bot):
                             # 首次检测到正在处理
                             try:
                                 await tracking_info["confirmation_msg"].edit(
-                                    content=f"🔄 消息 #{msg_id} 正在处理中...\n"
-                                            f"Claude Code 正在工作，请稍候。"
+                                    content=f"🔄 Claude Code 正在处理中...\n"
+                                            f"消息 #{msg_id} 已接收，AI 正在思考，请稍候。"
                                 )
                                 tracking_info["notified_processing"] = True
                                 print(f"🔄 [消息 #{msg_id}] 开始调用 Claude Code")
