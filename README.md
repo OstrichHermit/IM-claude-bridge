@@ -108,13 +108,11 @@ Claude Code 会自动加载 Skill 并提供针对性的帮助。
 │   ├── bot/
 │   ├── bridge/
 │   ├── shared/
+│   │   └── messages.db                       # 消息数据库（运行时生成）
 │   ├── config/
 │   └── docs/
 │       └── skills/
 │           └── discord-bridge-maintenance/    # 维护 Skill（从项目复制到 .claude/skills/）
-└── sessions/                                  # Claude Code 会话目录（自动生成）
-    ├── channel_1234567890/                   # 频道会话
-    └── user_9876543210/                       # 用户会话
 ```
 
 ### 设置步骤
@@ -551,13 +549,11 @@ To fully leverage Claude Code capabilities and achieve proper workspace isolatio
 │   ├── bot/
 │   ├── bridge/
 │   ├── shared/
+│   │   └── messages.db                       # Message database (generated at runtime)
 │   ├── config/
 │   └── docs/
 │       └── skills/
 │           └── discord-bridge-maintenance/    # Maintenance Skill (copy from project to .claude/skills/)
-└── sessions/                                  # Claude Code session directories (auto-generated)
-    ├── channel_1234567890/                   # Channel sessions
-    └── user_9876543210/                       # User sessions
 ```
 
 ### Setup Steps
