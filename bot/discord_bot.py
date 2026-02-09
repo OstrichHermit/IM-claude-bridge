@@ -1,8 +1,10 @@
 """
 Discord Bot 主程序
 接收 Discord 消息并转发给 Claude Code
+支持斜杠命令（Slash Commands）
 """
 import discord
+from discord import app_commands
 from discord.ext import commands
 import asyncio
 import sys
@@ -39,14 +41,77 @@ class DiscordBot(commands.Bot):
         """Bot 启动后的钩子"""
         print(f"Bot 已启动，登录为 {self.user}")
 
-        # 注册命令
+        # 清理上次崩溃时卡住的消息
+        await self.cleanup_stuck_messages()
+
+        # 注册斜杠命令
         await self.add_commands()
+
+        # 同步命令到 Discord
+        try:
+            print("🔄 正在同步斜杠命令到 Discord...")
+
+            # 检查是否配置了特定服务器 ID
+            if self.config.sync_guild_id:
+                # 同步到特定服务器（立即生效）
+                guild = discord.Object(id=int(self.config.sync_guild_id))
+                synced = await self.tree.sync(guild=guild)
+                print(f"✅ 已同步 {len(synced)} 个斜杠命令到服务器 {self.config.sync_guild_id}")
+                print(f"⚡ 服务器命令立即生效！")
+            else:
+                # 全局同步（需要等待几分钟）
+                synced = await self.tree.sync()
+                print(f"✅ 已同步 {len(synced)} 个斜杠命令（全局）")
+                print(f"⏱️  注意：全局命令可能需要 1-5 分钟才能生效")
+                print(f"💡 提示：在 config.yaml 中配置 sync_guild_id 可以立即生效")
+
+        except Exception as e:
+            print(f"⚠️ 命令同步失败: {e}")
+            print(f"📋 请确认：")
+            print(f"   1. Bot Token 是否正确")
+            print(f"   2. 是否已在 Discord Developer Portal 启用 'applications.commands' scope")
+            print(f"   3. 如果配置了 sync_guild_id，确认服务器 ID 是否正确")
 
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
 
         # 发送启动通知
         await self.send_startup_notification()
+
+    async def cleanup_stuck_messages(self):
+        """清理上次崩溃时卡住的消息（将 processing 状态改为 completed）"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.config.database_path)
+            cursor = conn.cursor()
+
+            # 查询卡住的消息数量
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
+            stuck_count = cursor.fetchone()[0]
+
+            if stuck_count > 0:
+                print(f"🧹 发现 {stuck_count} 条卡住的消息，正在清理...")
+
+                # 将 processing 状态的消息标记为 completed（避免重复处理）
+                cursor.execute("""
+                    UPDATE messages
+                    SET status = 'completed',
+                        updated_at = CURRENT_TIMESTAMP,
+                        error = 'Bot 重置：消息被标记为已完成'
+                    WHERE status = 'processing'
+                """)
+
+                affected = cursor.rowcount
+                conn.commit()
+
+                print(f"✅ 已清理 {affected} 条卡住的消息")
+            else:
+                print("✓ 没有发现卡住的消息")
+
+            conn.close()
+
+        except Exception as e:
+            print(f"⚠️ 清理卡住消息时出错: {e}")
 
     async def send_startup_notification(self):
         """发送启动通知"""
@@ -65,11 +130,11 @@ class DiscordBot(commands.Bot):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="📝 会话模式", value=f"`{self.config.session_mode}`", inline=True)
+        embed.add_field(name="📝 会话模式", value="`global` (全局共享)", inline=True)
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=True)
         embed.add_field(name="⏱️  超时时间", value=f"{self.config.claude_timeout} 秒", inline=True)
 
-        embed.add_field(name="📋 可用命令", value="`!reset` - 重置会话\n`!status` - 查看状态\n`!restart` - 重启服务", inline=False)
+        embed.add_field(name="📋 可用命令", value="`/reset` - 重置会话\n`/status` - 查看状态\n`/restart` - 重启服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name} | 启动时间: {discord.utils.format_dt(discord.utils.utcnow(), style='R')}")
 
@@ -112,83 +177,92 @@ class DiscordBot(commands.Bot):
                 print(f"❌ 发送到用户私聊失败: {e}")
 
     async def add_commands(self):
-        """注册 Bot 命令"""
+        """注册斜杠命令"""
 
-        @self.command(name='reset')
-        async def reset_command(ctx: commands.Context):
-            """重置当前频道的 Claude 会话"""
+        @self.tree.command(name="reset", description="重置全局会话，开始新的对话上下文")
+        async def reset_command(interaction: discord.Interaction):
+            """重置全局 Claude 会话"""
             # 检查用户权限
             if self.config.allowed_users:
-                if ctx.author.id not in self.config.allowed_users:
-                    await ctx.send(f"❌ {ctx.author.mention}，您没有权限执行此操作。")
+                if interaction.user.id not in self.config.allowed_users:
+                    await interaction.response.send_message(
+                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
+                        ephemeral=True
+                    )
                     return
 
-            # 获取会话 key
-            session_key = self.message_queue.get_session_key(
-                self.config.session_mode,
-                ctx.channel.id,
-                ctx.author.id
+            # 获取全局会话的工作目录
+            session_key, old_session_id, _, working_dir = self.message_queue.get_or_create_session(
+                self.config.working_directory
             )
 
-            if session_key:
-                # 删除会话
-                deleted = self.message_queue.delete_session(session_key)
-                if deleted:
-                    await ctx.send(
-                        f"✅ {ctx.author.mention}，会话已重置！\n"
-                        f"下次对话将开始新的会话，使用新的工作目录。"
-                    )
-                    print(f"[会话重置] 用户 {ctx.author.display_name} 重置了会话: {session_key}")
-                else:
-                    await ctx.send(
-                        f"⚠️ {ctx.author.mention}，没有找到活跃的会话。"
-                    )
+            # 删除会话（包括数据库记录和 Claude Code 会话文件）
+            deleted = self.message_queue.delete_session(session_key, working_dir)
+
+            # 验证重置：重新获取会话，应该生成新的 session_id
+            session_key, new_session_id, session_created, _ = self.message_queue.get_or_create_session(
+                self.config.working_directory
+            )
+
+            if deleted:
+                await interaction.response.send_message(
+                    f"✅ {interaction.user.mention}，全局会话已重置！\n"
+                    f"**旧的 Session ID**: `{old_session_id[:8]}...` (已删除)\n"
+                    f"**新的 Session ID**: `{new_session_id[:8]}...`\n"
+                    f"下次对话将使用新的会话 ID 创建全新上下文。"
+                )
+                print(f"[会话重置] 用户 {interaction.user.display_name} 重置了全局会话")
+                print(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
+                print(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
             else:
-                await ctx.send(
-                    f"ℹ️ {ctx.author.mention}，当前会话模式为 `{self.config.session_mode}`，无需重置。"
+                await interaction.response.send_message(
+                    f"⚠️ {interaction.user.mention}，没有找到活跃的会话。\n"
+                    f"**当前 Session ID**: `{new_session_id[:8]}...`"
                 )
 
-        @self.command(name='status')
-        async def status_command(ctx: commands.Context):
+        @self.tree.command(name="status", description="查看当前会话和系统状态")
+        async def status_command(interaction: discord.Interaction):
             """查看当前会话状态"""
-            session_key = self.message_queue.get_session_key(
-                self.config.session_mode,
-                ctx.channel.id,
-                ctx.author.id
+            # 获取全局会话信息（包括 session_id）
+            session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
+                self.config.working_directory
             )
-
-            mode_desc = {
-                'channel': '每个频道独立会话',
-                'user': '每个用户独立会话',
-                'global': '全局共享会话',
-                'none': '无会话保持'
-            }
 
             embed = discord.Embed(
                 title="📊 Claude Bridge 状态",
                 color=discord.Color.blue()
             )
-            embed.add_field(name="会话模式", value=f"`{self.config.session_mode}` - {mode_desc.get(self.config.session_mode, '未知')}", inline=False)
-            embed.add_field(name="当前会话", value=f"`{session_key}`" if session_key else "`无`", inline=False)
+            embed.add_field(name="会话模式", value="`global` - 全局共享会话", inline=False)
+
+            # 显示 session key 和 session ID
+            session_info = f"**Key**: `{session_key}`\n"
+            if session_id:
+                session_info += f"**ID**: `{session_id}`\n"
+            session_info += f"**已创建**: {'是' if session_created else '否'}"
+            embed.add_field(name="当前会话", value=session_info, inline=False)
+
             embed.add_field(name="工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
 
-        @self.command(name='restart')
-        async def restart_command(ctx: commands.Context):
+        @self.tree.command(name="restart", description="重启 Discord Bridge 服务")
+        async def restart_command(interaction: discord.Interaction):
             """重启 Discord Bridge 服务"""
             # 检查用户权限
             if self.config.allowed_users:
-                if ctx.author.id not in self.config.allowed_users:
-                    await ctx.send(f"❌ {ctx.author.mention}，您没有权限执行此操作。")
+                if interaction.user.id not in self.config.allowed_users:
+                    await interaction.response.send_message(
+                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
+                        ephemeral=True
+                    )
                     return
 
             # 发送确认消息
-            await ctx.send(
-                f"🔄 {ctx.author.mention}，正在重启 Discord Bridge 服务...\n"
+            await interaction.response.send_message(
+                f"🔄 {interaction.user.mention}，正在重启 Discord Bridge 服务...\n"
                 f"请稍候，服务将在几秒钟后重新启动。"
             )
-            print(f"[重启命令] 用户 {ctx.author.display_name} 触发了服务重启")
+            print(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
 
             # 执行重启脚本
             import subprocess
@@ -209,11 +283,11 @@ class DiscordBot(commands.Bot):
                     )
                     print(f"✅ 重启脚本已执行: {restart_script}")
                 else:
-                    await ctx.send(f"❌ 找不到重启脚本 `restart.bat`")
+                    await interaction.followup.send(f"❌ 找不到重启脚本 `restart.bat`")
                     print(f"⚠️  重启脚本不存在: {restart_script}")
 
             except Exception as e:
-                await ctx.send(f"❌ 重启失败: {str(e)}")
+                await interaction.followup.send(f"❌ 重启失败: {str(e)}")
                 print(f"❌ 执行重启脚本时出错: {e}")
                 import traceback
                 traceback.print_exc()
@@ -222,8 +296,7 @@ class DiscordBot(commands.Bot):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
-        print(f"✓ 命令前缀: @{self.user.name} ")
-        print(f"✓ 可用命令: !reset, !status, !restart")
+        print(f"✓ 斜杠命令: /reset, /status, /restart")
 
     async def on_message(self, message: discord.Message):
         """处理接收到的消息"""

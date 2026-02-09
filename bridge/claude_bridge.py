@@ -29,17 +29,19 @@ class ClaudeBridge:
         """处理单条消息"""
         print(f"[消息 #{message.id}] 开始处理: {message.content[:50]}...")
 
-        # 获取或创建会话工作目录
-        session_key, working_dir = self.message_queue.get_or_create_session(
-            self.config.session_mode,
-            message.discord_channel_id,
-            message.discord_user_id,
+        # 获取或创建全局会话工作目录
+        session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
             self.config.working_directory
         )
 
         if session_key:
-            print(f"[消息 #{message.id}] 使用会话: {session_key}")
+            print(f"[消息 #{message.id}] ========== 会话信息 ==========")
+            print(f"[消息 #{message.id}] 会话 Key: {session_key}")
+            print(f"[消息 #{message.id}] 会话 ID: {session_id}")
+            print(f"[消息 #{message.id}] 会话已创建: {session_created}")
+            print(f"[消息 #{message.id}] CLI 调用模式: {'--session-id (首次)' if not session_created else '-c (续会)'}")
             print(f"[消息 #{message.id}] 工作目录: {working_dir}")
+            print(f"[消息 #{message.id}] ===============================")
 
         # 先更新状态为 PROCESSING（无 response），让 Discord Bot 知道正在调用 Claude
         self.message_queue.update_status(message.id, MessageStatus.PROCESSING)
@@ -50,6 +52,8 @@ class ClaudeBridge:
             response = await self.call_claude_cli(
                 message.content,
                 session_key,
+                session_id,
+                session_created,
                 working_dir,
                 username=message.username,
                 user_id=message.discord_user_id,
@@ -57,6 +61,10 @@ class ClaudeBridge:
             )
 
             if response:
+                # 如果是首次调用（session_created=False），标记会话已创建
+                if not session_created:
+                    self.message_queue.mark_session_created(session_key)
+
                 # 更新消息，添加响应
                 self.message_queue.update_status(
                     message.id,
@@ -88,7 +96,7 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
@@ -96,6 +104,8 @@ class ClaudeBridge:
         Args:
             prompt: 用户提示词
             session_key: 会话 key（可选），用于保持对话上下文
+            session_id: 会话 ID（可选），用于指定或创建 Claude Code 会话
+            session_created: 会话是否已创建（首次为 False，后续为 True）
             working_dir: 工作目录，每个会话使用独立目录以保持对话历史
             username: 发送者用户名（频道模式下需要）
             user_id: 发送者用户 ID（频道模式下需要）
@@ -119,9 +129,21 @@ class ClaudeBridge:
                 # 构建命令参数
                 cmd_args = ['-p']  # print 模式：直接输出响应并退出
 
-                # 如果需要保持会话，使用 --continue 参数
-                if session_key:
-                    cmd_args.append('-c')  # continue：继续最近的对话
+                # ========== 会话处理逻辑 ==========
+                # 1. 首次或重置后（session_created=False）：使用 --session-id 指定新会话
+                # 2. 后续（session_created=True）：使用 -c 继续会话
+                if session_created:
+                    # 后续调用：使用 -c 继续会话
+                    cmd_args.append('-c')
+                    print(f"🔄 [续会模式] 使用 -c 继续现有会话")
+                else:
+                    # 首次调用：使用 --session-id 指定会话
+                    if session_id:
+                        cmd_args.extend(['--session-id', session_id])
+                        print(f"🆕 [首次模式] 使用 --session-id {session_id} 创建新会话")
+                    else:
+                        print(f"⚠️  警告：session_id 为空，将使用 Claude 默认会话")
+                # ===================================
 
                 # 添加提示词
                 cmd_args.append(prompt)

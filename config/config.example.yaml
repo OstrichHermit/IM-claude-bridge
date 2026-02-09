@@ -19,12 +19,7 @@ claude:
   # 工作目录（可选，留空则使用当前目录）
   # 对于需要访问特定项目文件的任务很有用
   working_directory: ""
-  # 会话模式（可选）
-  # - "channel": 每个 Discord 频道独立的会话（推荐）
-  # - "user": 每个用户独立的会话
-  # - "global": 全局共享会话
-  # - "none": 每次都是新对话（默认）
-  session_mode: "channel"
+  # 会话模式：固定为 global（全局共享会话）
 
 # 消息队列配置
 queue:

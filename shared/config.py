@@ -83,11 +83,6 @@ class Config:
         return str(wd)
 
     @property
-    def session_mode(self) -> str:
-        """获取会话模式"""
-        return self._config.get('claude', {}).get('session_mode', 'none')
-
-    @property
     def database_path(self) -> str:
         """获取消息队列数据库路径"""
         db_path = self._config.get('queue', {}).get('database_path', './shared/messages.db')
@@ -116,3 +111,8 @@ class Config:
     def startup_notification_user(self) -> str:
         """获取启动通知用户 ID（私聊）"""
         return self._config.get('discord', {}).get('startup_notification_user', '')
+
+    @property
+    def sync_guild_id(self) -> str:
+        """获取斜杠命令同步的服务器 ID（留空则全局同步）"""
+        return self._config.get('discord', {}).get('sync_guild_id', '')
