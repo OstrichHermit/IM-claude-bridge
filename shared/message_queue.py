@@ -16,6 +16,7 @@ class MessageStatus(Enum):
     """消息状态枚举"""
     PENDING = "pending"      # 等待处理
     PROCESSING = "processing" # 正在处理
+    AI_STARTED = "ai_started" # AI 开始工作（新的中间状态）
     COMPLETED = "completed"   # 已完成
     FAILED = "failed"        # 失败
 

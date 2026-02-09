@@ -421,7 +421,8 @@ class DiscordBot(commands.Bot):
 
                     # 状态 1: PENDING - 等待 Claude Bridge 接收
                     if status == MessageStatus.PENDING.value:
-                        if not tracking_info.get("notified_pending_timeout") and elapsed_time > 30:
+                        # 只有在未进入 AI_STARTED 状态时才检查超时
+                        if not tracking_info.get("notified_ai_started") and not tracking_info.get("notified_pending_timeout") and elapsed_time > 30:
                             # 超过 30 秒仍未被接收
                             try:
                                 await tracking_info["confirmation_msg"].edit(
@@ -434,22 +435,37 @@ class DiscordBot(commands.Bot):
                                 print(f"⚠️ 无法编辑确认消息: {e}")
                             print(f"⚠️ [消息 #{msg_id}] PENDING 超时（{int(elapsed_time)}秒）")
 
-                    # 状态 2: PROCESSING 且无 response - 正在调用 Claude Code
+                    # 状态 2: PROCESSING 且无 response - Claude Bridge已接收，正在调用CLI
                     elif status == MessageStatus.PROCESSING.value and not response:
-                        if not tracking_info.get("notified_processing"):
-                            # 首次检测到正在处理
+                        if not tracking_info.get("notified_bridge_received"):
+                            # Claude Bridge成功接收消息
                             try:
                                 await tracking_info["confirmation_msg"].edit(
-                                    content=f"🔄 Claude Code 正在处理中...\n"
-                                            f"消息 #{msg_id} 已接收，AI 正在思考，请稍候。"
+                                    content=f"⏳ 消息 #{msg_id} 处理中\n"
+                                            f"Claude Bridge 已接收消息，正在调用 Claude Code CLI..."
                                 )
-                                tracking_info["notified_processing"] = True
-                                print(f"🔄 [消息 #{msg_id}] 开始调用 Claude Code")
+                                tracking_info["notified_bridge_received"] = True
+                                print(f"📥 [消息 #{msg_id}] Claude Bridge 已接收消息")
                             except Exception as e:
                                 print(f"⚠️ 无法编辑确认消息: {e}")
 
-                    # 状态 3: PROCESSING 且有 response - 收到响应
+                    # 状态 2.5: AI_STARTED - AI 开始工作！
+                    elif status == MessageStatus.AI_STARTED.value:
+                        if not tracking_info.get("notified_ai_started"):
+                            try:
+                                await tracking_info["confirmation_msg"].edit(
+                                    content=f"🔄 Claude Code 处理中\n"
+                                            f"消息 #{msg_id} 已接收，AI 正在思考，请稍候。"
+                                )
+                                tracking_info["notified_ai_started"] = True
+                                print(f"🤖 [消息 #{msg_id}] AI 开始工作（实时检测）")
+                            except Exception as e:
+                                print(f"⚠️ 无法编辑确认消息: {e}")
+
+                    # 状态 3: PROCESSING 且有 response - AI 响应完成，发送响应
                     elif status == MessageStatus.PROCESSING.value and response:
+                        # AI_STARTED 状态已经提前触发了"Claude Code 处理中"提示
+                        # 这里直接发送响应即可
                         try:
                             # 获取完整消息信息
                             conn = sqlite3.connect(self.config.database_path)

@@ -48,7 +48,7 @@ class ClaudeBridge:
         print(f"[消息 #{message.id}] 已更新状态为 PROCESSING")
 
         try:
-            # 调用 Claude Code CLI
+            # 调用 Claude Code CLI（传递 message_id 用于实时更新状态）
             response = await self.call_claude_cli(
                 message.content,
                 session_key,
@@ -57,7 +57,8 @@ class ClaudeBridge:
                 working_dir,
                 username=message.username,
                 user_id=message.discord_user_id,
-                is_dm=message.is_dm
+                is_dm=message.is_dm,
+                message_id=message.id
             )
 
             if response:
@@ -96,10 +97,11 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
+        使用流式输出实时检测 AI 开始工作
 
         Args:
             prompt: 用户提示词
@@ -110,7 +112,10 @@ class ClaudeBridge:
             username: 发送者用户名（频道模式下需要）
             user_id: 发送者用户 ID（频道模式下需要）
             is_dm: 是否为私聊消息
+            message_id: 消息 ID，用于实时更新状态
         """
+        import json
+
         retries = 0
         max_retries = self.config.max_retries
 
@@ -128,6 +133,9 @@ class ClaudeBridge:
 
                 # 构建命令参数
                 cmd_args = ['-p']  # print 模式：直接输出响应并退出
+                cmd_args.append('--verbose')  # 启用详细输出
+                cmd_args.append('--output-format')
+                cmd_args.append('stream-json')  # 使用流式 JSON 输出
 
                 # ========== 会话处理逻辑 ==========
                 # 1. 首次或重置后（session_created=False）：使用 --session-id 指定新会话
@@ -157,27 +165,83 @@ class ClaudeBridge:
                     cwd=cwd  # 使用会话专用的工作目录
                 )
 
+                ai_started_notified = False  # 标记是否已通知 AI 开始工作
+                response_lines = []
+
                 try:
-                    stdout, stderr = await asyncio.wait_for(
-                        process.communicate(),
-                        timeout=self.config.claude_timeout
-                    )
+                    # 实时读取流式输出
+                    while True:
+                        # AI 开始工作前，使用较短超时(30秒)；AI 开始后，不限制超时
+                        read_timeout = None if ai_started_notified else 30.0
 
-                    if process.returncode == 0:
-                        response = stdout.decode('utf-8', errors='replace').strip()
+                        try:
+                            if read_timeout is None:
+                                # AI 已开始，无超时限制
+                                line = await process.stdout.readline()
+                            else:
+                                # AI 未开始，有超时限制
+                                line = await asyncio.wait_for(
+                                    process.stdout.readline(),
+                                    timeout=read_timeout
+                                )
+                        except asyncio.TimeoutError:
+                            # AI 未开始就超时，真正超时
+                            raise
 
-                        # 如果响应为空，检查是否有 stderr 输出
-                        if not response:
-                            stderr_output = stderr.decode('utf-8', errors='replace').strip()
-                            if stderr_output:
-                                print(f"⚠️  Claude 输出了警告信息: {stderr_output}")
+                        if not line:  # EOF
+                            break
+
+                        line_str = line.decode('utf-8', errors='replace').strip()
+
+                        if not line_str:
+                            continue
+
+                        # 解析 JSON 行
+                        try:
+                            data = json.loads(line_str)
+
+                            # 检测 AI 开始工作事件
+                            if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
+                                print(f"🚀 [消息 #{message_id}] AI 开始工作")
+                                # 立即更新状态为 AI_STARTED
+                                if message_id:
+                                    self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
+                                ai_started_notified = True
+
+                            # 收集 assistant 消息作为响应
+                            elif data.get('type') == 'assistant' and data.get('message'):
+                                message_data = data.get('message', {})
+                                if message_data.get('content'):
+                                    for content_item in message_data['content']:
+                                        if content_item.get('type') == 'text':
+                                            text = content_item.get('text', '')
+                                            response_lines.append(text)
+
+                        except json.JSONDecodeError:
+                            # 不是 JSON 行，可能是普通文本输出
+                            pass
+
+                    # 等待进程结束
+                    if ai_started_notified:
+                        # AI 已开始，无超时限制，等待多久都可以
+                        returncode = await process.wait()
+                    else:
+                        # AI 未开始就结束了，使用配置的超时
+                        returncode = await asyncio.wait_for(
+                            process.wait(),
+                            timeout=self.config.claude_timeout
+                        )
+
+                    if returncode == 0:
+                        response = '\n'.join(response_lines).strip()
 
                         print(f"✅ Claude 响应成功 (长度: {len(response) if response else 0} 字符)")
                         return response if response else "(Claude 没有返回文本响应)"
                     else:
-                        # 命令执行失败
-                        error_output = stderr.decode('utf-8', errors='replace').strip()
-                        error_msg = f"Claude Code 返回错误码 {process.returncode}"
+                        # 命令执行失败，读取 stderr
+                        stderr_output = await process.stderr.read()
+                        error_output = stderr_output.decode('utf-8', errors='replace').strip()
+                        error_msg = f"Claude Code 返回错误码 {returncode}"
                         if error_output:
                             error_msg += f": {error_output}"
 
