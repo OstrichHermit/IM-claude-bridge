@@ -124,11 +124,16 @@ class ClaudeBridge:
         # 使用传入的 working_dir，如果没有则使用默认配置
         cwd = working_dir or self.config.working_directory
 
-        # 在频道模式下，附加发送者信息和频道 ID 到提示词
-        if not is_dm and username and user_id:
-            if channel_id:
-                prompt = f"来自频道（{channel_id}）的{username}（{user_id}）说：{prompt}"
+        # 附加发送者信息到提示词
+        if username and user_id:
+            if is_dm:
+                # 私聊模式
+                prompt = f"{username}（{user_id}）在私聊中说：{prompt}"
+            elif channel_id:
+                # 频道模式（带频道 ID）
+                prompt = f"{username}（{user_id}）在频道（{channel_id}）中说：{prompt}"
             else:
+                # 频道模式（不带频道 ID）
                 prompt = f"{username}（{user_id}）说：{prompt}"
 
         while retries < max_retries:
