@@ -1,39 +1,26 @@
 @echo off
 REM Discord Bridge System Restart Script
-REM Close all related windows and restart services
+REM 独立重启脚本，不依赖 manager
 
 echo ========================================
 echo   Discord Bridge System Restart
 echo ========================================
 echo.
 
-REM Close all related windows
-echo [1/4] Closing all Discord Bridge windows...
+REM Terminate specific Python processes by command line
+echo [1/3] Terminating Discord Bridge processes...
 
-taskkill /FI "WINDOWTITLE eq Discord Bot*" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq Claude Bridge*" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq Discord Bridge Startup*" /F >nul 2>&1
+wmic process where "name='python.exe' and commandline like '%%discord_bot.py%%'" delete >nul 2>&1
+wmic process where "name='python.exe' and commandline like '%%claude_bridge.py%%'" delete >nul 2>&1
 
-echo   - Service windows closed
-
-REM Terminate all Python processes
-echo [2/4] Terminating old Python processes...
-
-for /f "tokens=2" %%a in ('tasklist ^| findstr /i "python.exe"') do (
-    taskkill /F /PID %%a >nul 2>&1
-    if errorlevel 1 (
-        echo   - Process %%a not running or already closed
-    ) else (
-        echo   - Terminated process %%a
-    )
-)
+echo   - Discord Bot and Claude Bridge processes terminated
 
 echo.
-echo [3/4] Waiting for processes to exit...
+echo [2/3] Waiting for processes to exit...
 timeout /t 2 /nobreak >nul
 
 echo.
-echo [4/4] Starting Discord Bridge services...
+echo [3/3] Starting Discord Bridge services...
 
 REM Start Discord Bot
 start "Discord Bot" cmd /k python bot\discord_bot.py

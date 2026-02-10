@@ -1,5 +1,5 @@
 @echo off
-REM Discord Claude Bridge Startup Script (Windows)
+REM Discord Claude Bridge - Unified Startup Script (Windows)
 
 echo ========================================
 echo   Discord Claude Bridge Starting
@@ -24,7 +24,7 @@ if not exist "config\config.yaml" (
 )
 
 REM Check dependencies
-echo [1/3] Checking Python dependencies...
+echo [1/4] Checking dependencies...
 python -c "import discord, yaml" >nul 2>&1
 if errorlevel 1 (
     echo [INFO] Installing dependencies...
@@ -39,20 +39,25 @@ if errorlevel 1 (
 REM Create shared directory if not exists
 if not exist "shared" mkdir shared
 
-echo [2/3] Starting Discord Bot...
+echo [2/4] Starting Discord Bot...
 start "Discord Bot" python bot/discord_bot.py
 
-timeout /t 2 /nobreak >nul
-
-echo [3/3] Starting Claude Bridge...
+echo [3/4] Starting Claude Bridge...
 start "Claude Bridge" python bridge/claude_bridge.py
 
+echo [4/4] Starting Manager (monitor)...
+start "Manager" python manager.py start
+
 echo.
 echo ========================================
-echo   All Services Started!
+echo   All Services Started Successfully
 echo ========================================
 echo.
-echo Note: Closing this window will NOT stop the services.
-echo To stop, close the individual service windows.
+echo Running services:
+echo   - Discord Bot
+echo   - Claude Bridge
+echo   - Manager (monitor)
+echo.
+echo To stop all services, use: manager.bat stop
 echo.
 pause

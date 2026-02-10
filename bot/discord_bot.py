@@ -38,6 +38,7 @@ class DiscordBot(commands.Bot):
         self.file_request_check_task = None
         self.file_download_check_task = None
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
+        self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
@@ -149,7 +150,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/restart` - 重启服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -257,6 +258,76 @@ class DiscordBot(commands.Bot):
 
             await interaction.response.send_message(embed=embed)
 
+        @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
+        async def stop_command(interaction: discord.Interaction):
+            """停止 Discord Bridge 服务（需要 60 秒内再次使用 /stop 确认）"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    await interaction.response.send_message(
+                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
+                        ephemeral=True
+                    )
+                    return
+
+            import time
+            user_id = interaction.user.id
+            current_time = time.time()
+
+            # 检查是否有未过期的停止请求
+            if user_id in self.stop_requests:
+                request_time = self.stop_requests[user_id]["timestamp"]
+                time_diff = current_time - request_time
+
+                if time_diff <= 60:  # 60 秒内再次使用 /stop
+                    # 确认停止
+                    del self.stop_requests[user_id]  # 清除记录
+
+                    await interaction.response.send_message(
+                        f"🛑 {interaction.user.mention}，正在停止 Discord Bridge 服务...\n"
+                        f"服务将在几秒钟后停止。"
+                    )
+                    print(f"[停止命令] 用户 {interaction.user.display_name} 确认停止服务")
+
+                    # 执行停止脚本（通过 manager）
+                    import subprocess
+                    import os
+
+                    try:
+                        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        manager_script = os.path.join(script_dir, 'manager.py')
+
+                        if os.path.exists(manager_script):
+                            # 在后台执行 manager stop
+                            subprocess.Popen(
+                                ["python", manager_script, "stop"],
+                                cwd=script_dir,
+                                creationflags=subprocess.CREATE_NEW_CONSOLE
+                            )
+                            print(f"✅ 停止命令已执行: python manager.py stop")
+                        else:
+                            await interaction.followup.send(f"❌ 找不到 manager.py")
+                            print(f"⚠️  manager.py 不存在: {manager_script}")
+
+                    except Exception as e:
+                        await interaction.followup.send(f"❌ 停止失败: {str(e)}")
+                        print(f"❌ 执行停止命令时出错: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                    return
+
+            # 第一次使用 /stop，记录请求
+            self.stop_requests[user_id] = {"timestamp": current_time}
+
+            await interaction.response.send_message(
+                f"⚠️ {interaction.user.mention}，确定要停止 Discord Bridge 服务吗？\n"
+                f"此操作将停止 Bot 和 Bridge，服务将不再响应消息。\n\n"
+                f"**如需确认，请在 60 秒内再次使用 `/stop` 命令**"
+            )
+
+            print(f"[停止命令] 用户 {interaction.user.display_name} 请求停止服务，等待再次确认...")
+
         @self.tree.command(name="restart", description="重启 Discord Bridge 服务")
         async def restart_command(interaction: discord.Interaction):
             """重启 Discord Bridge 服务"""
@@ -276,31 +347,30 @@ class DiscordBot(commands.Bot):
             )
             print(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
 
-            # 执行重启脚本
+            # 执行重启脚本（通过 manager）
             import subprocess
             import os
 
             try:
                 # 获取项目根目录
                 script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                restart_script = os.path.join(script_dir, 'restart.bat')
+                manager_script = os.path.join(script_dir, 'manager.py')
 
-                if os.path.exists(restart_script):
-                    # 在后台执行重启脚本
+                if os.path.exists(manager_script):
+                    # 在后台执行 manager restart
                     subprocess.Popen(
-                        restart_script,
-                        shell=True,
+                        ["python", manager_script, "restart"],
                         cwd=script_dir,
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
-                    print(f"✅ 重启脚本已执行: {restart_script}")
+                    print(f"✅ 重启命令已执行: python manager.py restart")
                 else:
-                    await interaction.followup.send(f"❌ 找不到重启脚本 `restart.bat`")
-                    print(f"⚠️  重启脚本不存在: {restart_script}")
+                    await interaction.followup.send(f"❌ 找不到 manager.py")
+                    print(f"⚠️  manager.py 不存在: {manager_script}")
 
             except Exception as e:
                 await interaction.followup.send(f"❌ 重启失败: {str(e)}")
-                print(f"❌ 执行重启脚本时出错: {e}")
+                print(f"❌ 执行重启命令时出错: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -308,7 +378,7 @@ class DiscordBot(commands.Bot):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
-        print(f"✓ 斜杠命令: /new, /status, /restart")
+        print(f"✓ 斜杠命令: /new, /status, /stop, /restart")
 
     async def on_message(self, message: discord.Message):
         """处理接收到的消息"""

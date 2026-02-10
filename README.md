@@ -8,13 +8,23 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 ---
 
-## ✨ 功能特性
+## ✨ 核心功能
 
-- ✅ @Bot 调用 Claude Code（支持持续对话）
-- ✅ 消息追踪系统（实时状态提示）
-- ✅ 会话管理（`/new` 重置、`/status` 状态、`/restart` 重启）
-- ✅ 文件下载功能（从 Discord 下载附件到本地）
-- ✅ MCP 服务器（Claude Code 可发送文件到 Discord）
+**消息交互**
+- ✅ @Bot 调用本地 Claude Code CLI
+- ✅ 持续对话支持（会话管理）
+- ✅ 实时状态反馈（接收 → 处理 → 响应）
+- ✅ 消息追踪系统（避免重复处理）
+
+**文件传输**
+- ✅ 从 Discord 下载附件到本地
+- ✅ 通过 MCP 发送文件到 Discord
+- ✅ 批量文件传输支持
+
+**服务管理**
+- ✅ Windows 守护进程（自动监控重启）
+- ✅ Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`）
+- ✅ 消息队列系统（SQLite 持久化）
 
 ## 🚀 快速开始
 
@@ -79,15 +89,13 @@ cp config/config.example.yaml config.yaml
 
 ### 4. 启动服务
 
-**启动服务**：
+**一键启动**（推荐）：
 ```bash
 start.bat
 ```
 
-**重启服务**：
-```bash
-restart.bat
-```
+> Manager 守护进程会自动启动并监控所有服务（Bot + Bridge）
+
 
 ### 5. 使用方法
 
@@ -109,6 +117,7 @@ Bot 会：
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
 - `/restart` - 重启服务
+- `/stop` - 停止服务
 
 #### 5.3 文件下载
 
