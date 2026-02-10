@@ -10,11 +10,21 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 ## ✨ Features
 
-- ✅ @Bot to call Claude Code (supports continuous conversation)
-- ✅ Message tracking system (real-time status updates)
-- ✅ Session management (`/new` reset, `/status` check, `/restart` reboot)
-- ✅ File download feature (download attachments from Discord to local)
-- ✅ MCP server (Claude Code can send files to Discord)
+**Message Interaction**
+- ✅ @Bot to call local Claude Code CLI
+- ✅ Continuous conversation support (session management)
+- ✅ Real-time status feedback (received → processing → response)
+- ✅ Message tracking system (avoid duplicate processing)
+
+**File Transfer**
+- ✅ Download attachments from Discord to local
+- ✅ Send files to Discord via MCP
+- ✅ Batch file transfer support
+
+**Service Management**
+- ✅ Windows daemon process (auto monitor & restart)
+- ✅ Discord slash commands (`/new`, `/status`, `/restart`, `/stop`)
+- ✅ Message queue system (SQLite persistence)
 
 ## 🚀 Quick Start
 
@@ -79,15 +89,12 @@ Visit [Discord Developer Portal](https://discord.com/developers/applications):
 
 ### 4. Start Service
 
-**Start service**:
+**One-click start** (recommended):
 ```bash
 start.bat
 ```
 
-**Restart service**:
-```bash
-restart.bat
-```
+> Manager daemon will automatically start and monitor all services (Bot + Bridge)
 
 ### 5. Usage
 
@@ -109,6 +116,7 @@ Bot will:
 - `/new` - Reset session, start new conversation context
 - `/status` - View system status (session ID, database statistics, etc.)
 - `/restart` - Restart service
+- `/stop` - Stop service
 
 #### 5.3 File Download
 
@@ -120,6 +128,9 @@ Reply to a message with attachments, @Bot and specify directory:
 
 # Specify directory
 @YourBot download to D:/myfiles
+
+# English format
+@YourBot save D:/downloads
 
 # Direct path
 @YourBot D:/AgentWorkspace/files
