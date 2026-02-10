@@ -42,6 +42,7 @@ cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
 
 ### 1. 前置要求
 
+- Windows 系统
 - Python 3.8+
 - Discord Bot Token
 - Claude Code CLI
@@ -72,20 +73,14 @@ cp config/config.example.yaml config.yaml
 
 ### 4. 启动服务
 
-**Windows:**
+**启动服务**：
 ```bash
 start.bat
 ```
 
-**Linux/Mac:**
+**重启服务**：
 ```bash
-chmod +x start.sh
-./start.sh
-```
-
-**重启服务:**
-```bash
-restart.bat  # Windows
+restart.bat
 ```
 
 ### 5. 使用方法
@@ -145,9 +140,7 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 
 ### 配置方法
 
-**配置文件位置**：
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- macOS/Linux: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**配置文件位置**：`%APPDATA%\Claude\claude_desktop_config.json`
 
 **添加 MCP 服务器**：
 ```json
