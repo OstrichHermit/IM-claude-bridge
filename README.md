@@ -2,7 +2,13 @@
 
 将 Discord 消息桥接到本地 Claude Code CLI 的双向通信系统。
 
-## 功能特性
+A two-way communication system that bridges Discord messages to your local Claude Code CLI.
+
+[English](README_EN.md) | [简体中文](README.md)
+
+---
+
+## ✨ 功能特性
 
 - ✅ @Bot 调用 Claude Code（支持持续对话）
 - ✅ 消息追踪系统（实时状态提示）
@@ -10,7 +16,7 @@
 - ✅ 文件下载功能（从 Discord 下载附件到本地）
 - ✅ MCP 服务器（Claude Code 可发送文件到 Discord）
 
-## 快速开始
+## 🚀 快速开始
 
 ### 0. 推荐工作区结构
 
@@ -134,7 +140,7 @@ file_download:
   default_directory: "D:/AgentWorkspace/downloads"
 ```
 
-## MCP 服务器集成
+## 🔌 MCP 服务器集成
 
 Claude Code 可通过 MCP 协议发送文件到 Discord。
 
@@ -168,7 +174,7 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 
 详细配置请参考：[MCP_SETUP.md](MCP_SETUP.md)
 
-## 配置选项
+## ⚙️ 配置选项
 
 ### config.yaml 主要配置
 
@@ -194,7 +200,7 @@ queue:
   message_retention_hours: 24          # 消息保留时间
 ```
 
-## 故障排查
+## 🔧 故障排查
 
 ### Bot 无响应
 
@@ -214,10 +220,10 @@ queue:
 - 大文件可能需要更长时间，请耐心等待
 - 如一直超时，检查 Bot 进程是否运行
 
-## 许可证
+## 📄 许可证
 
 MIT License
 
-## 贡献
+## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
