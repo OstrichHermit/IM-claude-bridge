@@ -11,6 +11,11 @@ from mcp_server.services.discord_service import (
     ValidationError,
     FileNotFoundError
 )
+from shared.message_queue import (
+    MessageQueue,
+    FileDownloadRequest,
+    FileDownloadRequestStatus
+)
 
 
 async def send_file_to_discord(
@@ -227,5 +232,126 @@ async def list_discord_channels() -> str:
         return json.dumps({
             "success": False,
             "message": "获取频道列表失败",
+            "error": str(e)
+        }, ensure_ascii=False, indent=2)
+
+
+async def download_file_from_discord(
+    message_id: str,
+    channel_id: str,
+    save_directory: str,
+    timeout: int = 60
+) -> str:
+    """
+    从 Discord 消息中下载附件到指定目录（支持私聊和频道）
+
+    通过消息队列请求 Discord Bot 下载指定消息的附件。
+    Bot 会将附件下载到指定目录，并返回下载结果。
+
+    Args:
+        message_id: Discord 消息 ID（必需），格式：数字字符串
+        channel_id: Discord 频道/私聊 ID（必需），格式：数字字符串
+        save_directory: 本地保存目录路径（必需）
+        timeout: 等待超时时间（秒），默认 60 秒
+
+    Returns:
+        JSON格式的下载结果，包含成功状态和文件信息
+
+    Examples:
+        # 下载频道消息中的附件
+        download_file_from_discord(
+            message_id="123456789",
+            channel_id="987654321",
+            save_directory="D:/Downloads"
+        )
+
+        # 下载私聊消息中的附件
+        download_file_from_discord(
+            message_id="123456789",
+            channel_id="987654321",
+            save_directory="D:/Downloads",
+            timeout=120
+        )
+
+    Note:
+        - message_id 可以从 Discord 开发者模式中复制
+        - channel_id 可以从 Discord 开发者模式中复制
+        - 支持一条消息多个附件批量下载
+        - 自动处理文件名冲突（重命名为 file_1.jpg, file_2.jpg）
+        - 自动创建保存目录（如不存在）
+        - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
+    """
+    try:
+        import json
+        from shared.config import Config
+
+        # 获取配置
+        config = Config()
+        message_queue = MessageQueue(config.database_path)
+
+        # 创建文件下载请求
+        download_request = FileDownloadRequest(
+            id=None,
+            discord_message_id=int(message_id),
+            discord_channel_id=int(channel_id),
+            save_directory=save_directory,
+            status=FileDownloadRequestStatus.PENDING.value
+        )
+
+        # 添加到队列
+        request_id = message_queue.add_file_download_request(download_request)
+
+        print(f"[文件下载 #{request_id}] 已创建下载请求")
+        print(f"[文件下载 #{request_id}] 消息 ID: {message_id}, 频道 ID: {channel_id}")
+        print(f"[文件下载 #{request_id}] 保存目录: {save_directory}")
+
+        # 等待 Bot 处理完成
+        result = message_queue.get_file_download_request(request_id, timeout=timeout)
+
+        if result is None:
+            return json.dumps({
+                "success": False,
+                "message": f"下载请求超时（{timeout}秒）",
+                "error": "timeout",
+                "request_id": request_id
+            }, ensure_ascii=False, indent=2)
+
+        # 检查结果
+        if result.status == FileDownloadRequestStatus.COMPLETED.value:
+            # 解析下载的文件列表
+            downloaded_files = []
+            if result.downloaded_files:
+                try:
+                    downloaded_files = json.loads(result.downloaded_files)
+                except json.JSONDecodeError:
+                    pass
+
+            return json.dumps({
+                "success": True,
+                "message": f"成功下载 {len(downloaded_files)} 个文件到 {save_directory}",
+                "request_id": request_id,
+                "downloaded_files": downloaded_files,
+                "save_directory": save_directory
+            }, ensure_ascii=False, indent=2)
+        else:
+            # 下载失败
+            error_msg = result.error or "未知错误"
+            return json.dumps({
+                "success": False,
+                "message": "文件下载失败",
+                "error": error_msg,
+                "request_id": request_id
+            }, ensure_ascii=False, indent=2)
+
+    except ValueError as e:
+        return json.dumps({
+            "success": False,
+            "message": "参数格式错误",
+            "error": str(e)
+        }, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "message": "未知错误",
             "error": str(e)
         }, ensure_ascii=False, indent=2)

@@ -36,6 +36,7 @@ class DiscordBot(commands.Bot):
         self.message_queue = MessageQueue(config.database_path)
         self.response_check_task = None
         self.file_request_check_task = None
+        self.file_download_check_task = None
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
 
     async def setup_hook(self):
@@ -78,6 +79,9 @@ class DiscordBot(commands.Bot):
 
         # 启动文件请求检查任务
         self.file_request_check_task = asyncio.create_task(self.check_file_requests())
+
+        # 启动文件下载检查任务
+        self.file_download_check_task = asyncio.create_task(self.check_file_downloads())
 
         # 发送启动通知
         await self.send_startup_notification()
@@ -316,10 +320,11 @@ class DiscordBot(commands.Bot):
         if self.user not in message.mentions:
             return
 
-        # 检查频道权限
-        if self.config.allowed_channels:
-            if message.channel.id not in self.config.allowed_channels:
-                return
+        # 检查频道权限（仅对频道消息生效，私聊不受限）
+        if not isinstance(message.channel, discord.DMChannel):
+            if self.config.allowed_channels:
+                if message.channel.id not in self.config.allowed_channels:
+                    return
 
         # 检查用户权限
         if self.config.allowed_users:
@@ -329,8 +334,12 @@ class DiscordBot(commands.Bot):
                 )
                 return
 
-        # 处理消息
-        await self.handle_user_message(message)
+        # 检查是否为转发/回复消息（带文件下载指令）
+        if message.reference:
+            await self.handle_file_download_command(message)
+        else:
+            # 处理普通消息
+            await self.handle_user_message(message)
 
     async def handle_user_message(self, message: discord.Message):
         """处理用户消息"""
@@ -392,6 +401,241 @@ class DiscordBot(commands.Bot):
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
+
+    async def handle_file_download_command(self, message: discord.Message):
+        """处理文件下载命令（转发/回复消息）"""
+        try:
+            from shared.message_queue import FileDownloadRequest, FileDownloadRequestStatus
+            import re
+            from pathlib import Path
+
+            # 移除 bot 提及，提取实际内容
+            content = message.content
+            for mention in message.mentions:
+                if mention == self.user:
+                    content = content.replace(f"<@{mention.id}>", "").replace(f"<@!{mention.id}>", "")
+                    break
+
+            content = content.strip()
+
+            # 解析保存目录（支持多种格式）
+            save_directory = None
+
+            # 格式 1: "下载到 D:/Downloads"
+            match = re.search(r'下载到\s+([^\s]+)', content)
+            if match:
+                save_directory = match.group(1)
+
+            # 格式 2: "save D:/Downloads"
+            if not save_directory:
+                match = re.search(r'save\s+([^\s]+)', content)
+                if match:
+                    save_directory = match.group(1)
+
+            # 格式 3: 直接给出路径（最后一个参数）
+            if not save_directory:
+                parts = content.split()
+                if parts:
+                    # 尝试最后一个参数作为路径
+                    potential_path = parts[-1]
+                    # 检查是否像路径（包含 / 或 \ 或 :）
+                    if any(c in potential_path for c in ['/', '\\', ':']):
+                        save_directory = potential_path
+
+            # 如果没有指定目录，使用配置文件中的默认目录
+            if not save_directory:
+                save_directory = self.config.default_download_directory
+                print(f"[文件下载] 使用配置的默认下载目录: {save_directory}")
+
+            # 验证路径安全性
+            save_directory = Path(save_directory).resolve()
+            try:
+                # 尝试创建目录以验证路径
+                save_directory.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                await message.channel.send(
+                    f"❌ {message.author.mention}，无效的保存目录: `{save_directory}`\n错误: {e}"
+                )
+                return
+
+            # 获取原始消息的 ID 和频道 ID
+            original_message_id = message.reference.message_id
+            original_channel_id = message.reference.channel_id
+
+            print(f"[文件下载命令] 用户 {message.author.display_name} 请求下载消息 {original_message_id}")
+
+            # 创建文件下载请求
+            download_request = FileDownloadRequest(
+                id=None,
+                discord_message_id=original_message_id,
+                discord_channel_id=original_channel_id,
+                save_directory=str(save_directory),
+                status=FileDownloadRequestStatus.PENDING.value
+            )
+
+            # 添加到队列
+            request_id = self.message_queue.add_file_download_request(download_request)
+
+            print(f"[文件下载 #{request_id}] 已创建下载请求")
+            print(f"[文件下载 #{request_id}] 消息 ID: {original_message_id}, 频道 ID: {original_channel_id}")
+            print(f"[文件下载 #{request_id}] 保存目录: {save_directory}")
+
+            # 发送确认消息
+            confirmation_msg = await message.reply(
+                f"✅ 文件下载请求已接收！\n"
+                f"请求 ID: {request_id}\n"
+                f"正在下载消息中的附件到 `{save_directory}`..."
+            )
+
+            # 启动后台任务监控下载状态
+            asyncio.create_task(
+                self.monitor_download_progress(
+                    request_id,
+                    message.channel,
+                    confirmation_msg
+                )
+            )
+
+        except Exception as e:
+            print(f"❌ 处理文件下载命令时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            await message.channel.send(f"❌ 处理文件下载命令时出错: {str(e)}")
+
+    async def monitor_download_progress(self, request_id: int, channel, confirmation_msg):
+        """监控文件下载进度（轮询方式）"""
+        import json
+        import sqlite3
+        from shared.message_queue import FileDownloadRequestStatus
+
+        try:
+            max_wait_time = 120  # 最大等待 120 秒
+            check_interval = 2   # 每 2 秒检查一次
+            elapsed = 0
+            last_progress_update = 0
+
+            print(f"[文件下载 #{request_id}] 开始监控下载进度")
+
+            while elapsed < max_wait_time:
+                # 直接查询数据库状态
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT status, downloaded_files, save_directory, error
+                    FROM file_download_requests
+                    WHERE id = ?
+                """, (request_id,))
+                db_result = cursor.fetchone()
+                conn.close()
+
+                if db_result:
+                    status, files_json, save_dir, error = db_result
+
+                    if status == FileDownloadRequestStatus.COMPLETED.value:
+                        # 下载完成
+                        print(f"[文件下载 #{request_id}] 下载完成")
+
+                        downloaded_files = []
+                        if files_json:
+                            try:
+                                result_data = json.loads(files_json)
+                                downloaded_files = result_data.get("downloaded_files", [])
+                            except json.JSONDecodeError as e:
+                                print(f"[文件下载 #{request_id}] 解析文件列表失败: {e}")
+
+                        if downloaded_files:
+                            files_info = "\n".join([
+                                f"  • {f['filename']} ({f['size']} 字节)"
+                                for f in downloaded_files
+                            ])
+                            await confirmation_msg.edit(
+                                content=f"✅ 文件下载完成！请求 #{request_id}\n"
+                                        f"保存目录: `{save_dir}`\n"
+                                        f"已下载 {len(downloaded_files)} 个文件:\n"
+                                        f"{files_info}"
+                            )
+                        else:
+                            await confirmation_msg.edit(
+                                content=f"⚠️ 文件下载完成，但没有找到文件。请求 #{request_id}"
+                            )
+                        return
+
+                    elif status == FileDownloadRequestStatus.FAILED.value:
+                        # 下载失败
+                        print(f"[文件下载 #{request_id}] 下载失败: {error}")
+                        error_msg = error or "未知错误"
+                        await confirmation_msg.edit(
+                            content=f"❌ 文件下载失败！请求 #{request_id}\n"
+                                    f"错误: {error_msg}"
+                        )
+                        return
+
+                    elif status == FileDownloadRequestStatus.PROCESSING.value:
+                        # 正在处理中
+                        print(f"[文件下载 #{request_id}] 正在处理中... ({elapsed}s)")
+
+                        # 每 30 秒更新一次进度提示
+                        if elapsed - last_progress_update >= 30:
+                            await confirmation_msg.edit(
+                                content=f"⏳ 正在下载中... ({elapsed}/{max_wait_time}秒)\n"
+                                        f"请求 ID: {request_id}"
+                            )
+                            last_progress_update = elapsed
+
+                # 等待下一次检查
+                await asyncio.sleep(check_interval)
+                elapsed += check_interval
+
+            # 超时 - 最后检查一次
+            print(f"[文件下载 #{request_id}] 监控超时 ({elapsed}秒)，最后检查一次")
+            conn = sqlite3.connect(self.config.database_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT status, downloaded_files, save_directory, error
+                FROM file_download_requests
+                WHERE id = ?
+            """, (request_id,))
+            db_result = cursor.fetchone()
+            conn.close()
+
+            if db_result and db_result[0] == FileDownloadRequestStatus.COMPLETED.value:
+                # 实际上已经完成
+                print(f"[文件下载 #{request_id}] 超时检查时发现已完成")
+                downloaded_files = []
+                if db_result[1]:
+                    try:
+                        result_data = json.loads(db_result[1])
+                        downloaded_files = result_data.get("downloaded_files", [])
+                    except json.JSONDecodeError:
+                        pass
+
+                if downloaded_files:
+                    files_info = "\n".join([
+                        f"  • {f['filename']} ({f['size']} 字节)"
+                        for f in downloaded_files
+                    ])
+                    await confirmation_msg.edit(
+                        content=f"✅ 文件下载完成！请求 #{request_id}\n"
+                                f"保存目录: `{db_result[2]}`\n"
+                                f"已下载 {len(downloaded_files)} 个文件:\n"
+                                f"{files_info}"
+                    )
+                else:
+                    await confirmation_msg.edit(
+                        content=f"⚠️ 文件下载完成，但没有找到文件。请求 #{request_id}"
+                    )
+            else:
+                # 真的超时了
+                print(f"[文件下载 #{request_id}] 真的超时")
+                await confirmation_msg.edit(
+                    content=f"⏱️ 文件下载请求 #{request_id} 超时（{max_wait_time}秒）\n"
+                            f"可能原因：Bot 未运行或消息不存在。"
+                )
+
+        except Exception as e:
+            print(f"❌ 监控下载进度时出错: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def check_responses(self):
         """定期检查 Claude 的响应和消息状态"""
@@ -720,12 +964,140 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
+    async def check_file_downloads(self):
+        """定期检查并处理文件下载请求（支持私聊和频道）"""
+        await self.wait_until_ready()
+
+        print("📥 文件下载检查任务已启动")
+
+        while not self.is_closed():
+            try:
+                # 获取下一个待处理的下载请求
+                from shared.message_queue import FileDownloadRequestStatus
+                download_request = self.message_queue.get_next_file_download_request()
+
+                if download_request:
+                    print(f"📥 处理文件下载请求 #{download_request.id}")
+                    # 标记为处理中
+                    self.message_queue.update_file_download_request_status(
+                        download_request.id,
+                        FileDownloadRequestStatus.PROCESSING
+                    )
+
+                    try:
+                        import os
+                        import json
+                        import aiohttp
+                        from pathlib import Path
+
+                        # 获取 Discord 频道/私聊
+                        channel = self.get_channel(download_request.discord_channel_id)
+
+                        # 如果获取不到，尝试从用户获取（私聊情况）
+                        if not channel:
+                            # 可能是私聊频道，需要通过消息获取用户
+                            try:
+                                # 尝试获取消息来获取用户信息
+                                channel = await self.fetch_channel(download_request.discord_channel_id)
+                            except discord.NotFound:
+                                raise ValueError(f"找不到频道: {download_request.discord_channel_id}")
+                            except discord.Forbidden:
+                                raise ValueError(f"没有权限访问频道: {download_request.discord_channel_id}")
+
+                        # 获取消息
+                        try:
+                            message = await channel.fetch_message(download_request.discord_message_id)
+                        except discord.NotFound:
+                            raise ValueError(f"找不到消息: {download_request.discord_message_id}")
+                        except discord.Forbidden:
+                            raise ValueError(f"没有权限访问消息: {download_request.discord_message_id}")
+
+                        # 检查消息是否有附件
+                        if not message.attachments:
+                            raise ValueError("该消息没有附件")
+
+                        # 创建保存目录
+                        save_dir = Path(download_request.save_directory)
+                        try:
+                            save_dir.mkdir(parents=True, exist_ok=True)
+                        except Exception as e:
+                            raise ValueError(f"无法创建保存目录 {save_dir}: {e}")
+
+                        # 下载所有附件
+                        downloaded_files = []
+                        async with aiohttp.ClientSession() as session:
+                            for attachment in message.attachments:
+                                # 处理文件名冲突
+                                local_path = save_dir / attachment.filename
+                                counter = 1
+                                while local_path.exists():
+                                    stem = Path(attachment.filename).stem
+                                    suffix = Path(attachment.filename).suffix
+                                    local_path = save_dir / f"{stem}_{counter}{suffix}"
+                                    counter += 1
+
+                                # 下载文件
+                                async with session.get(attachment.url) as resp:
+                                    if resp.status == 200:
+                                        # 写入文件
+                                        with open(local_path, 'wb') as f:
+                                            f.write(await resp.read())
+
+                                        downloaded_files.append({
+                                            "filename": attachment.filename,
+                                            "local_path": str(local_path),
+                                            "size": attachment.size
+                                        })
+                                        print(f"  ✓ 已下载: {attachment.filename} -> {local_path}")
+                                    else:
+                                        raise ValueError(f"下载文件失败: {attachment.filename} (HTTP {resp.status})")
+
+                        # 标记为完成
+                        result = json.dumps({
+                            "success": True,
+                            "message": f"成功下载 {len(downloaded_files)} 个文件",
+                            "downloaded_files": downloaded_files
+                        }, ensure_ascii=False)
+
+                        self.message_queue.update_file_download_request_status(
+                            download_request.id,
+                            FileDownloadRequestStatus.COMPLETED,
+                            downloaded_files=result
+                        )
+                        print(f"✅ 文件下载请求 #{download_request.id} 处理完成")
+
+                    except Exception as e:
+                        # 标记为失败
+                        error_msg = json.dumps({
+                            "success": False,
+                            "error": str(e)
+                        }, ensure_ascii=False)
+                        self.message_queue.update_file_download_request_status(
+                            download_request.id,
+                            FileDownloadRequestStatus.FAILED,
+                            error=error_msg
+                        )
+                        print(f"❌ 文件下载请求 #{download_request.id} 处理失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                # 等待一段时间再检查
+                await asyncio.sleep(self.config.poll_interval / 1000)
+
+            except Exception as e:
+                print(f"❌ 检查文件下载请求时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
     async def on_close(self):
         """Bot 关闭时的清理"""
         if self.response_check_task:
             self.response_check_task.cancel()
         if self.file_request_check_task:
             self.file_request_check_task.cancel()
+        if self.file_download_check_task:
+            self.file_download_check_task.cancel()
 
 
 def main():

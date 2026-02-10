@@ -59,10 +59,12 @@ Discord Claude Bridge 是一个双向桥接系统，包含以下组件：
 - 消息状态管理（pending → processing → ai_started → completed/failed）
 - 会话管理（sessions 表）
 - 文件请求表（file_requests）：支持 MCP 发送文件
+- **文件下载请求表**（file_download_requests）：支持从 Discord 下载附件
 
 ### 5. Config (`shared/config.py`)
 - 从 `config/config.yaml` 加载配置
 - 提供 Discord Token、权限、Claude 参数等配置
+- **文件下载配置**：默认下载目录、允许的下载目录列表
 
 **详细架构说明**：查看 `references/architecture.md`
 
@@ -169,6 +171,54 @@ claude:
    queue:
      poll_interval: 300  # 减少到 300 毫秒
    ```
+
+### 文件下载问题
+
+#### 下载超时
+
+**症状**：提示"下载超时（120秒）"，但文件实际已下载成功
+
+**已修复**：使用轮询检查状态（每 2 秒检查一次），不再依赖队列超时
+
+**验证**：检查 `bot/discord_bot.py:505-638` 的 `monitor_download_progress` 函数
+
+#### 下载目录不存在
+
+**症状**：提示"无效的保存目录"
+
+**解决方案**：
+1. 检查 `config.yaml` 中的 `file_download.default_directory` 配置
+2. 确保目录路径正确（支持相对路径和绝对路径）
+3. Bot 会自动创建目录
+
+#### 文件名冲突
+
+**症状**：下载多个同名文件时覆盖
+
+**已解决**：自动重命名（`file.jpg` → `file_1.jpg` → `file_2.jpg`）
+
+**代码位置**：`bot/discord_bot.py:955-962`
+
+#### 查看下载记录
+
+**查询数据库**：
+```bash
+# 查看最近的下载请求
+sqlite3 shared/messages.db "SELECT id, save_directory, status, downloaded_files FROM file_download_requests ORDER BY id DESC LIMIT 5"
+
+# 解析 JSON 字段
+python -c "
+import sqlite3, json
+conn = sqlite3.connect('shared/messages.db')
+cursor = conn.cursor()
+cursor.execute('SELECT downloaded_files FROM file_download_requests WHERE id = 5')
+result = cursor.fetchone()
+if result and result[0]:
+    files = json.loads(result[0])
+    print(files)
+conn.close()
+"
+```
 
 ### MCP 工具无法发送文件
 

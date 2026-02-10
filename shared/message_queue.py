@@ -35,6 +35,14 @@ class FileRequestStatus(Enum):
     FAILED = "failed"          # 失败
 
 
+class FileDownloadRequestStatus(Enum):
+    """文件下载请求状态枚举"""
+    PENDING = "pending"        # 等待处理
+    PROCESSING = "processing"  # 正在处理
+    COMPLETED = "completed"    # 已完成
+    FAILED = "failed"          # 失败
+
+
 @dataclass
 class Message:
     """消息数据类"""
@@ -68,6 +76,24 @@ class FileRequest:
     use_embed: bool  # 是否使用 Embed 格式
     status: str  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
+    error: Optional[str] = None  # 错误信息
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    def to_dict(self) -> Dict:
+        """转换为字典"""
+        return asdict(self)
+
+
+@dataclass
+class FileDownloadRequest:
+    """文件下载请求数据类"""
+    id: Optional[int]
+    discord_message_id: int  # Discord 消息 ID
+    discord_channel_id: int  # Discord 频道/私聊 ID
+    save_directory: str  # 保存目录路径
+    status: str  # 请求状态
+    downloaded_files: Optional[str] = None  # 已下载文件列表（JSON 格式）
     error: Optional[str] = None  # 错误信息
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -169,6 +195,32 @@ class MessageQueue:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_file_requests_created_at
             ON file_requests(created_at)
+        """)
+
+        # 创建文件下载请求表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS file_download_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discord_message_id INTEGER NOT NULL,
+                discord_channel_id INTEGER NOT NULL,
+                save_directory TEXT NOT NULL,
+                status TEXT NOT NULL,
+                downloaded_files TEXT,
+                error TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 创建文件下载请求索引
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_file_download_requests_status
+            ON file_download_requests(status)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_file_download_requests_created_at
+            ON file_download_requests(created_at)
         """)
 
         conn.commit()
@@ -750,6 +802,169 @@ class MessageQueue:
             DELETE FROM file_requests
             WHERE created_at < ? AND status IN (?, ?)
         """, (cutoff_time.isoformat(), FileRequestStatus.COMPLETED.value, FileRequestStatus.FAILED.value))
+
+        deleted_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return deleted_count
+
+    def add_file_download_request(self, download_request: FileDownloadRequest) -> int:
+        """添加文件下载请求到队列"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        download_request.created_at = now
+        download_request.updated_at = now
+
+        cursor.execute("""
+            INSERT INTO file_download_requests (
+                discord_message_id, discord_channel_id, save_directory,
+                status, downloaded_files, error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            download_request.discord_message_id,
+            download_request.discord_channel_id,
+            download_request.save_directory,
+            download_request.status,
+            download_request.downloaded_files,
+            download_request.error,
+            download_request.created_at,
+            download_request.updated_at
+        ))
+
+        request_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return request_id
+
+    def get_next_file_download_request(self) -> Optional[FileDownloadRequest]:
+        """获取下一个待处理的文件下载请求"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, discord_message_id, discord_channel_id, save_directory,
+                   status, downloaded_files, error, created_at, updated_at
+            FROM file_download_requests
+            WHERE status = ?
+            ORDER BY created_at ASC
+            LIMIT 1
+        """, (FileDownloadRequestStatus.PENDING.value,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return FileDownloadRequest(
+                id=row[0],
+                discord_message_id=row[1],
+                discord_channel_id=row[2],
+                save_directory=row[3],
+                status=row[4],
+                downloaded_files=row[5],
+                error=row[6],
+                created_at=row[7],
+                updated_at=row[8]
+            )
+        return None
+
+    def update_file_download_request_status(self, request_id: int, status: FileDownloadRequestStatus,
+                                           downloaded_files: Optional[str] = None, error: Optional[str] = None):
+        """更新文件下载请求状态"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+
+        if downloaded_files is not None:
+            cursor.execute("""
+                UPDATE file_download_requests
+                SET status = ?, downloaded_files = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, downloaded_files, now, request_id))
+        elif error is not None:
+            cursor.execute("""
+                UPDATE file_download_requests
+                SET status = ?, error = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, error, now, request_id))
+        else:
+            cursor.execute("""
+                UPDATE file_download_requests
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, now, request_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_file_download_request(self, request_id: int, timeout: float = 60.0) -> Optional[FileDownloadRequest]:
+        """
+        获取文件下载请求及其结果（等待处理完成）
+
+        Args:
+            request_id: 请求 ID
+            timeout: 超时时间（秒），默认 60 秒
+
+        Returns:
+            完成的文件下载请求，如果超时或失败则返回 None
+        """
+        import time
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, discord_message_id, discord_channel_id, save_directory,
+                       status, downloaded_files, error, created_at, updated_at
+                FROM file_download_requests
+                WHERE id = ?
+            """, (request_id,))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                request = FileDownloadRequest(
+                    id=row[0],
+                    discord_message_id=row[1],
+                    discord_channel_id=row[2],
+                    save_directory=row[3],
+                    status=row[4],
+                    downloaded_files=row[5],
+                    error=row[6],
+                    created_at=row[7],
+                    updated_at=row[8]
+                )
+
+                # 如果已完成或失败，返回结果
+                if request.status in (FileDownloadRequestStatus.COMPLETED.value, FileDownloadRequestStatus.FAILED.value):
+                    return request
+
+            # 等待一段时间后重试
+            time.sleep(0.5)
+
+        return None
+
+    def cleanup_old_file_download_requests(self, retention_hours: int = 24):
+        """清理旧的文件下载请求"""
+        if retention_hours == 0:
+            return
+
+        cutoff_time = datetime.now() - timedelta(hours=retention_hours)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM file_download_requests
+            WHERE created_at < ? AND status IN (?, ?)
+        """, (cutoff_time.isoformat(), FileDownloadRequestStatus.COMPLETED.value, FileDownloadRequestStatus.FAILED.value))
 
         deleted_count = cursor.rowcount
         conn.commit()

@@ -20,6 +20,12 @@
 - ✅ 消息追踪系统（实时状态提示）
 - ✅ 启动通知功能
 - ✅ 会话管理（`/new` 命令重置会话）
+- ✅ **文件下载功能** - 从 Discord 消息中下载附件到本地
+  - 支持所有附件类型（图片、文档、压缩包等）
+  - 批量下载（一条消息多个附件）
+  - 自动处理文件名冲突
+  - 实时进度提示（轮询检查状态）
+  - 可配置默认下载目录
 - ✅ **MCP 服务器** - 支持 Claude Code 通过 MCP 协议发送文件到 Discord
   - 发送文件到 Discord 用户私聊或频道
   - 批量发送多个文件（最多 10 个）
@@ -335,12 +341,73 @@ restart.bat
 Bot 会：
 1. 接收消息并显示"⏳ 消息已接收"
 2. 转发给本地 Claude Code 处理（显示"🔄 正在处理中"）
-3. 将 Claude 的真实回复发送回 Discord（显示"✅ 消息 #X 响应成功！"）
+3. 将 Claude 的真实回复发送回 Discord（显示"✅ 消息 #X 响应成功！")
+
+#### 6.1 斜杠命令
 
 **可用命令**：
 - `/new` - 开始新的对话上下文（重置会话）
 - `/status` - 查看系统状态
 - `/restart` - 重启服务
+
+#### 6.2 文件下载功能
+
+Bot 支持从 Discord 消息中下载附件到本地目录。
+
+**使用方法**：
+
+1. **回复带有附件的消息**
+2. **@Bot 并指定保存目录**（可选）
+
+**示例**：
+
+```
+# 使用默认下载目录
+@YourBot 下载
+
+# 指定下载目录
+@YourBot 下载到 D:/myfiles
+
+# 英文格式
+@YourBot save D:/downloads
+
+# 直接指定路径
+@YourBot D:/AgentWorkspace/files
+```
+
+**默认下载目录**：`D:/AgentWorkspace/downloads`（可在 `config.yaml` 中配置）
+
+**支持的路​​径格式**：
+- 中文格式：`下载到 D:/files`
+- 英文格式：`save D:/files`
+- 直接路径：`D:/files`
+- 相对路径：`./downloads`
+
+**下载特性**：
+- ✅ 支持所有 Discord 附件类型（图片、文档、压缩包等）
+- ✅ 自动处理文件名冲突（自动重命名为 `file_1.jpg`）
+- ✅ 批量下载（一条消息多个附件）
+- ✅ 实时进度提示（每 30 秒更新一次）
+- ✅ 轮询检查状态（每 2 秒检查一次，最多等待 120 秒）
+
+**下载提示**：
+```
+✅ 文件下载请求已接收！
+请求 ID: 5
+正在下载消息中的附件到 `D:\AgentWorkspace\downloads`...
+```
+
+```
+⏳ 正在下载中... (30/120秒)
+请求 ID: 5
+```
+
+```
+✅ 文件下载完成！请求 #5
+保存目录: `D:\AgentWorkspace\downloads`
+已下载 1 个文件:
+  • report.pdf (102400 字节)
+```
 
 ### 7. 验证 Claude Code CLI
 
@@ -393,6 +460,27 @@ claude:
 - 留空（默认）：使用项目根目录
 - 设置为特定路径：让 Claude 可以访问特定项目文件
 - 例如：`working_directory: "D:/MyProject"`
+
+### 文件下载配置
+
+在 `config.yaml` 中配置默认下载目录：
+
+```yaml
+file_download:
+  # 默认下载目录（支持相对路径和绝对路径）
+  # 相对路径基于项目根目录
+  default_directory: "D:/AgentWorkspace/downloads"
+  # 允许的下载目录列表（空列表 = 允许所有目录）
+  # 安全限制：防止下载到系统目录
+  allowed_directories: []
+```
+
+**配置说明**：
+- `default_directory`：默认下载路径，支持相对路径和绝对路径
+  - 相对路径：`./downloads`（基于项目根目录）
+  - 绝对路径：`D:/AgentWorkspace/downloads`
+  - 用户下载目录：`C:\Users\YourName\Downloads`
+- `allowed_directories`：可选的安全限制，允许的下载目录列表（空列表 = 允许所有目录）
 
 **持续对话示例**：
 ```

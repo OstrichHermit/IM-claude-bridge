@@ -116,3 +116,18 @@ class Config:
     def sync_guild_id(self) -> str:
         """获取斜杠命令同步的服务器 ID（留空则全局同步）"""
         return self._config.get('discord', {}).get('sync_guild_id', '')
+
+    @property
+    def default_download_directory(self) -> str:
+        """获取默认文件下载目录"""
+        download_dir = self._config.get('file_download', {}).get('default_directory', './downloads')
+        # 转换为绝对路径
+        if not os.path.isabs(download_dir):
+            project_root = Path(__file__).parent.parent
+            download_dir = project_root / download_dir
+        return str(download_dir)
+
+    @property
+    def allowed_download_directories(self) -> List[str]:
+        """获取允许的下载目录列表（空列表 = 允许所有目录）"""
+        return self._config.get('file_download', {}).get('allowed_directories', [])

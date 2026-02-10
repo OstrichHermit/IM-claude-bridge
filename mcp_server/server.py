@@ -27,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from mcp_server.tools import (
     send_file_to_discord,
     send_multiple_files_to_discord,
-    list_discord_channels
+    list_discord_channels,
+    download_file_from_discord
 )
 
 
@@ -188,6 +189,61 @@ async def mcp_list_discord_channels() -> str:
     return await list_discord_channels()
 
 
+@mcp.tool
+async def mcp_download_file_from_discord(
+    message_id: str,
+    channel_id: str,
+    save_directory: str,
+    timeout: int = 60
+) -> str:
+    """
+    从 Discord 消息中下载附件到指定目录（支持私聊和频道）
+
+    通过消息队列请求 Discord Bot 下载指定消息的附件。
+    Bot 会将附件下载到指定目录，并返回下载结果。
+
+    Args:
+        message_id: Discord 消息 ID（必需），格式：数字字符串
+        channel_id: Discord 频道/私聊 ID（必需），格式：数字字符串
+        save_directory: 本地保存目录路径（必需）
+        timeout: 等待超时时间（秒），默认 60 秒
+
+    Returns:
+        JSON格式的下载结果，包含成功状态和文件信息
+
+    Examples:
+        # 下载频道消息中的附件
+        mcp_download_file_from_discord(
+            message_id="123456789",
+            channel_id="987654321",
+            save_directory="D:/Downloads"
+        )
+
+        # 下载私聊消息中的附件
+        mcp_download_file_from_discord(
+            message_id="123456789",
+            channel_id="987654321",
+            save_directory="D:/Downloads",
+            timeout=120
+        )
+
+    Note:
+        - message_id 可以从 Discord 开发者模式中复制
+        - channel_id 可以从 Discord 开发者模式中复制
+        - 支持一条消息多个附件批量下载
+        - 自动处理文件名冲突（重命名为 file_1.jpg, file_2.jpg）
+        - 自动创建保存目录（如不存在）
+        - 支持频道和私聊消息
+        - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
+    """
+    return await download_file_from_discord(
+        message_id=message_id,
+        channel_id=channel_id,
+        save_directory=save_directory,
+        timeout=timeout
+    )
+
+
 # ==================== 启动入口 ====================
 
 def run_server(
@@ -217,9 +273,10 @@ def run_server(
 
     print()
     print("  已注册的工具:")
-    print("    1. mcp_send_file_to_discord         - 发送文件到 Discord（支持私聊/频道）")
+    print("    1. mcp_send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
     print("    2. mcp_send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
-    print("    3. mcp_list_discord_channels        - 列出 Bot 可访问的频道和服务器")
+    print("    3. mcp_list_discord_channels         - 列出 Bot 可访问的频道和服务器")
+    print("    4. mcp_download_file_from_discord     - 从 Discord 下载文件到本地（支持私聊/频道）")
     print()
     print("  架构说明:")
     print("    - MCP Server 通过消息队列与 Discord Bot 通信")
