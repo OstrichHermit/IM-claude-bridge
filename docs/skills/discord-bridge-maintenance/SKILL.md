@@ -22,6 +22,10 @@ discord-claude-bridge/
 ├── shared/                 # 共享模块
 │   ├── message_queue.py    # 消息队列（SQLite）
 │   └── config.py           # 配置管理
+├── manager.py              # 守护进程（进程监控、智能重启）
+├── manager.bat             # Manager 管理脚本
+├── logs/                   # 日志目录
+│   └── manager.log         # Manager 日志
 └── config/
     └── config.yaml         # 配置文件
 ```
@@ -114,7 +118,60 @@ file_download_requests (
 pending → processing → ai_started → completed/failed
 ```
 
-### 5. Config (`shared/config.py`)
+### 5. Manager (`manager.py`)
+
+**职责**：
+- Windows 守护进程，监控和管理 Discord Bot + Claude Bridge
+- 自动检测进程崩溃并智能重启
+- 进程状态监控和日志管理
+
+**核心功能**：
+
+**进程监控**：
+- 检查 Discord Bot 和 Claude Bridge 是否运行
+- 通过命令行参数查找进程 PID（`wmic process`）
+- 10 秒轮询间隔检查进程状态
+
+**智能重启机制**：
+- 最大重试次数：3 次
+- 重启流程：
+  1. 检测到进程崩溃 → 创建 `.manager.restarting` 标记
+  2. 延迟 30 秒后验证进程状态
+  3. 第 1 次重试：执行 `stop_all()` + `start_all()`
+  4. 第 2-3 次重试：调用 `restart.bat`
+  5. 连续失败 3 次后放弃重启
+
+**标记文件**：
+- `.manager.stop`：停止守护进程
+- `.manager.restarting`：重启中标记
+- `.manager.retry_count`：重试次数记录
+
+**命令接口**：
+```bash
+# 启动监控控制台（独立窗口）
+python manager.py console
+manager.bat start
+
+# 启动所有服务
+python manager.py start-all
+manager.bat start-all
+
+# 停止所有服务
+python manager.py stop
+manager.bat stop
+
+# 重启所有服务
+python manager.py restart
+manager.bat restart
+
+# 查看日志
+python manager.py logs
+manager.bat logs
+```
+
+**日志文件**：`logs/manager.log`
+
+### 6. Config (`shared/config.py`)
 
 **配置项**：
 
@@ -202,8 +259,16 @@ await user.send(response)
 ### Bot 无响应
 
 1. 检查进程：`Get-Process python`
-2. 重启服务：`restart.bat`
+2. 重启服务：`restart.bat` 或 `manager.bat restart`
 3. 重置卡住的消息：`UPDATE messages SET status = 'pending' WHERE status = 'processing'`
+4. 使用 Manager 监控：`manager.bat start`（自动检测并重启）
+
+### Manager 连续重启失败
+
+- 检查日志：`manager.bat logs`
+- 查看重试次数：`cat .manager.retry_count`
+- 手动重置：`del .manager.restarting && del .manager.retry_count`
+- 最大重试 3 次后放弃，需手动介入
 
 ### Claude CLI 错误
 
@@ -247,5 +312,22 @@ DELETE FROM messages WHERE status = 'completed' AND created_at < datetime('now',
 
 ## 启动脚本
 
-- **启动**：`start.bat`
-- **重启**：`restart.bat`（自动关闭旧进程并重启）
+### 基础脚本
+
+- **启动**：`start.bat` - 启动 Discord Bot 和 Claude Bridge
+- **重启**：`restart.bat` - 自动关闭旧进程并重启
+
+### Manager 脚本
+
+- **`manager.bat start`** - 启动监控控制台（守护进程）
+  - 在独立窗口运行监控循环
+  - 自动检测进程崩溃并重启
+  - 推荐使用此方式保持服务稳定
+
+- **`manager.bat start-all`** - 启动所有服务（不启动监控）
+
+- **`manager.bat stop`** - 停止所有服务
+
+- **`manager.bat restart`** - 重启所有服务
+
+- **`manager.bat logs`** - 查看管理日志（实时 tail）
