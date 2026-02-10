@@ -2,6 +2,49 @@
 
 将 Discord 消息桥接到本地 Claude Code CLI 的双向通信系统。
 
+## 推荐工作区结构
+
+**强烈建议**将本项目放在 Claude Code 的工作区根目录下，方便管理多个项目。
+
+### 示例结构（参考作者的配置）
+
+```
+D:/AgentWorkspace/                    # 工作区根目录
+├── discord-claude-bridge/            # Discord 桥接项目（本仓库）
+├── my-project-1/                     # 你的其他项目
+├── my-project-2/                     # 你的其他项目
+├── downloads/                        # 默认文件下载目录
+├── .claude/                          # Claude Code 配置
+│   └── skills/                       # 维护 Skill 目录
+│       └── discord-bridge-maintenance/  # 本项目的维护 Skill
+└── memory/                           # 记忆系统（可选）
+    ├── DAILY.md
+    └── LONGTERM.md
+```
+
+### 维护 Skill 使用
+
+本项目包含一个 **Claude Code 维护 Skill**，推荐安装到你的工作区：
+
+**安装方法**：
+```bash
+# 复制 Skill 到 Claude Code 配置目录
+cp -r docs/skills/discord-bridge-maintenance \
+   ~/.claude/skills/
+```
+
+**Skill 功能**：
+- 🔧 查看系统架构和配置说明
+- 📊 监控消息队列和下载状态
+- 🐛 快速故障排查（Bot 无响应、下载超时等）
+- 📝 查看数据库记录（消息、下载请求）
+- 🔄 查看待处理任务列表
+
+**使用方式**：
+```
+/discord-bridge-maintenance
+```
+
 ## 功能特性
 
 - ✅ @Bot 调用 Claude Code（支持持续对话）
