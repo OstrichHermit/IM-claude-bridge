@@ -13,7 +13,7 @@ import sys
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from shared.message_queue import MessageQueue, FileRequest, FileRequestStatus
+from shared.message_queue import MessageQueue, FileRequest, FileRequestStatus, MessageRequest, MessageRequestStatus
 from shared.config import Config
 
 
@@ -34,6 +34,28 @@ class FileSendResult:
             "message_id": self.message_id,
             "error": self.error,
             "file_count": self.file_count
+        }
+
+    def to_json(self) -> str:
+        """转换为 JSON 字符串"""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+
+@dataclass
+class MessageSendResult:
+    """消息发送结果"""
+    success: bool
+    message: str
+    message_id: Optional[str] = None
+    error: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            "success": self.success,
+            "message": self.message,
+            "message_id": self.message_id,
+            "error": self.error
         }
 
     def to_json(self) -> str:
@@ -214,6 +236,85 @@ class DiscordService:
         except Exception as e:
             # 包装其他异常
             raise DiscordBridgeError(f"文件发送时出错: {str(e)}")
+
+    def send_message(self, content: str,
+                   user_id: Optional[str] = None,
+                   channel_id: Optional[str] = None,
+                   use_embed: bool = True,
+                   embed_title: Optional[str] = None,
+                   embed_color: Optional[int] = None,
+                   timeout: float = 30.0) -> MessageSendResult:
+        """发送纯文本消息到 Discord（支持 Embed 格式）
+
+        Args:
+            content: 消息内容
+            user_id: Discord 用户 ID
+            channel_id: Discord 频道 ID
+            use_embed: 是否使用 Embed 格式（默认 True）
+            embed_title: Embed 标题（仅当 use_embed=True 时生效）
+            embed_color: Embed 颜色（十进制，如 0x00FF00 为绿色）
+            timeout: 等待超时时间（秒）
+
+        Returns:
+            消息发送结果
+
+        Raises:
+            ValidationError: 参数验证失败
+        """
+        try:
+            # 验证发送目标
+            user_id_int, channel_id_int = self.validate_target(user_id, channel_id)
+
+            # 创建消息请求
+            message_request = MessageRequest(
+                id=None,
+                content=content,
+                user_id=user_id_int,
+                channel_id=channel_id_int,
+                use_embed=use_embed,
+                embed_title=embed_title,
+                embed_color=embed_color,
+                status=MessageRequestStatus.PENDING.value,
+                result=None,
+                error=None
+            )
+
+            # 添加到队列
+            request_id = self.message_queue.add_message_request(message_request)
+            print(f"💬 消息请求已创建: #{request_id}")
+
+            # 等待处理完成
+            completed_request = self.message_queue.get_message_request(request_id, timeout=timeout)
+
+            if completed_request is None:
+                return MessageSendResult(
+                    success=False,
+                    message="消息发送超时",
+                    error=f"等待 {timeout} 秒后仍未完成"
+                )
+
+            # 解析结果
+            if completed_request.status == MessageRequestStatus.COMPLETED.value:
+                result_data = json.loads(completed_request.result) if completed_request.result else {}
+                return MessageSendResult(
+                    success=True,
+                    message=result_data.get("message", "消息发送成功"),
+                    message_id=result_data.get("message_id")
+                )
+            else:
+                error_data = json.loads(completed_request.error) if completed_request.error else {}
+                return MessageSendResult(
+                    success=False,
+                    message="消息发送失败",
+                    error=error_data.get("error", "未知错误")
+                )
+
+        except ValidationError as e:
+            # 重新抛出验证错误
+            raise
+        except Exception as e:
+            # 包装其他异常
+            raise DiscordBridgeError(f"消息发送时出错: {str(e)}")
 
 
 # 单例模式

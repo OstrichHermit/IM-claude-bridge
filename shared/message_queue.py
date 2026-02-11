@@ -43,6 +43,14 @@ class FileDownloadRequestStatus(Enum):
     FAILED = "failed"          # 失败
 
 
+class MessageRequestStatus(Enum):
+    """纯文本消息发送请求状态枚举"""
+    PENDING = "pending"        # 等待处理
+    PROCESSING = "processing"  # 正在处理
+    COMPLETED = "completed"    # 已完成
+    FAILED = "failed"          # 失败
+
+
 @dataclass
 class Message:
     """消息数据类"""
@@ -94,6 +102,27 @@ class FileDownloadRequest:
     save_directory: str  # 保存目录路径
     status: str  # 请求状态
     downloaded_files: Optional[str] = None  # 已下载文件列表（JSON 格式）
+    error: Optional[str] = None  # 错误信息
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    def to_dict(self) -> Dict:
+        """转换为字典"""
+        return asdict(self)
+
+
+@dataclass
+class MessageRequest:
+    """纯文本消息发送请求数据类"""
+    id: Optional[int] = None
+    content: str = ""  # 消息内容
+    user_id: Optional[int] = None  # Discord 用户 ID（发送私聊）
+    channel_id: Optional[int] = None  # Discord 频道 ID（发送到频道）
+    use_embed: bool = True  # 是否使用 Embed 格式
+    embed_title: Optional[str] = None  # Embed 标题
+    embed_color: Optional[int] = None  # Embed 颜色（十进制）
+    status: str = MessageRequestStatus.PENDING.value  # 请求状态
+    result: Optional[str] = None  # 执行结果（JSON 格式）
     error: Optional[str] = None  # 错误信息
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -221,6 +250,35 @@ class MessageQueue:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_file_download_requests_created_at
             ON file_download_requests(created_at)
+        """)
+
+        # 创建消息发送请求表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS message_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                user_id INTEGER,
+                channel_id INTEGER,
+                use_embed BOOLEAN DEFAULT 1,
+                embed_title TEXT,
+                embed_color INTEGER,
+                status TEXT NOT NULL,
+                result TEXT,
+                error TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 创建消息发送请求索引
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_message_requests_status
+            ON message_requests(status)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_message_requests_created_at
+            ON message_requests(created_at)
         """)
 
         conn.commit()
@@ -1005,3 +1063,175 @@ class MessageQueue:
                 print(f"⚠️ 删除 Claude 会话文件时出错: {e}")
 
         return deleted
+
+    def add_message_request(self, message_request: MessageRequest) -> int:
+        """添加消息发送请求到队列"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        message_request.created_at = now
+        message_request.updated_at = now
+
+        cursor.execute("""
+            INSERT INTO message_requests (
+                content, user_id, channel_id, use_embed,
+                embed_title, embed_color, status, result, error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            message_request.content,
+            message_request.user_id,
+            message_request.channel_id,
+            1 if message_request.use_embed else 0,
+            message_request.embed_title,
+            message_request.embed_color,
+            message_request.status,
+            message_request.result,
+            message_request.error,
+            message_request.created_at,
+            message_request.updated_at
+        ))
+
+        request_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return request_id
+
+    def get_next_message_request(self) -> Optional[MessageRequest]:
+        """获取下一个待处理的消息发送请求"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, content, user_id, channel_id, use_embed,
+                   embed_title, embed_color, status, result, error, created_at, updated_at
+            FROM message_requests
+            WHERE status = ?
+            ORDER BY created_at ASC
+            LIMIT 1
+        """, (MessageRequestStatus.PENDING.value,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return MessageRequest(
+                id=row[0],
+                content=row[1],
+                user_id=row[2],
+                channel_id=row[3],
+                use_embed=bool(row[4]),
+                embed_title=row[5],
+                embed_color=row[6],
+                status=row[7],
+                result=row[8],
+                error=row[9],
+                created_at=row[10],
+                updated_at=row[11]
+            )
+        return None
+
+    def update_message_request_status(self, request_id: int, status: MessageRequestStatus,
+                                   result: Optional[str] = None, error: Optional[str] = None):
+        """更新消息发送请求状态"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+
+        if result is not None:
+            cursor.execute("""
+                UPDATE message_requests
+                SET status = ?, result = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, result, now, request_id))
+        elif error is not None:
+            cursor.execute("""
+                UPDATE message_requests
+                SET status = ?, error = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, error, now, request_id))
+        else:
+            cursor.execute("""
+                UPDATE message_requests
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+            """, (status.value, now, request_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_message_request(self, request_id: int, timeout: float = 30.0) -> Optional[MessageRequest]:
+        """
+        获取消息发送请求及其结果（等待处理完成）
+
+        Args:
+            request_id: 请求 ID
+            timeout: 超时时间（秒），默认 30 秒
+
+        Returns:
+            完成的消息请求，如果超时或失败则返回 None
+        """
+        import time
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, content, user_id, channel_id, use_embed,
+                       embed_title, embed_color, status, result, error, created_at, updated_at
+                FROM message_requests
+                WHERE id = ?
+            """, (request_id,))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                request = MessageRequest(
+                    id=row[0],
+                    content=row[1],
+                    user_id=row[2],
+                    channel_id=row[3],
+                    use_embed=bool(row[4]),
+                    embed_title=row[5],
+                    embed_color=row[6],
+                    status=row[7],
+                    result=row[8],
+                    error=row[9],
+                    created_at=row[10],
+                    updated_at=row[11]
+                )
+
+                # 如果已完成或失败，返回结果
+                if request.status in (MessageRequestStatus.COMPLETED.value, MessageRequestStatus.FAILED.value):
+                    return request
+
+            # 等待一段时间后重试
+            time.sleep(0.5)
+
+        return None
+
+    def cleanup_old_message_requests(self, retention_hours: int = 24):
+        """清理旧的消息发送请求"""
+        if retention_hours == 0:
+            return
+
+        cutoff_time = datetime.now() - timedelta(hours=retention_hours)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM message_requests
+            WHERE created_at < ? AND status IN (?, ?)
+        """, (cutoff_time.isoformat(), MessageRequestStatus.COMPLETED.value, MessageRequestStatus.FAILED.value))
+
+        deleted_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return deleted_count

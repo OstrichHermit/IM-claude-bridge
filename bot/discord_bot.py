@@ -37,6 +37,7 @@ class DiscordBot(commands.Bot):
         self.response_check_task = None
         self.file_request_check_task = None
         self.file_download_check_task = None
+        self.message_request_check_task = None  # 新增：消息发送请求检查任务
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
         self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
 
@@ -83,6 +84,9 @@ class DiscordBot(commands.Bot):
 
         # 启动文件下载检查任务
         self.file_download_check_task = asyncio.create_task(self.check_file_downloads())
+
+        # 启动消息发送请求检查任务
+        self.message_request_check_task = asyncio.create_task(self.check_message_requests())
 
         # 发送启动通知
         await self.send_startup_notification()
@@ -1160,6 +1164,95 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
+    async def check_message_requests(self):
+        """定期检查并处理消息发送请求"""
+        await self.wait_until_ready()
+
+        print("💬 消息发送检查任务已启动")
+
+        while not self.is_closed():
+            try:
+                # 获取下一个待处理的消息请求
+                from shared.message_queue import MessageRequestStatus
+                message_request = self.message_queue.get_next_message_request()
+
+                if message_request:
+                    print(f"💬 处理消息请求 #{message_request.id}")
+                    # 标记为处理中
+                    self.message_queue.update_message_request_status(
+                        message_request.id,
+                        MessageRequestStatus.PROCESSING
+                    )
+
+                    try:
+                        import json
+
+                        # 确定发送目标
+                        if message_request.user_id:
+                            # 发送到用户私聊
+                            user = self.get_user(message_request.user_id)
+                            if not user:
+                                user = await self.fetch_user(message_request.user_id)
+                            target_channel = await user.create_dm()
+                            target_info = f"用户 {user.display_name}"
+                        elif message_request.channel_id:
+                            # 发送到频道
+                            target_channel = self.get_channel(message_request.channel_id)
+                            if not target_channel:
+                                raise ValueError(f"找不到频道: {message_request.channel_id}")
+                            target_channel = target_channel
+                            target_info = f"频道 {target_channel.name}"
+                        else:
+                            raise ValueError("必须指定 user_id 或 channel_id")
+
+                        # 发送消息
+                        if message_request.use_embed:
+                            # 使用 Embed 格式
+                            embed = discord.Embed(
+                                title=message_request.embed_title,
+                                description=message_request.content,
+                                color=discord.Color(message_request.embed_color) if message_request.embed_color else discord.Color.blue()
+                            )
+                            sent_msg = await target_channel.send(embed=embed)
+                        else:
+                            # 发送纯文本
+                            sent_msg = await target_channel.send(content=message_request.content)
+
+                        # 标记为完成
+                        result = json.dumps({
+                            "success": True,
+                            "message": f"成功发送消息到 {target_info}",
+                            "message_id": str(sent_msg.id)
+                        }, ensure_ascii=False)
+                        self.message_queue.update_message_request_status(
+                            message_request.id,
+                            MessageRequestStatus.COMPLETED,
+                            result=result
+                        )
+                        print(f"✅ 消息请求 #{message_request.id} 处理完成")
+
+                    except Exception as e:
+                        # 标记为失败
+                        error_msg = json.dumps({
+                            "success": False,
+                            "error": str(e)
+                        }, ensure_ascii=False)
+                        self.message_queue.update_message_request_status(
+                            message_request.id,
+                            MessageRequestStatus.FAILED,
+                            error=error_msg
+                        )
+                        print(f"❌ 消息请求 #{message_request.id} 处理失败: {e}")
+
+                # 等待一段时间再检查
+                await asyncio.sleep(self.config.poll_interval / 1000)
+
+            except Exception as e:
+                print(f"❌ 检查消息请求时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
     async def on_close(self):
         """Bot 关闭时的清理"""
         if self.response_check_task:
@@ -1168,6 +1261,8 @@ class DiscordBot(commands.Bot):
             self.file_request_check_task.cancel()
         if self.file_download_check_task:
             self.file_download_check_task.cancel()
+        if self.message_request_check_task:
+            self.message_request_check_task.cancel()
 
 
 def main():
