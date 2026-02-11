@@ -25,10 +25,8 @@ from fastmcp import FastMCP
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mcp_server.tools import (
-    send_file_to_discord,
-    send_multiple_files_to_discord,
-    list_discord_channels,
-    send_message_to_discord
+    _send_file_to_discord,
+    _send_multiple_files_to_discord
 )
 
 
@@ -39,7 +37,7 @@ mcp = FastMCP('discord-bridge')
 # ==================== MCP 工具 ====================
 
 @mcp.tool
-async def mcp_send_file_to_discord(
+async def send_file_to_discord(
     file_path: str,
     user_id: Optional[str] = None,
     channel_id: Optional[str] = None,
@@ -66,20 +64,20 @@ async def mcp_send_file_to_discord(
 
     Examples:
         # 发送到用户私聊
-        mcp_send_file_to_discord(file_path="chart.png", user_id="123456789")
+        send_file_to_discord(file_path="chart.png", user_id="123456789")
 
         # 发送到频道
-        mcp_send_file_to_discord(file_path="report.png", channel_id="987654321")
+        send_file_to_discord(file_path="report.png", channel_id="987654321")
 
         # 发送 PDF 到用户并附带说明
-        mcp_send_file_to_discord(
+        send_file_to_discord(
             file_path="report.pdf",
             user_id="123456789",
             message="这是您要的分析报告"
         )
 
         # 使用 Embed 格式发送到频道
-        mcp_send_file_to_discord(
+        send_file_to_discord(
             file_path="data.png",
             channel_id="987654321",
             message="数据分析图表",
@@ -94,7 +92,7 @@ async def mcp_send_file_to_discord(
         - 发送到频道时，channel_id 可以从 Discord 开发者模式获取
         - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
     """
-    return await send_file_to_discord(
+    return await _send_file_to_discord(
         file_path=file_path,
         user_id=user_id,
         channel_id=channel_id,
@@ -104,7 +102,7 @@ async def mcp_send_file_to_discord(
 
 
 @mcp.tool
-async def mcp_send_multiple_files_to_discord(
+async def send_multiple_files_to_discord(
     file_paths: list,
     user_id: Optional[str] = None,
     channel_id: Optional[str] = None,
@@ -132,20 +130,20 @@ async def mcp_send_multiple_files_to_discord(
 
     Examples:
         # 批量发送图片到用户私聊
-        mcp_send_multiple_files_to_discord(
+        send_multiple_files_to_discord(
             file_paths=["chart1.png", "chart2.png", "data.pdf"],
             user_id="123456789"
         )
 
         # 批量发送文件到频道
-        mcp_send_multiple_files_to_discord(
+        send_multiple_files_to_discord(
             file_paths=["report1.pdf", "report2.pdf"],
             channel_id="987654321",
             message="这是您要的分析报告"
         )
 
         # 使用 Embed 格式
-        mcp_send_multiple_files_to_discord(
+        send_multiple_files_to_discord(
             file_paths=["image1.png", "image2.png"],
             user_id="123456789",
             message="图片合集",
@@ -159,105 +157,12 @@ async def mcp_send_multiple_files_to_discord(
         - 如果某些文件不存在或发送失败，会跳过这些文件继续发送其他文件
         - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
     """
-    return await send_multiple_files_to_discord(
+    return await _send_multiple_files_to_discord(
         file_paths=file_paths,
         user_id=user_id,
         channel_id=channel_id,
         message=message,
         use_embed=use_embed
-    )
-
-
-@mcp.tool
-async def mcp_list_discord_channels() -> str:
-    """
-    列出 Bot 可访问的所有频道和服务器
-
-    注意：此工具需要 Discord Bot 正在运行。
-    由于 MCP Server 通过消息队列与 Bot 通信，无法直接访问 Bot 的频道列表。
-
-    Returns:
-        JSON格式的频道列表，包含服务器和频道信息
-
-    Examples:
-        mcp_list_discord_channels()
-
-    Note:
-        - 建议在 Discord 中使用 Bot 的 /status 命令查看频道信息
-        - MCP Server 通过消息队列与 Bot 通信，无法直接访问 Discord 客户端
-    """
-    return await list_discord_channels()
-
-
-@mcp.tool
-async def mcp_send_message_to_discord(
-    content: str,
-    user_id: Optional[str] = None,
-    channel_id: Optional[str] = None,
-    use_embed: bool = True,
-    embed_title: Optional[str] = None,
-    embed_color: Optional[int] = None
-) -> str:
-    """
-    发送纯文本消息到 Discord（使用 Embed 格式）
-
-    将纯文本消息发送到指定 Discord 用户的私聊或频道中。
-    默认使用精美的 Embed 卡片格式。
-
-    Args:
-        content: 消息内容（必需）
-        user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
-        channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-        use_embed: 是否使用 Embed 格式发送（默认 True）
-            - True: 使用精美卡片格式（推荐）
-            - False: 发送纯文本消息
-        embed_title: Embed 标题（可选，仅在 use_embed=True 时生效）
-        embed_color: Embed 颜色（可选，十进制格式）
-                    常用颜色：
-                    - 5793266 (蓝色)
-                    - 3066993 (绿色)
-                    - 16776960 (红色)
-                    - 15105570 (黄色)
-
-    Returns:
-        JSON格式的发送结果，包含成功状态和消息信息
-
-    Examples:
-        # 发送纯文本消息到用户私聊
-        mcp_send_message_to_discord(
-            content="你好！这是一条测试消息",
-            user_id="123456789"
-        )
-
-        # 发送带标题的 Embed 消息到频道
-        mcp_send_message_to_discord(
-            content="这是消息的详细内容",
-            channel_id="987654321",
-            embed_title="通知标题"
-        )
-
-        # 发送带颜色的消息
-        mcp_send_message_to_discord(
-            content="任务已完成！",
-            channel_id="987654321",
-            embed_title="成功",
-            embed_color=3066993  # 绿色
-        )
-
-    Note:
-        - user_id 和 channel_id 必须指定其中一个
-        - Embed 格式更美观，推荐使用
-        - 发送给私聊用户时，user_id 可以从 Discord 开发者模式获取
-        - 发送到频道时，channel_id 可以从 Discord 开发者模式获取
-        - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
-    """
-    return await send_message_to_discord(
-        content=content,
-        user_id=user_id,
-        channel_id=channel_id,
-        use_embed=use_embed,
-        embed_title=embed_title,
-        embed_color=embed_color
     )
 
 
@@ -290,10 +195,8 @@ def run_server(
 
     print()
     print("  已注册的工具:")
-    print("    1. mcp_send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
-    print("    2. mcp_send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
-    print("    3. mcp_list_discord_channels         - 列出 Bot 可访问的频道和服务器")
-    print("    4. mcp_send_message_to_discord        - 发送纯文本消息到 Discord（支持 Embed 格式）")
+    print("    1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
+    print("    2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
     print()
     print("  架构说明:")
     print("    - MCP Server 通过消息队列与 Discord Bot 通信")

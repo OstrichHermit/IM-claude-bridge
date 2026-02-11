@@ -149,11 +149,11 @@ class ClaudeBridge:
 
                 # ========== 会话处理逻辑 ==========
                 # 1. 首次或重置后（session_created=False）：使用 --session-id 指定新会话
-                # 2. 后续（session_created=True）：使用 -c 继续会话
+                # 2. 后续（session_created=True）：使用 -r <session_id> 继续会话
                 if session_created:
-                    # 后续调用：使用 -c 继续会话
-                    cmd_args.append('-c')
-                    print(f"🔄 [续会模式] 使用 -c 继续现有会话")
+                    # 后续调用：使用 -r <session_id> 继续会话
+                    cmd_args.extend(['-r', session_id])
+                    print(f"🔄 [续会模式] 使用 -r {session_id} 继续会话")
                 else:
                     # 首次调用：使用 --session-id 指定会话
                     if session_id:
