@@ -1087,7 +1087,7 @@ class MessageQueue:
             INSERT INTO message_requests (
                 content, user_id, channel_id, use_embed,
                 embed_title, embed_color, status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message_request.content,
             message_request.user_id,
