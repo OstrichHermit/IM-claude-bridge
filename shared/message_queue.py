@@ -65,6 +65,7 @@ class Message:
     response: Optional[str] = None
     error: Optional[str] = None
     is_dm: bool = False  # 是否为私聊消息
+    is_external: bool = False  # 是否为外部插入的消息（非真实 Discord 消息）
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -167,6 +168,12 @@ class MessageQueue:
         # 兼容性处理：为旧数据库添加 is_dm 字段
         try:
             cursor.execute("ALTER TABLE messages ADD COLUMN is_dm BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 兼容性处理：为旧数据库添加 is_external 字段（标记外部插入的消息）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN is_external BOOLEAN DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
@@ -298,8 +305,8 @@ class MessageQueue:
                 direction, content, status,
                 discord_channel_id, discord_message_id,
                 discord_user_id, username,
-                response, error, is_dm, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response, error, is_dm, is_external, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message.direction,
             message.content,
@@ -311,6 +318,7 @@ class MessageQueue:
             message.response,
             message.error,
             1 if message.is_dm else 0,
+            1 if message.is_external else 0,
             message.created_at,
             message.updated_at
         ))
@@ -330,7 +338,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, created_at, updated_at
+                   response, error, is_dm, is_external, created_at, updated_at
             FROM messages
             WHERE status = ? AND direction = ?
             ORDER BY created_at ASC
@@ -353,8 +361,9 @@ class MessageQueue:
                 response=row[8],
                 error=row[9],
                 is_dm=bool(row[10]),
-                created_at=row[11],
-                updated_at=row[12]
+                is_external=bool(row[11]),
+                created_at=row[12],
+                updated_at=row[13]
             )
         return None
 
@@ -422,8 +431,9 @@ class MessageQueue:
                 response=row[8],
                 error=row[9],
                 is_dm=bool(row[10]),
-                created_at=row[11],
-                updated_at=row[12]
+                is_external=bool(row[11]),
+                created_at=row[12],
+                updated_at=row[13]
             )
         return None
 
@@ -1077,7 +1087,7 @@ class MessageQueue:
             INSERT INTO message_requests (
                 content, user_id, channel_id, use_embed,
                 embed_title, embed_color, status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message_request.content,
             message_request.user_id,

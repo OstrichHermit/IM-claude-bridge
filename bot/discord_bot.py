@@ -719,6 +719,64 @@ class DiscordBot(commands.Bot):
             try:
                 current_time = asyncio.get_event_loop().time()
 
+                # 扫描外部插入的消息（is_external=True）
+                # 查询 pending 和 processing 状态，并过滤已追踪的消息
+                import sqlite3
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
+                    FROM messages
+                    WHERE status IN (?, ?) AND direction = ? AND is_external = 1
+                    ORDER BY created_at ASC
+                """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value))
+                external_messages = cursor.fetchall()
+                conn.close()
+
+                for msg_info in external_messages:
+                    msg_id, user_id, channel_id, username, content, is_dm = msg_info
+                    # 跳过已追踪的消息（防止重复处理）
+                    if msg_id in self.pending_messages:
+                        continue
+
+                conn.close()
+
+                for msg_info in external_messages:
+                    msg_id, user_id, channel_id, username, content, is_dm = msg_info
+                    # 跳过已追踪的消息
+                    if msg_id not in self.pending_messages:
+                        try:
+                            if is_dm:
+                                user = self.get_user(user_id)
+                                if not user:
+                                    user = await self.fetch_user(user_id)
+                                channel = await user.create_dm()
+                            else:
+                                channel = self.get_channel(channel_id)
+                                if not channel:
+                                    print(f"⚠️  外部消息 #{msg_id}: 找不到频道 {channel_id}")
+                                    continue
+
+                            # 发送确认消息
+                            confirmation_msg = await channel.send(
+                                f"✅ 消息已接收！正在等待 Claude Bridge 接收...\n"
+                                f"消息 ID: {msg_id}"
+                            )
+
+                            # 加入 pending_messages 追踪
+                            self.pending_messages[msg_id] = {
+                                "channel": channel,
+                                "user_message": None,
+                                "confirmation_msg": confirmation_msg,
+                                "start_time": asyncio.get_event_loop().time(),
+                                "content": content[:50],
+                                "notified_processing": False
+                            }
+                            print(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
+
+                        except Exception as e:
+                            print(f"⚠️  外部消息 #{msg_id} 加载失败: {e}")
+
                 # 检查待处理消息的状态
                 messages_to_remove = []
                 for msg_id, tracking_info in list(self.pending_messages.items()):
