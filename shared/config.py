@@ -131,3 +131,13 @@ class Config:
     def allowed_download_directories(self) -> List[str]:
         """获取允许的下载目录列表（空列表 = 允许所有目录）"""
         return self._config.get('file_download', {}).get('allowed_directories', [])
+
+    @property
+    def auto_load_memory_enabled(self) -> bool:
+        """获取是否启用自动加载记忆"""
+        return self._config.get('auto_load_memory', {}).get('enabled', False)
+
+    @property
+    def auto_load_memory_prompt_text(self) -> str:
+        """获取自动加载记忆的提示文本"""
+        return self._config.get('auto_load_memory', {}).get('prompt_text', '加载记忆')

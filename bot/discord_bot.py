@@ -434,6 +434,11 @@ class DiscordBot(commands.Bot):
             # 检测是否为私聊消息
             is_dm = isinstance(message.channel, discord.DMChannel)
 
+            # 获取会话信息，检查是否为首次对话
+            session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
+                self.config.working_directory
+            )
+
             # 显示"正在输入"状态
             async with message.channel.typing():
                 # 创建消息对象

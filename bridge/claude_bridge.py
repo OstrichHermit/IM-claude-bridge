@@ -63,9 +63,8 @@ class ClaudeBridge:
             )
 
             if response:
-                # 如果是首次调用（session_created=False），标记会话已创建
-                if not session_created:
-                    self.message_queue.mark_session_created(session_key)
+                # 注意：会话已在 AI 开始工作时标记为已创建（call_claude_cli 内部处理）
+                # 这里不需要再标记
 
                 # 更新消息，添加响应
                 self.message_queue.update_status(
@@ -128,13 +127,20 @@ class ClaudeBridge:
         if username and user_id:
             if is_dm:
                 # 私聊模式
-                prompt = f"{username}（{user_id}）在私聊中说：{prompt}"
+                sender_info = f"{username}（{user_id}）在私聊中说："
             elif channel_id:
                 # 频道模式（带频道 ID）
-                prompt = f"{username}（{user_id}）在频道（{channel_id}）中说：{prompt}"
+                sender_info = f"{username}（{user_id}）在频道（{channel_id}）中说："
             else:
                 # 频道模式（不带频道 ID）
-                prompt = f"{username}（{user_id}）说：{prompt}"
+                sender_info = f"{username}（{user_id}）说："
+
+            # 如果是首次对话且启用了自动加载记忆，添加"加载记忆"前缀
+            if self.config.auto_load_memory_enabled and not session_created:
+                prompt = f"{self.config.auto_load_memory_prompt_text}{sender_info}{prompt}"
+                print(f"[自动加载记忆] 首次对话，已添加前缀")
+            else:
+                prompt = f"{sender_info}{prompt}"
 
         while retries < max_retries:
             try:
@@ -216,6 +222,12 @@ class ClaudeBridge:
                                 # 立即更新状态为 AI_STARTED
                                 if message_id:
                                     self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
+
+                                # 🔥 关键修改：AI 开始工作时就标记会话为已创建
+                                if not session_created and session_key:
+                                    self.message_queue.mark_session_created(session_key)
+                                    print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
+
                                 ai_started_notified = True
 
                             # 收集 assistant 消息作为响应
