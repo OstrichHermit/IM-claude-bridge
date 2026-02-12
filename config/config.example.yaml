@@ -29,3 +29,11 @@ queue:
   poll_interval: 500
   # 消息保留时间（小时，0 = 永久保留）
   message_retention_hours: 24
+
+# 自动加载记忆配置
+auto_load_memory:
+  # 是否启用自动加载记忆（首次对话时增加提示词注入："加载记忆。"）
+  # 启用该功能需要您自己有记忆系统的实现。
+  enabled: true
+  # 加载记忆的提示文本（会添加到消息前面）
+  prompt_text: "加载记忆"
