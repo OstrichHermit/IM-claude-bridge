@@ -2,24 +2,40 @@
 discord:
   token: "YOUR_DISCORD_BOT_TOKEN_HERE"
   # 从 https://discord.com/developers/applications 获取
-  command_prefix: "@"
+  command_prefix: "!"
   # 允许的频道 ID 列表（空列表表示所有频道）
   allowed_channels: []
   # 允许的用户 ID 列表（空列表表示所有用户）
   allowed_users: []
+  # 启动通知配置（可选，留空则不发送启动通知）
+  startup_notification_channel: ""  # 频道 ID（留空）
+  startup_notification_user: ""  # 用户 ID（私聊）
+  # 斜杠命令同步配置（留空 = 全局同步，需要等待几分钟生效）
+  # 填写服务器 ID 可以立即同步命令到该服务器
+  # 获取方法：Discord 开发者模式 → 右键服务器 → 复制 ID
+  sync_guild_id: ""  # 服务器 ID（留空则使用全局同步）
 
 # Claude Code 桥接配置
 claude:
   # claude 可执行文件路径（如果已在 PATH 中可省略）
   executable: "claude"
   # 每次对话的超时时间（秒）
-  timeout: 300
+  timeout: 30
   # 最大重试次数
   max_retries: 3
   # 工作目录（可选，留空则使用当前目录）
   # 对于需要访问特定项目文件的任务很有用
   working_directory: ""
   # 会话模式：固定为 global（全局共享会话）
+
+# 文件下载配置
+file_download:
+  # 默认下载目录（支持相对路径和绝对路径）
+  # 相对路径基于工作区根目录（D:/AgentWorkspace）
+  default_directory: "./downloads"
+  # 允许的下载目录列表（空列表 = 允许所有目录）
+  # 安全限制：防止下载到系统目录
+  allowed_directories: []
 
 # 消息队列配置
 queue:
@@ -34,6 +50,6 @@ queue:
 auto_load_memory:
   # 是否启用自动加载记忆（首次对话时增加提示词注入："加载记忆。"）
   # 启用该功能需要您自己有记忆系统的实现。
-  enabled: true
+  enabled: false
   # 加载记忆的提示文本（会添加到消息前面）
-  prompt_text: "加载记忆"
+  prompt_text: "加载记忆。"
