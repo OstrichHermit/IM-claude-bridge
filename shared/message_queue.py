@@ -51,6 +51,13 @@ class MessageRequestStatus(Enum):
     FAILED = "failed"          # 失败
 
 
+class MessageTag(Enum):
+    """消息标签枚举"""
+    DEFAULT = "default"          # 默认标签
+    TASK = "task"                # 任务消息
+    REMINDER = "reminder"          # 提醒消息
+
+
 @dataclass
 class Message:
     """消息数据类"""
@@ -66,6 +73,7 @@ class Message:
     error: Optional[str] = None
     is_dm: bool = False  # 是否为私聊消息
     is_external: bool = False  # 是否为外部插入的消息（非真实 Discord 消息）
+    tag: str = MessageTag.DEFAULT.value  # 消息标签
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -122,6 +130,7 @@ class MessageRequest:
     use_embed: bool = True  # 是否使用 Embed 格式
     embed_title: Optional[str] = None  # Embed 标题
     embed_color: Optional[int] = None  # Embed 颜色（十进制）
+    tag: str = MessageTag.DEFAULT.value  # 消息标签
     status: str = MessageRequestStatus.PENDING.value  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
     error: Optional[str] = None  # 错误信息
@@ -174,6 +183,12 @@ class MessageQueue:
         # 兼容性处理：为旧数据库添加 is_external 字段（标记外部插入的消息）
         try:
             cursor.execute("ALTER TABLE messages ADD COLUMN is_external BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 兼容性处理：为旧数据库添加 tag 字段（消息标签）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN tag TEXT DEFAULT 'default'")
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
@@ -269,6 +284,7 @@ class MessageQueue:
                 use_embed BOOLEAN DEFAULT 1,
                 embed_title TEXT,
                 embed_color INTEGER,
+                tag TEXT DEFAULT 'default',
                 status TEXT NOT NULL,
                 result TEXT,
                 error TEXT,
@@ -282,6 +298,12 @@ class MessageQueue:
             CREATE INDEX IF NOT EXISTS idx_message_requests_status
             ON message_requests(status)
         """)
+
+        # 兼容性处理：为旧数据库添加 tag 字段（消息请求标签）
+        try:
+            cursor.execute("ALTER TABLE message_requests ADD COLUMN tag TEXT DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_message_requests_created_at
@@ -305,8 +327,8 @@ class MessageQueue:
                 direction, content, status,
                 discord_channel_id, discord_message_id,
                 discord_user_id, username,
-                response, error, is_dm, is_external, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response, error, is_dm, is_external, tag, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message.direction,
             message.content,
@@ -319,6 +341,7 @@ class MessageQueue:
             message.error,
             1 if message.is_dm else 0,
             1 if message.is_external else 0,
+            message.tag,
             message.created_at,
             message.updated_at
         ))
@@ -338,7 +361,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, is_external, created_at, updated_at
+                   response, error, is_dm, is_external, tag, created_at, updated_at
             FROM messages
             WHERE status = ? AND direction = ?
             ORDER BY created_at ASC
@@ -362,8 +385,9 @@ class MessageQueue:
                 error=row[9],
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
-                created_at=row[12],
-                updated_at=row[13]
+                tag=row[12] or MessageTag.DEFAULT.value,
+                created_at=row[13],
+                updated_at=row[14]
             )
         return None
 
@@ -406,7 +430,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, created_at, updated_at
+                   response, error, is_dm, tag, created_at, updated_at
             FROM messages
             WHERE discord_message_id = ? AND direction = ?
             AND status IN (?, ?)
@@ -432,8 +456,9 @@ class MessageQueue:
                 error=row[9],
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
-                created_at=row[12],
-                updated_at=row[13]
+                tag=row[12] or MessageTag.DEFAULT.value,
+                created_at=row[13],
+                updated_at=row[14]
             )
         return None
 
@@ -1086,8 +1111,8 @@ class MessageQueue:
         cursor.execute("""
             INSERT INTO message_requests (
                 content, user_id, channel_id, use_embed,
-                embed_title, embed_color, status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                embed_title, embed_color, tag, status, result, error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message_request.content,
             message_request.user_id,
@@ -1095,6 +1120,7 @@ class MessageQueue:
             1 if message_request.use_embed else 0,
             message_request.embed_title,
             message_request.embed_color,
+            message_request.tag,
             message_request.status,
             message_request.result,
             message_request.error,
@@ -1115,7 +1141,7 @@ class MessageQueue:
 
         cursor.execute("""
             SELECT id, content, user_id, channel_id, use_embed,
-                   embed_title, embed_color, status, result, error, created_at, updated_at
+                   embed_title, embed_color, tag, status, result, error, created_at, updated_at
             FROM message_requests
             WHERE status = ?
             ORDER BY created_at ASC
@@ -1134,11 +1160,12 @@ class MessageQueue:
                 use_embed=bool(row[4]),
                 embed_title=row[5],
                 embed_color=row[6],
-                status=row[7],
-                result=row[8],
-                error=row[9],
-                created_at=row[10],
-                updated_at=row[11]
+                tag=row[7] or MessageTag.DEFAULT.value,
+                status=row[8],
+                result=row[9],
+                error=row[10],
+                created_at=row[11],
+                updated_at=row[12]
             )
         return None
 
@@ -1192,7 +1219,7 @@ class MessageQueue:
 
             cursor.execute("""
                 SELECT id, content, user_id, channel_id, use_embed,
-                       embed_title, embed_color, status, result, error, created_at, updated_at
+                       embed_title, embed_color, tag, status, result, error, created_at, updated_at
                 FROM message_requests
                 WHERE id = ?
             """, (request_id,))
@@ -1209,11 +1236,12 @@ class MessageQueue:
                     use_embed=bool(row[4]),
                     embed_title=row[5],
                     embed_color=row[6],
-                    status=row[7],
-                    result=row[8],
-                    error=row[9],
-                    created_at=row[10],
-                    updated_at=row[11]
+                    tag=row[7] or MessageTag.DEFAULT.value,
+                    status=row[8],
+                    result=row[9],
+                    error=row[10],
+                    created_at=row[11],
+                    updated_at=row[12]
                 )
 
                 # 如果已完成或失败，返回结果

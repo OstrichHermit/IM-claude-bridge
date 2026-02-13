@@ -13,7 +13,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag
 
 
 class ClaudeBridge:
@@ -29,17 +29,40 @@ class ClaudeBridge:
         """处理单条消息"""
         print(f"[消息 #{message.id}] 开始处理: {message.content[:50]}...")
 
+        # ========== 检查消息标签，决定会话模式 ==========
+        use_temp_session = False
+        temp_session_key = None
+        temp_session_id = None
+
+        if message.tag in (MessageTag.TASK.value, MessageTag.REMINDER.value):
+            # 任务或提醒标签：生成临时会话
+            import uuid
+            temp_session_key = f"temp_{message.id}"
+            temp_session_id = str(uuid.uuid4())
+            use_temp_session = True
+            print(f"[消息 #{message.id}] 检测到特殊标签 '{message.tag}'，使用临时会话模式")
+            print(f"[消息 #{message.id}] 临时 Session Key: {temp_session_key}")
+            print(f"[消息 #{message.id}] 临时 Session ID: {temp_session_id}")
+
         # 获取或创建全局会话工作目录
-        session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
-            self.config.working_directory
-        )
+        if use_temp_session:
+            # 临时会话：使用全局工作目录（不创建独立目录）
+            session_key = temp_session_key
+            session_id = temp_session_id
+            session_created = False  # 标记为首次模式
+            working_dir = self.config.working_directory
+        else:
+            # 普通会话：使用原有逻辑
+            session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
+                self.config.working_directory
+            )
 
         if session_key:
             print(f"[消息 #{message.id}] ========== 会话信息 ==========")
             print(f"[消息 #{message.id}] 会话 Key: {session_key}")
             print(f"[消息 #{message.id}] 会话 ID: {session_id}")
             print(f"[消息 #{message.id}] 会话已创建: {session_created}")
-            print(f"[消息 #{message.id}] CLI 调用模式: {'--session-id (首次)' if not session_created else '-c (续会)'}")
+            print(f"[消息 #{message.id}] CLI 调用模式: {'--session-id (首次)' if use_temp_session else '-r (续会)'}")
             print(f"[消息 #{message.id}] 工作目录: {working_dir}")
             print(f"[消息 #{message.id}] ===============================")
 
@@ -59,7 +82,8 @@ class ClaudeBridge:
                 user_id=message.discord_user_id,
                 is_dm=message.is_dm,
                 message_id=message.id,
-                channel_id=message.discord_channel_id
+                channel_id=message.discord_channel_id,
+                message_tag=message.tag  # 传递消息标签
             )
 
             if response:
@@ -97,7 +121,7 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None, channel_id: int = None) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None, channel_id: int = None, message_tag: str = None) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
@@ -114,6 +138,7 @@ class ClaudeBridge:
             is_dm: 是否为私聊消息
             message_id: 消息 ID，用于实时更新状态
             channel_id: 频道 ID（频道模式下需要）
+            message_tag: 消息标签（task/reminder/default），用于设置特殊消息结构
         """
         import json
 
@@ -123,24 +148,19 @@ class ClaudeBridge:
         # 使用传入的 working_dir，如果没有则使用默认配置
         cwd = working_dir or self.config.working_directory
 
-        # 附加发送者信息到提示词
-        if username and user_id:
-            if is_dm:
-                # 私聊模式
-                sender_info = f"{username}（{user_id}）在私聊中说："
-            elif channel_id:
-                # 频道模式（带频道 ID）
-                sender_info = f"{username}（{user_id}）在频道（{channel_id}）中说："
-            else:
-                # 频道模式（不带频道 ID）
-                sender_info = f"{username}（{user_id}）说："
-
-            # 如果是首次对话且启用了提示词注入，添加前缀
-            if self.config.auto_load_enabled and not session_created:
-                prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
-                print(f"[提示词注入] 首次对话，已添加前缀")
-            else:
-                prompt = f"{sender_info}{prompt}"
+        # ========== 根据消息标签构建独立的消息结构 ==========
+        if message_tag == MessageTag.TASK.value:
+            # 任务消息：结构化格式
+            prompt = self._build_task_prompt(prompt, username, user_id, is_dm, channel_id)
+            print(f"[消息标签] 使用任务消息结构")
+        elif message_tag == MessageTag.REMINDER.value:
+            # 提醒消息：结构化格式
+            prompt = self._build_reminder_prompt(prompt, username, user_id, is_dm, channel_id)
+            print(f"[消息标签] 使用提醒消息结构")
+        else:
+            # 默认消息：原有格式
+            prompt = self._build_default_prompt(prompt, username, user_id, is_dm, channel_id, session_created)
+        # ===================================
 
         while retries < max_retries:
             try:
@@ -297,6 +317,71 @@ class ClaudeBridge:
                 await asyncio.sleep(wait_time)
 
         return None
+
+    def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
+        """构建发送者信息"""
+        if is_dm:
+            return f"{username}（{user_id}）在私聊中说："
+        elif channel_id:
+            return f"{username}（{user_id}）在频道（{channel_id}）中说："
+        else:
+            return f"{username}（{user_id}）说："
+
+    def _build_task_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
+        """构建任务消息结构"""
+        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
+        if is_dm:
+            return f"""🔔 定时任务已触发！
+            
+任务创建人：{username}（{user_id}）
+任务内容：{content}
+
+请按以下步骤执行：
+1、理解任务需求；
+2、加载相关Skill或Mcp服务；
+3、直接执行并完成任务；
+4、完成后响应总结消息。"""
+        
+        else:return f"""🔔 定时任务已触发！
+        
+任务创建人：{username}（{user_id}） 
+任务创建频道：{channel_id}
+任务内容：{content}
+
+请按以下步骤执行：
+1、理解任务需求；
+2、加载相关Skill或Mcp服务；
+3、直接执行并完成任务；
+4、完成后响应总结消息。"""
+
+    def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
+        """构建提醒消息结构"""
+        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
+        if is_dm:
+            return f"""🔔 定时提醒已触发！
+            
+提醒创建人：{username}（{user_id}）
+提醒内容：{content}
+
+请直接响应提醒内容，不要做多余操作。"""
+        
+        else:return f"""🔔 定时提醒已触发！
+        
+提醒创建人：{username}（{user_id}）
+提醒内容：{content}
+提醒创建频道：{channel_id}
+
+请直接响应提醒内容，不要做多余操作。"""
+
+    def _build_default_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, session_created: bool) -> str:
+        """构建默认消息结构（原有格式）"""
+        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
+
+        # 如果是首次对话且启用了提示词注入，添加前缀
+        if self.config.auto_load_enabled and not session_created:
+            return f"{self.config.auto_load_prompt_text}{sender_info}{content}"
+        else:
+            return f"{sender_info}{content}"
 
     async def run(self):
         """运行桥接服务主循环"""

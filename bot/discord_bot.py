@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag
 
 
 class DiscordBot(commands.Bot):
@@ -87,9 +87,6 @@ class DiscordBot(commands.Bot):
 
         # 启动消息发送请求检查任务
         self.message_request_check_task = asyncio.create_task(self.check_message_requests())
-
-        # 发送启动通知
-        await self.send_startup_notification()
 
     async def cleanup_stuck_messages(self):
         """清理上次崩溃时卡住的消息（将 processing 状态改为 completed）"""
@@ -384,6 +381,9 @@ class DiscordBot(commands.Bot):
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
         print(f"✓ 斜杠命令: /new, /status, /stop, /restart")
 
+        # 发送启动通知
+        await self.send_startup_notification()
+
     async def on_message(self, message: discord.Message):
         """处理接收到的消息"""
         # 忽略自己的消息
@@ -441,7 +441,7 @@ class DiscordBot(commands.Bot):
 
             # 显示"正在输入"状态
             async with message.channel.typing():
-                # 创建消息对象
+                # 创建消息对象（默认标签）
                 msg = Message(
                     id=None,
                     direction=MessageDirection.TO_CLAUDE.value,
@@ -451,7 +451,8 @@ class DiscordBot(commands.Bot):
                     discord_message_id=message.id,
                     discord_user_id=message.author.id,
                     username=message.author.display_name,
-                    is_dm=is_dm
+                    is_dm=is_dm,
+                    tag=MessageTag.DEFAULT.value
                 )
 
                 # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）

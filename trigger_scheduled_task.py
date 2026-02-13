@@ -17,9 +17,11 @@ from insert_external_message import insert_external_message
 
 def trigger_scheduled_task(
     content: str,
+    username: str,
     user_id: int = None,
     channel_id: int = None,
-    is_dm: bool = False
+    is_dm: bool = False,
+    tag: str = None
 ) -> int:
     """
     触发定时任务，向 Claude Bridge 发送定时消息
@@ -30,6 +32,7 @@ def trigger_scheduled_task(
 
     Args:
         content: 消息内容（MCP 调用请用英文）
+        username: 用户名（必填）
         user_id: Discord 用户 ID（私聊模式必须提供）
         channel_id: Discord 频道 ID（频道模式必须提供）
         is_dm: 是否为私聊消息（默认：False）
@@ -54,19 +57,20 @@ def trigger_scheduled_task(
     # 固定配置：使用 messages 表，方向为 TO_CLAUDE，db_path 为默认
     message_id = insert_external_message(
         content=content,
-        username="OH-Bot 的定时任务已触发",  # 固定值
+        username=username,
         user_id=user_id,
         channel_id=channel_id,
         is_dm=is_dm,
         use_message_request=False,  # 固定使用 messages 表
-        db_path=None               # 固定使用默认数据库路径
+        tag=tag,  # 传递标签
+        db_path=None             # 固定使用默认数据库路径
     )
     return message_id
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="触发定时任务 - 向 Claude Bridge 发送定时消息（用户名：OH-Bot，方向：TO_CLAUDE，表：messages）\n\n⚠️ MCP 调用提示：content 请使用英文（ASCII 字符）"
+        description="触发定时任务 - 向 Claude Bridge 发送定时消息（方向：TO_CLAUDE，表：messages）\n\n⚠️ MCP 调用提示：content 请使用英文（ASCII 字符）"
     )
 
     parser.add_argument(
@@ -84,14 +88,14 @@ def main():
         "--user-id", "-i",
         type=int,
         default=None,
-        help="Discord 用户 ID（私聊模式必须提供）"
+        help="Discord 用户 ID（可从配置文件读取）"
     )
 
     parser.add_argument(
         "--channel-id", "-c",
         type=int,
         default=None,
-        help="Discord 频道 ID（频道模式必须提供）"
+        help="Discord 频道 ID（可从配置文件读取）"
     )
 
     parser.add_argument(
@@ -100,31 +104,91 @@ def main():
         help="是否为私聊消息（提供 --user-id 时自动启用）"
     )
 
+    parser.add_argument(
+        "--username", "-u",
+        required=False,
+        help="用户名（使用 --config-file 时可从配置文件读取）"
+    )
+
+    parser.add_argument(
+        "--tag", "-t",
+        required=False,
+        help="消息标签（可从配置文件读取）：task 或 reminder"
+    )
+
     args = parser.parse_args()
 
-    # 确定消息内容：从文件读取或直接使用
+    # 从配置文件读取所有参数
     if args.config_file:
+        # 解析配置文件（支持 key=value 格式）
+        config = {}
         with open(args.config_file, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-        print(f"📄 从配置文件读取消息: {args.config_file}")
-    elif args.content:
-        content = args.content
-    else:
-        parser.error("必须提供 content 或 --config-file 参数")
+            for line in f:
+                line = line.strip()
+                if line and '=' in line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip()
 
-    # 智能判断模式：提供了 --user-id 就是私聊模式
-    is_dm_mode = args.is_dm or args.user_id is not None
-    target_user_id = args.user_id if is_dm_mode else 0
-    target_channel_id = args.user_id if is_dm_mode else args.channel_id
+        # 从配置文件读取参数（命令行参数优先）
+        content = config.get('content', '')
+        username = config.get('username') or args.username
+        user_id_str = config.get('user_id', '')
+        channel_id_str = config.get('channel_id', '')
+        tag = config.get('tag') or args.tag
+
+        # 转换 ID 为整数（如果提供）
+        user_id = int(user_id_str) if user_id_str.strip() else args.user_id
+        channel_id = int(channel_id_str) if channel_id_str.strip() else args.channel_id
+
+        print(f"📄 从配置文件读取: {args.config_file}")
+        print(f"   用户名: {username}")
+        print(f"   内容: {content}")
+        if user_id:
+            print(f"   用户 ID: {user_id}")
+        if channel_id:
+            print(f"   频道 ID: {channel_id}")
+        print(f"   标签: {tag}")
+
+        # 参数校验
+        if not content:
+            parser.error("配置文件中缺少 content 字段")
+        if not username:
+            parser.error("配置文件中缺少 username 字段")
+        if not tag:
+            parser.error("配置文件中缺少 tag 字段")
+        if not user_id and not channel_id:
+            parser.error("配置文件中必须提供 user_id 或 channel_id 之一")
+    else:
+        # 不使用配置文件，从命令行读取
+        content = args.content or ''
+        username = args.username
+        user_id = args.user_id
+        channel_id = args.channel_id
+        tag = args.tag
+
+        if not content:
+            parser.error("必须提供 content 或 --config-file 参数")
+        if not username:
+            parser.error("不使用配置文件时，必须提供 --username 参数")
+        if not tag:
+            parser.error("不使用配置文件时，必须提供 --tag 参数")
+        if not user_id and not channel_id:
+            parser.error("不使用配置文件时，必须提供 --user-id 或 --channel-id 之一")
+
+    # 智能判断模式：提供了 user_id 就是私聊模式
+    is_dm_mode = args.is_dm or user_id is not None
+    target_user_id = user_id if is_dm_mode else 0
+    target_channel_id = user_id if is_dm_mode else channel_id
 
     # 触发定时任务
     print(f"⏰ 正在触发定时任务...")
     print(f"   内容: {content}")
     print(f"   类型: {'私聊（DM）' if is_dm_mode else '频道'}")
+    print(f"   标签: {tag}")
     if is_dm_mode:
-        print(f"   目标: 私聊 {args.user_id}")
+        print(f"   目标: 私聊 {user_id}")
     else:
-        print(f"   目标: 频道 {args.channel_id}")
+        print(f"   目标: 频道 {channel_id}")
     print(f"   方向: TO_CLAUDE（固定）")
     print(f"   表: messages（固定）")
     print(f"   数据库: 默认路径（固定）")
@@ -133,9 +197,11 @@ def main():
     try:
         message_id = trigger_scheduled_task(
             content=content,
+            username=username,
             user_id=target_user_id,
             channel_id=target_channel_id,
-            is_dm=is_dm_mode
+            is_dm=is_dm_mode,
+            tag=tag  # 传递标签参数
         )
 
         print(f"✅ 定时任务已成功触发！")

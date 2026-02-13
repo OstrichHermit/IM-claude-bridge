@@ -9,7 +9,7 @@ from pathlib import Path
 # 添加 shared 目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag
 
 
 def insert_external_message(
@@ -19,6 +19,7 @@ def insert_external_message(
     channel_id: int = 987654321,
     is_dm: bool = False,
     use_message_request: bool = False,  # 默认使用 messages（方式2）
+    tag: str = MessageTag.DEFAULT.value,  # 消息标签
     db_path: str = None
 ) -> int:
     """
@@ -31,6 +32,7 @@ def insert_external_message(
         channel_id: Discord 频道/私聊 ID
         is_dm: 是否为私聊消息
         use_message_request: 是否使用 message_requests 表（推荐：True）
+        tag: 消息标签（默认：default）
         db_path: 数据库路径（默认使用项目中的数据库）
 
     Returns:
@@ -60,7 +62,8 @@ def insert_external_message(
             channel_id=None if is_dm else channel_id,
             use_embed=True,
             embed_title=f"来自 {username} 的消息",
-            embed_color=3447003  # Discord 蓝色
+            embed_color=3447003,  # Discord 蓝色
+            tag=tag
         )
         message_id = queue.add_message_request(message_request)
         return message_id
@@ -76,7 +79,8 @@ def insert_external_message(
             discord_user_id=user_id,
             username=username,
             is_dm=is_dm,
-            is_external=True  # 标记为外部消息
+            is_external=True,  # 标记为外部消息
+            tag=tag
         )
         message_id = queue.add_message(message)
         return message_id
@@ -125,6 +129,13 @@ def main():
     )
 
     parser.add_argument(
+        "--tag", "-t",
+        default=MessageTag.DEFAULT.value,
+        choices=[tag.value for tag in MessageTag],
+        help=f"消息标签（默认：{MessageTag.DEFAULT.value}）"
+    )
+
+    parser.add_argument(
         "--db-path",
         help="自定义数据库路径（默认：shared/messages.db）"
     )
@@ -138,6 +149,7 @@ def main():
     print(f"   用户: {args.username} (ID: {args.user_id})")
     print(f"   频道: {args.channel_id}")
     print(f"   类型: {'私聊' if args.is_dm else '频道'}")
+    print(f"   标签: {args.tag}")
     print(f"   方式: {'message_requests (直接发送)' if use_mr else 'messages (对话流程)'}")
     print()
 
@@ -149,6 +161,7 @@ def main():
             channel_id=args.channel_id,
             is_dm=args.is_dm,
             use_message_request=use_mr,
+            tag=args.tag,
             db_path=args.db_path
         )
 
