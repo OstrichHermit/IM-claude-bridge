@@ -45,16 +45,32 @@ D:/AgentWorkspace/                    # Workspace root
 
 **Maintenance Skill Usage** (recommended installation):
 ```bash
-# Copy Skill to Claude Code config directory
+# Copy maintenance Skill to Claude Code config directory
 cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# Copy scheduled task Skill (optional, for creating scheduled reminders)
+cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 
-**Skill Features**:
+**discord-bridge-maintenance Skill Features**:
 - 🔧 View system architecture and configuration
 - 📊 Monitor message queue and download status
 - 🐛 Quick troubleshooting (Bot not responding, download timeout, etc.)
 - 📝 View database records (messages, download requests)
 - 🔄 View pending task list
+
+**scheduler-task Skill Features** (scheduled reminders):
+- ⏰ Create and manage Windows scheduled tasks
+- 📝 Write async-executing batch scripts (avoid task blocking)
+- 🎯 Configure Discord Bridge command parameters (support DM & channels)
+- 🔧 Properly handle Chinese character encoding issues
+- 📅 Implement scheduled reminders, calendar notifications, task reports, and other automation
+
+**Typical Use Cases**:
+- Daily scheduled reminders (health reminders: brushing, resting, hydration, etc.)
+- Scheduled reports (hourly/daily status reports)
+- Calendar notifications (meeting reminders, deadline alerts)
+- Automated workflows (execute scripts on schedule and send result notifications)
 
 ### 1. Prerequisites
 
