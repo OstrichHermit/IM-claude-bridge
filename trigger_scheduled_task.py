@@ -21,7 +21,8 @@ def trigger_scheduled_task(
     user_id: int = None,
     channel_id: int = None,
     is_dm: bool = False,
-    tag: str = None
+    tag: str = None,
+    file_path: str = None
 ) -> int:
     """
     触发定时任务，向 Claude Bridge 发送定时消息
@@ -63,7 +64,8 @@ def trigger_scheduled_task(
         is_dm=is_dm,
         use_message_request=False,  # 固定使用 messages 表
         tag=tag,  # 传递标签
-        db_path=None             # 固定使用默认数据库路径
+        db_path=None,             # 固定使用默认数据库路径
+        file_path=file_path         # 附加文件路径
     )
     return message_id
 
@@ -116,6 +118,12 @@ def main():
         help="消息标签（可从配置文件读取）：task 或 reminder"
     )
 
+    parser.add_argument(
+        "--file-path", "-fp",
+        default=None,
+        help="要附加的文件路径（可从配置文件读取）"
+    )
+
     args = parser.parse_args()
 
     # 从配置文件读取所有参数
@@ -135,6 +143,7 @@ def main():
         user_id_str = config.get('user_id', '')
         channel_id_str = config.get('channel_id', '')
         tag = config.get('tag') or args.tag
+        file_path = config.get('file_path') or args.file_path
 
         # 转换 ID 为整数（如果提供）
         user_id = int(user_id_str) if user_id_str.strip() else args.user_id
@@ -148,6 +157,8 @@ def main():
         if channel_id:
             print(f"   频道 ID: {channel_id}")
         print(f"   标签: {tag}")
+        if file_path:
+            print(f"   附加文件: {file_path}")
 
         # 参数校验
         if not content:
@@ -201,7 +212,8 @@ def main():
             user_id=target_user_id,
             channel_id=target_channel_id,
             is_dm=is_dm_mode,
-            tag=tag  # 传递标签参数
+            tag=tag,  # 传递标签参数
+            file_path=file_path  # 传递文件路径
         )
 
         print(f"✅ 定时任务已成功触发！")

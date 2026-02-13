@@ -20,7 +20,8 @@ def insert_external_message(
     is_dm: bool = False,
     use_message_request: bool = False,  # 默认使用 messages（方式2）
     tag: str = MessageTag.DEFAULT.value,  # 消息标签
-    db_path: str = None
+    db_path: str = None,
+    file_path: str = None  # 附加文件路径
 ) -> int:
     """
     插入外部消息到 Discord Bridge（模拟从外部发送的消息）
@@ -34,9 +35,10 @@ def insert_external_message(
         use_message_request: 是否使用 message_requests 表（推荐：True）
         tag: 消息标签（默认：default）
         db_path: 数据库路径（默认使用项目中的数据库）
+        file_path: 附加文件路径（发送文件时使用）
 
     Returns:
-        消息 ID
+        消息 ID 或文件请求 ID
     """
     # 默认数据库路径（从配置文件读取）
     if db_path is None:
@@ -52,6 +54,29 @@ def insert_external_message(
 
     # 创建消息队列实例
     queue = MessageQueue(db_path)
+
+    # 如果提供了文件路径，创建文件发送请求
+    if file_path:
+        from shared.message_queue import FileRequest, FileRequestStatus
+
+        # 确保文件存在
+        if not Path(file_path).exists():
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+
+        file_request = FileRequest(
+            id=None,
+            file_paths=[file_path],
+            user_id=user_id if is_dm else None,
+            channel_id=None if is_dm else channel_id,
+            message=content,
+            use_embed=True,
+            status=FileRequestStatus.PENDING.value
+        )
+        request_id = queue.add_file_request(file_request)
+        print(f"✅ 文件请求已添加到队列")
+        print(f"   文件: {file_path}")
+        print(f"   请求 ID: {request_id}")
+        return request_id
 
     if use_message_request:
         # 使用 message_requests 表（推荐：直接发送到 Discord）
@@ -140,11 +165,18 @@ def main():
         help="自定义数据库路径（默认：shared/messages.db）"
     )
 
+    parser.add_argument(
+        "--file-path", "-fp",
+        help="要附加的文件路径（发送文件时使用）"
+    )
+
     args = parser.parse_args()
 
     # 发送消息
     use_mr = args.use_message_request
     print(f"📤 正在插入外部消息...")
+    if args.file_path:
+        print(f"   文件: {args.file_path}")
     print(f"   内容: {args.content}")
     print(f"   用户: {args.username} (ID: {args.user_id})")
     print(f"   频道: {args.channel_id}")
@@ -162,11 +194,15 @@ def main():
             is_dm=args.is_dm,
             use_message_request=use_mr,
             tag=args.tag,
-            db_path=args.db_path
+            db_path=args.db_path,
+            file_path=args.file_path
         )
 
         print(f"✅ 外部消息已成功插入！")
-        print(f"   消息 ID: {message_id}")
+        if args.file_path:
+            print(f"   文件请求 ID: {message_id}")
+        else:
+            print(f"   消息 ID: {message_id}")
         print()
         print(f"💡 提示:")
         print(f"   - 如果 Claude Bridge 正在运行，消息将被自动处理")
