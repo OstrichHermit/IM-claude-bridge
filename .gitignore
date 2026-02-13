@@ -50,6 +50,7 @@ env/
 
 # 维护进程临时文件
 .manager.restarting
+.manager.stop
 
 # 操作系统
 .DS_Store
