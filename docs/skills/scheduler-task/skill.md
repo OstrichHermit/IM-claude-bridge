@@ -111,28 +111,40 @@ schtasks /create /tn "任务名称" /tr "D:\path\to\script.bat" /st 09:00 /sc da
 
 **文件位置：** `任务名\任务名_config.txt`
 
+**编码要求：** ⚠️ 必须使用 UTF-8 编码，否则中文会乱码
+
+#### 格式说明
+
 ```ini
 # 任务配置文件（使用 UTF-8 编码）
 # 参数说明：
 # - username: 用户名
-# - content: 提示词内容（reminder=最终消息，task=执行指令）
+# - content: 提示词内容（使用 <<<MARKER_START 和 <<<MARKER_END 包裹）
 # - user_id: Discord 用户 ID（私聊模式必填）
 # - channel_id: Discord 频道 ID（频道模式必填）
 # - tag: 消息标签（reminder=提醒类，task=任务类）
 
-username=
-content=
-user_id=
+username=鸵鸟居士
+content<<<MARKER_START
+[这里写内容，支持多行]
+<<<MARKER_END
+user_id=USER_DISCORD_ID
 channel_id=
-tag=
+tag=task
 ```
+
+**重要提示：**
+- `content` 字段必须使用标记包裹：`content<<<MARKER_START` ... `<<<MARKER_END`
+- 标记中间的内容会完整保留换行和格式
+- 开始标记：`key<<<MARKER_START`（注意：key 后无等号）
+- 结束标记：`<<<MARKER_END`（独占一行）
 
 ### 支持的参数
 
 | 参数 | 说明 | 必填 | reminder 示例 | task 示例                              |
 |------|------|------|-------------|--------------------------------------|
 | `username` | 用户名 | ✅ | `鸵鸟居士` | `鸵鸟居士`                               |
-| `content` | 提示词内容 | ✅ | `早上好！☀️` | `使用 Discord MCP 发送 files/report.pdf` |
+| `content` | 提示词内容（使用标记包裹） | ✅ | 见下方示例 | 见下方示例                                 |
 | `user_id` | Discord 用户 ID | * | `USER_DISCORD_ID` | （留空）                                 |
 | `channel_id` | Discord 频道 ID | * | (留空) | `1466858871720251425`                |
 | `tag` | 消息标签 | ✅ | `reminder` | `task`                               |
@@ -160,12 +172,19 @@ tag=
 
 **示例：**
 
-| 场景 | content 内容 |
-|------|-------------|
-| 早上起床 | `content=早上好！☀️ 美好的一天开始了，记得吃早餐哦～` |
-| 喝水提醒 | `content=鸵鸟居士，该喝水了！💧 保持健康，多喝温水～` |
-| 吃橘子 | `content=鸵鸟居士，该去吃橘子了！🍊` |
-| 睡觉提醒 | `content=夜深了，该休息了！🌙 早睡早起身体好～` |
+**早上起床提醒：**
+```ini
+content<<<MARKER_START
+早上好！☀️ 美好的一天开始了，记得吃早餐哦～
+<<<MARKER_END
+```
+
+**喝水提醒：**
+```ini
+content<<<MARKER_START
+鸵鸟居士，该喝水了！💧 保持健康，多喝温水～
+<<<MARKER_END
+```
 
 ### task 类型（任务类）
 
@@ -180,17 +199,24 @@ tag=
 
 **标准格式：**
 ```
-content=[操作类型] [目标对象] [参数列表]
+content<<<MARKER_START
+[操作类型] [目标对象] [参数列表]
+<<<MARKER_END
 ```
 
-**示例对照表：**
+**示例对照：**
 
-| 场景 | ❌ 错误写法 | ✅ 正确写法 |
-|------|-------------|-------------|
-| 发送 PDF | `content=把PDF发给我` | `content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID` |
-| 运行脚本 | `content=运行脚本` | `content=使用 Bash 工具运行 D:\AgentWorkspace\scripts\backup.py，参数是 --full-backup` |
-| 发送消息到频道 | `content=发消息到频道` | `content=使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"服务运行正常✅"到频道，channel_id 是 1234567890123456789` |
-| 读取并发送文件内容 | `content=读取文件并发送` | `content=先使用 Read 工具读取 D:\AgentWorkspace\reports\daily_report.txt 文件的完整内容，然后使用 Discord MCP 工具的 send_message_to_discord 函数将文件内容发送到我的私聊，user_id 是 USER_DISCORD_ID` |
+❌ **错误写法：**
+```ini
+content=把PDF发给我
+```
+
+✅ **正确写法：**
+```ini
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
+```
 
 **task 类型 content 检查清单：**
 ```
@@ -305,7 +331,9 @@ D:\AgentWorkspace\scheduled-tasks\
 ```ini
 # orange_reminder_config.txt
 username=鸵鸟居士
-content=鸵鸟居士，该去吃橘子了！🍊
+content<<<MARKER_START
+鸵鸟居士，该去吃橘子了！🍊
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=reminder
@@ -318,12 +346,26 @@ python "D:\AgentWorkspace\discord-claude-bridge\trigger_scheduled_task.py" --con
 exit /b 0
 ```
 
-### task 示例：发送新闻汇总 PDF
+### task 示例：科技新闻汇总（多行内容）
 
 ```ini
-# send_news_pdf_config.txt
+# tech_news_report_config.txt
 username=鸵鸟居士
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+执行以下操作：
+1. 使用 TrendRadar MCP 工具搜索近两日的科技新闻（关键词：科技、AI、芯片、互联网、手机、电脑）
+2. 使用 resolve_date_range 工具获取"近两日"的精确日期范围
+3. 使用 search_news 工具搜索科技新闻，参数：query="科技 OR AI OR 芯片 OR 互联网 OR 手机 OR 电脑"，include_url=true，limit=100
+4. 汇总搜索结果，生成一份 Markdown 格式的科技新闻报告
+5. 使用 Write 工具将报告保存到 D:\AgentWorkspace\files\科技新闻汇总_[当前日期].md 文件
+6. 使用 Discord MCP 工具的 send_file_to_discord 函数，把刚生成的报告文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID，使用 embed=true
+7. 完成后使用 Discord MCP 发送一条确认消息"✅ 科技新闻报告已生成并发送"
+
+注意：
+- 报告要包含新闻标题、来源平台、发布时间、简要描述
+- 按重要性和热度排序
+- 添加清晰的标题和日期
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -392,30 +434,40 @@ schtasks /query /v /tn "任务名称" | findstr "Last Run Time Last Result"
 |------|-----------------|---------------|
 | **tag** | `tag=reminder` | `tag=task` |
 | **content 含义** | 最终发送的消息 | 给新会话的执行指令 |
-| **content 示例** | `早上好！☀️` | `使用 Discord MCP 发送 files/report.pdf` |
+| **content 示例** | 使用标记包裹（见上方示例） | 使用标记包裹（见上方示例） |
 | **新会话行为** | 原样发送 content | 理解并执行 content 中的指令 |
 | **适用场景** | 健康提醒、日程提醒、待办事项 | 执行脚本、发送文件、运行命令、数据备份 |
 
 ### task 类型 content 编写模板
 
+所有模板必须使用标记包裹：
+
 **发送文件：**
-```
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 [文件路径] 文件发送到我的 Discord 私聊，user_id 是 [你的用户ID]
+```ini
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 [文件路径] 文件发送到我的 Discord 私聊，user_id 是 [你的用户ID]
+<<<MARKER_END
 ```
 
 **发送消息：**
-```
-content=使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"[消息内容]"到我的 Discord 私聊，user_id 是 [你的用户ID]
+```ini
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"[消息内容]"到我的 Discord 私聊，user_id 是 [你的用户ID]
+<<<MARKER_END
 ```
 
 **运行脚本：**
-```
-content=使用 Bash 工具运行 [脚本路径]，参数是 [参数列表]
+```ini
+content<<<MARKER_START
+使用 Bash 工具运行 [脚本路径]，参数是 [参数列表]
+<<<MARKER_END
 ```
 
 **组合操作：**
-```
-content=先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送消息"[完成通知]"到我的私聊，user_id 是 [你的用户ID]
+```ini
+content<<<MARKER_START
+先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送消息"[完成通知]"到我的私聊，user_id 是 [你的用户ID]
+<<<MARKER_END
 ```
 
 ---
@@ -433,11 +485,3 @@ content=先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使
 **何时加载：**
 - 需要具体示例时，加载 `bat-templates.md` 或 `config-examples.md`
 - 需要高级 schtasks 功能或故障排查时，加载 `schtasks-reference.md`
-
-### scripts/
-
-**不包含脚本**，因为用户环境的 Python 路径不同，所有模板已在 SKILL.md 中提供。
-
-### assets/
-
-**不包含资产**，定时任务不需要输出模板或资产。

@@ -9,7 +9,9 @@
 ```ini
 # 早安提醒配置
 username=鸵鸟居士
-content=早上好！☀️ 美好的一天开始了，记得吃早餐，保持好心情！
+content<<<MARKER_START
+早上好！☀️ 美好的一天开始了，记得吃早餐，保持好心情！
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=reminder
@@ -22,7 +24,9 @@ tag=reminder
 ```ini
 # 喝水提醒配置
 username=鸵鸟居士
-content=鸵鸟居士，该喝水了！💧 保持健康，多喝温水～
+content<<<MARKER_START
+鸵鸟居士，该喝水了！💧 保持健康，多喝温水～
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=reminder
@@ -35,7 +39,9 @@ tag=reminder
 ```ini
 # 橘子提醒配置文件
 username=鸵鸟居士
-content=鸵鸟居士，该去吃橘子了！🍊
+content<<<MARKER_START
+鸵鸟居士，该去吃橘子了！🍊
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=reminder
@@ -48,7 +54,9 @@ tag=reminder
 ```ini
 # 睡觉提醒配置
 username=鸵鸟居士
-content=夜深了，该休息了！🌙 早睡早起身体好～
+content<<<MARKER_START
+夜深了，该休息了！🌙 早睡早起身体好～
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=reminder
@@ -65,7 +73,9 @@ tag=reminder
 ```ini
 # 发送PDF文件任务配置
 username=鸵鸟居士
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -78,7 +88,9 @@ tag=task
 ```ini
 # 发送消息任务配置
 username=鸵鸟居士
-content=使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"服务运行正常✅"到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"服务运行正常✅"到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -91,7 +103,9 @@ tag=task
 ```ini
 # 运行脚本任务配置
 username=鸵鸟居士
-content=使用 Bash 工具运行 D:\AgentWorkspace\scripts\backup.py 脚本，参数是 --full-backup --output-dir D:\AgentWorkspace\backups
+content<<<MARKER_START
+使用 Bash 工具运行 D:\AgentWorkspace\scripts\backup.py 脚本，参数是 --full-backup --output-dir D:\AgentWorkspace\backups
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -104,7 +118,9 @@ tag=task
 ```ini
 # 读取文件并发送内容任务配置
 username=鸵鸟居士
-content=先使用 Read 工具读取 D:\AgentWorkspace\reports\daily_report.txt 文件的完整内容，然后使用 Discord MCP 工具的 send_message_to_discord 函数将文件内容发送到我的私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+先使用 Read 工具读取 D:\AgentWorkspace\reports\daily_report.txt 文件的完整内容，然后使用 Discord MCP 工具的 send_message_to_discord 函数将文件内容发送到我的私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -117,7 +133,9 @@ tag=task
 ```ini
 # 数据备份任务配置
 username=鸵鸟居士
-content=先使用 Bash 工具运行 D:\AgentWorkspace\scripts\backup.py 脚本，参数是 --full-backup --output-dir D:\AgentWorkspace\backups，等待脚本执行完成后，使用 Discord MCP 工具的 send_message_to_discord 函数发送消息"数据备份完成✅"到我的私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+先使用 Bash 工具运行 D:\AgentWorkspace\scripts\backup.py 脚本，参数是 --full-backup --output-dir D:\AgentWorkspace\backups，等待脚本执行完成后，使用 Discord MCP 工具的 send_message_to_discord 函数发送消息"数据备份完成✅"到我的私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 channel_id=
 tag=task
@@ -134,9 +152,11 @@ tag=task
 ```ini
 # 每小时状态报告到频道
 username=系统机器人
-content=使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"【系统状态报告】所有服务运行正常 ✅"到频道，channel_id 是 1234567890123456789
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"【系统状态报告】所有服务运行正常 ✅"到频道，channel_id 是 1466858871720251425
+<<<MARKER_END
 user_id=
-channel_id=1234567890123456789
+channel_id=1466858871720251425
 tag=task
 ```
 
@@ -202,7 +222,9 @@ tag=task
 ❌ **错误写法：**
 ```ini
 username=鸵鸟居士
-content=PDF 已送达！
+content<<<MARKER_START
+PDF 已送达！
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 tag=task
 ```
@@ -212,7 +234,9 @@ tag=task
 ✅ **正确写法：**
 ```ini
 username=鸵鸟居士
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 tag=task
 ```
@@ -221,14 +245,18 @@ tag=task
 
 ❌ **错误写法：**
 ```ini
-content=使用 Discord MCP 发送 PDF 文件给我
+content<<<MARKER_START
+使用 Discord MCP 发送 PDF 文件给我
+<<<MARKER_END
 ```
 
 **问题：** 路径不完整，新会话的 Claude 无法找到文件。
 
 ✅ **正确写法：**
 ```ini
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 ```
 
 ### 错误 3：等号两边有空格
@@ -246,7 +274,9 @@ tag = task
 ✅ **正确写法：**
 ```ini
 username=鸵鸟居士
-content=使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09_修复版.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+content<<<MARKER_START
+使用 Discord MCP 工具的 send_file_to_discord 函数，把 files 文件夹下面的 新闻汇总_2026-02-09.pdf 文件发送到我的 Discord 私聊，user_id 是 USER_DISCORD_ID
+<<<MARKER_END
 user_id=USER_DISCORD_ID
 tag=task
 ```
@@ -256,7 +286,7 @@ tag=task
 ❌ **错误写法 1：同时填写**
 ```ini
 user_id=USER_DISCORD_ID
-channel_id=1234567890123456789
+channel_id=1466858871720251425
 ```
 
 ❌ **错误写法 2：同时为空**
@@ -273,5 +303,5 @@ channel_id=
 
 # 频道模式
 user_id=
-channel_id=1234567890123456789
+channel_id=1466858871720251425
 ```
