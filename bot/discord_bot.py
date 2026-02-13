@@ -1050,22 +1050,9 @@ class DiscordBot(commands.Bot):
                             raise ValueError("必须指定 user_id 或 channel_id")
 
                         # 发送文件
-                        if file_request.use_embed:
-                            embed = discord.Embed(
-                                title=f"📎 文件发送",
-                                description=file_request.message or f"文件: {len(valid_files)} 个",
-                                color=discord.Color.green()
-                            )
-                            sent_msg = await target_channel.send(
-                                embed=embed,
-                                files=valid_files if len(valid_files) > 1 else valid_files
-                            )
-                        else:
-                            content = file_request.message if file_request.message else f"📎 发送 {len(valid_files)} 个文件"
-                            sent_msg = await target_channel.send(
-                                content=content,
-                                files=valid_files if len(valid_files) > 1 else valid_files
-                            )
+                        sent_msg = await target_channel.send(
+                            files=valid_files if len(valid_files) > 1 else valid_files
+                        )
 
                         # 标记为完成
                         result = json.dumps({

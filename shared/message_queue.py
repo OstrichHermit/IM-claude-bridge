@@ -89,7 +89,6 @@ class FileRequest:
     file_paths: List[str]  # 文件路径列表（JSON 数组）
     user_id: Optional[int]  # Discord 用户 ID
     channel_id: Optional[int]  # Discord 频道 ID
-    message: Optional[str]  # 附加文本消息
     use_embed: bool  # 是否使用 Embed 格式
     status: str  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
@@ -744,14 +743,13 @@ class MessageQueue:
 
         cursor.execute("""
             INSERT INTO file_requests (
-                file_paths, user_id, channel_id, message, use_embed,
+                file_paths, user_id, channel_id, use_embed,
                 status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             json.dumps(file_request.file_paths, ensure_ascii=False),
             file_request.user_id,
             file_request.channel_id,
-            file_request.message,
             1 if file_request.use_embed else 0,
             file_request.status,
             file_request.result,
@@ -772,7 +770,7 @@ class MessageQueue:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, file_paths, user_id, channel_id, message, use_embed,
+            SELECT id, file_paths, user_id, channel_id, use_embed,
                    status, result, error, created_at, updated_at
             FROM file_requests
             WHERE status = ?
@@ -789,13 +787,12 @@ class MessageQueue:
                 file_paths=json.loads(row[1]),
                 user_id=row[2],
                 channel_id=row[3],
-                message=row[4],
-                use_embed=bool(row[5]),
-                status=row[6],
-                result=row[7],
-                error=row[8],
-                created_at=row[9],
-                updated_at=row[10]
+                use_embed=bool(row[4]),
+                status=row[5],
+                result=row[6],
+                error=row[7],
+                created_at=row[8],
+                updated_at=row[9]
             )
         return None
 
@@ -848,7 +845,7 @@ class MessageQueue:
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT id, file_paths, user_id, channel_id, message, use_embed,
+                SELECT id, file_paths, user_id, channel_id, use_embed,
                        status, result, error, created_at, updated_at
                 FROM file_requests
                 WHERE id = ?
@@ -863,13 +860,12 @@ class MessageQueue:
                     file_paths=json.loads(row[1]),
                     user_id=row[2],
                     channel_id=row[3],
-                    message=row[4],
-                    use_embed=bool(row[5]),
-                    status=row[6],
-                    result=row[7],
-                    error=row[8],
-                    created_at=row[9],
-                    updated_at=row[10]
+                    use_embed=bool(row[4]),
+                    status=row[5],
+                    result=row[6],
+                    error=row[7],
+                    created_at=row[8],
+                    updated_at=row[9]
                 )
 
                 # 如果已完成或失败，返回结果
