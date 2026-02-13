@@ -135,10 +135,10 @@ class ClaudeBridge:
                 # 频道模式（不带频道 ID）
                 sender_info = f"{username}（{user_id}）说："
 
-            # 如果是首次对话且启用了自动加载记忆，添加"加载记忆"前缀
-            if self.config.auto_load_memory_enabled and not session_created:
-                prompt = f"{self.config.auto_load_memory_prompt_text}{sender_info}{prompt}"
-                print(f"[自动加载记忆] 首次对话，已添加前缀")
+            # 如果是首次对话且启用了提示词注入，添加前缀
+            if self.config.auto_load_enabled and not session_created:
+                prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
+                print(f"[提示词注入] 首次对话，已添加前缀")
             else:
                 prompt = f"{sender_info}{prompt}"
 

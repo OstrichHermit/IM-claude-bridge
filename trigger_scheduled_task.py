@@ -71,7 +71,13 @@ def main():
 
     parser.add_argument(
         "content",
-        help="消息内容（MCP 调用请用英文）"
+        nargs='?',  # 变为可选参数
+        help="消息内容（MCP 调用请用英文，或使用 --config-file 从文件读取）"
+    )
+
+    parser.add_argument(
+        "--config-file", "-f",
+        help="从配置文件读取消息内容（支持 UTF-8 中文）"
     )
 
     parser.add_argument(
@@ -96,6 +102,16 @@ def main():
 
     args = parser.parse_args()
 
+    # 确定消息内容：从文件读取或直接使用
+    if args.config_file:
+        with open(args.config_file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+        print(f"📄 从配置文件读取消息: {args.config_file}")
+    elif args.content:
+        content = args.content
+    else:
+        parser.error("必须提供 content 或 --config-file 参数")
+
     # 智能判断模式：提供了 --user-id 就是私聊模式
     is_dm_mode = args.is_dm or args.user_id is not None
     target_user_id = args.user_id if is_dm_mode else 0
@@ -103,7 +119,7 @@ def main():
 
     # 触发定时任务
     print(f"⏰ 正在触发定时任务...")
-    print(f"   内容: {args.content}")
+    print(f"   内容: {content}")
     print(f"   类型: {'私聊（DM）' if is_dm_mode else '频道'}")
     if is_dm_mode:
         print(f"   目标: 私聊 {args.user_id}")
@@ -116,7 +132,7 @@ def main():
 
     try:
         message_id = trigger_scheduled_task(
-            content=args.content,
+            content=content,
             user_id=target_user_id,
             channel_id=target_channel_id,
             is_dm=is_dm_mode

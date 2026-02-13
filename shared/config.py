@@ -133,11 +133,11 @@ class Config:
         return self._config.get('file_download', {}).get('allowed_directories', [])
 
     @property
-    def auto_load_memory_enabled(self) -> bool:
-        """获取是否启用自动加载记忆"""
-        return self._config.get('auto_load_memory', {}).get('enabled', False)
+    def auto_load_enabled(self) -> bool:
+        """获取是否启用首次对话提示词注入"""
+        return self._config.get('auto_load', {}).get('enabled', False)
 
     @property
-    def auto_load_memory_prompt_text(self) -> str:
-        """获取自动加载记忆的提示文本"""
-        return self._config.get('auto_load_memory', {}).get('prompt_text', '加载记忆')
+    def auto_load_prompt_text(self) -> str:
+        """获取首次对话提示词注入的文本"""
+        return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
