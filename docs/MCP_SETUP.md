@@ -23,7 +23,6 @@ Discord Bridge MCP 服务器为 Claude Code CLI 提供了 Discord 文件和消�
 - `file_path` (必需): 文件路径
 - `user_id` (可选): Discord 用户 ID
 - `channel_id` (可选): Discord 频道 ID
-- `message` (可选): 附加文本消息
 - `use_embed` (可选): 是否使用 Embed 格式（默认 False）
 
 **注意：** `user_id` 和 `channel_id` 必须指定其中一个
@@ -35,7 +34,6 @@ Discord Bridge MCP 服务器为 Claude Code CLI 提供了 Discord 文件和消�
 - `file_paths` (必需): 文件路径列表（最多 10 个）
 - `user_id` (可选): Discord 用户 ID
 - `channel_id` (可选): Discord 频道 ID
-- `message` (可选): 附加文本消息
 - `use_embed` (可选): 是否使用 Embed 格式（默认 False）
 
 ### 3. list_discord_channels
