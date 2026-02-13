@@ -48,6 +48,9 @@ env/
 # 日志
 *.log
 
+# 维护进程临时文件
+.manager.restarting
+
 # 操作系统
 .DS_Store
 Thumbs.db
