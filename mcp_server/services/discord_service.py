@@ -137,7 +137,6 @@ class DiscordService:
     def send_files(self, file_paths: List[str],
                    user_id: Optional[str] = None,
                    channel_id: Optional[str] = None,
-                   message: Optional[str] = None,
                    use_embed: bool = False,
                    timeout: float = 30.0) -> FileSendResult:
         """发送文件到 Discord
@@ -146,7 +145,6 @@ class DiscordService:
             file_paths: 文件路径列表
             user_id: Discord 用户 ID
             channel_id: Discord 频道 ID
-            message: 附加文本消息
             use_embed: 是否使用 Embed 格式
             timeout: 等待超时时间（秒）
 
@@ -170,7 +168,6 @@ class DiscordService:
                 file_paths=valid_files,
                 user_id=user_id_int,
                 channel_id=channel_id_int,
-                message=message,
                 use_embed=use_embed,
                 status=FileRequestStatus.PENDING.value,
                 result=None,

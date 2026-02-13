@@ -18,7 +18,6 @@ async def _send_file_to_discord(
     file_path: str,
     user_id: Optional[str] = None,
     channel_id: Optional[str] = None,
-    message: Optional[str] = None,
     use_embed: bool = False
 ) -> str:
     """
@@ -30,7 +29,6 @@ async def _send_file_to_discord(
         file_path: 要发送的文件路径（必需）
         user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
         channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-        message: 附加文本消息（可选）
         use_embed: 是否使用 Embed 格式发送（默认 False）
             - False: 直接发送文件（简单）
             - True: 使用精美卡片格式（推荐）
@@ -45,18 +43,10 @@ async def _send_file_to_discord(
         # 发送到频道
         send_file_to_discord(file_path="report.png", channel_id="987654321")
 
-        # 发送 PDF 到用户并附带说明
-        send_file_to_discord(
-            file_path="report.pdf",
-            user_id="123456789",
-            message="这是您要的分析报告"
-        )
-
         # 使用 Embed 格式发送到频道
         send_file_to_discord(
             file_path="data.png",
             channel_id="987654321",
-            message="数据分析图表",
             use_embed=True
         )
 
@@ -75,7 +65,6 @@ async def _send_file_to_discord(
             file_paths=[file_path],
             user_id=user_id,
             channel_id=channel_id,
-            message=message,
             use_embed=use_embed
         )
 
@@ -105,7 +94,6 @@ async def _send_multiple_files_to_discord(
     file_paths: List[str],
     user_id: Optional[str] = None,
     channel_id: Optional[str] = None,
-    message: Optional[str] = None,
     use_embed: bool = False
 ) -> str:
     """
@@ -118,7 +106,6 @@ async def _send_multiple_files_to_discord(
         file_paths: 要发送的文件路径列表（必需），最多 10 个文件
         user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
         channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-        message: 附加文本消息（可选）
         use_embed: 是否使用 Embed 格式发送（默认 False）
             - False: 直接发送文件（简单）
             - True: 使用精美卡片格式（推荐）
@@ -136,15 +123,13 @@ async def _send_multiple_files_to_discord(
         # 批量发送文件到频道
         send_multiple_files_to_discord(
             file_paths=["report1.pdf", "report2.pdf"],
-            channel_id="987654321",
-            message="这是您要的分析报告"
+            channel_id="987654321"
         )
 
         # 使用 Embed 格式
         send_multiple_files_to_discord(
             file_paths=["image1.png", "image2.png"],
             user_id="123456789",
-            message="图片合集",
             use_embed=True
         )
 
@@ -162,7 +147,6 @@ async def _send_multiple_files_to_discord(
             file_paths=file_paths,
             user_id=user_id,
             channel_id=channel_id,
-            message=message,
             use_embed=use_embed
         )
 
