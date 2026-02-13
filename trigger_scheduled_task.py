@@ -128,12 +128,40 @@ def main():
 
     # 从配置文件读取所有参数
     if args.config_file:
-        # 解析配置文件（支持 key=value 格式）
+        # 解析配置文件（支持 key=value 格式和多行标记格式）
         config = {}
+        multi_line_key = None
+        multi_line_content = []
+
         with open(args.config_file, 'r', encoding='utf-8') as f:
             for line in f:
-                line = line.strip()
-                if line and '=' in line and not line.startswith('#'):
+                original_line = line
+                line = line.rstrip()  # 保留内容空格，只去除右侧换行符
+
+                # 跳过空行和注释
+                if not line or line.strip().startswith('#'):
+                    continue
+
+                # 检测多行开始标记（例如：content<<<MARKER_START）
+                if '<<<MARKER_START' in line:
+                    multi_line_key = line.split('<<<')[0].strip()
+                    multi_line_content = []
+                    continue
+
+                # 检测多行结束标记
+                if multi_line_key and '<<<MARKER_END' in line:
+                    config[multi_line_key] = '\n'.join(multi_line_content).strip()
+                    multi_line_key = None
+                    multi_line_content = []
+                    continue
+
+                # 如果正在读取多行内容
+                if multi_line_key:
+                    multi_line_content.append(line)
+                    continue
+
+                # 常规 key=value 格式
+                if '=' in line:
                     key, value = line.split('=', 1)
                     config[key.strip()] = value.strip()
 
