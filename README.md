@@ -45,16 +45,32 @@ D:/AgentWorkspace/                    # 工作区根目录
 
 **维护 Skill 使用**（推荐安装）：
 ```bash
-# 复制 Skill 到 Claude Code 配置目录
+# 复制维护 Skill 到 Claude Code 配置目录
 cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
+
+# 复制定时任务 Skill（可选，用于创建定时提醒）
+cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 
-**Skill 功能**：
+**discord-bridge-maintenance Skill 功能**：
 - 🔧 查看系统架构和配置说明
 - 📊 监控消息队列和下载状态
 - 🐛 快速故障排查（Bot 无响应、下载超时等）
 - 📝 查看数据库记录（消息、下载请求）
 - 🔄 查看待处理任务列表
+
+**scheduler-task Skill 功能**（定时提醒）：
+- ⏰ 创建和管理 Windows 计划任务
+- 📝 编写异步执行的 bat 脚本（避免任务阻塞）
+- 🎯 配置 Discord Bridge 命令参数（支持私聊和频道）
+- 🔧 正确处理中文字符编码问题
+- 📅 实现定时提醒、日程通知、任务报告等自动化功能
+
+**典型应用场景**：
+- 每天定时提醒（刷牙、休息、喝水等健康提醒）
+- 定时报告（每小时/每天发送状态报告）
+- 日程通知（会议提醒、任务截止提醒）
+- 自动化工作流（定时执行脚本并发送结果通知）
 
 ### 1. 前置要求
 
