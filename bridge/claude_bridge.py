@@ -173,11 +173,27 @@ class ClaudeBridge:
                 cmd_args.append('--output-format')
                 cmd_args.append('stream-json')  # 使用流式 JSON 输出
 
-                # ========== 会话处理逻辑 ==========
-                # 1. 首次或重置后（session_created=False）：使用 --session-id 指定新会话
-                # 2. 后续（session_created=True）：使用 -r <session_id> 继续会话
-                if session_created:
-                    # 后续调用：使用 -r <session_id> 继续会话
+                # ========== 会话处理逻辑（动态从数据库读取状态）==========
+                # 🔥 关键：每次重试都从数据库读取最新状态，而不是使用传入的固定值
+                if session_key:
+                    # 重新查询数据库，获取最新的 session_created 状态
+                    import sqlite3
+                    from datetime import datetime
+
+                    conn = sqlite3.connect(self.message_queue.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT session_created FROM sessions WHERE session_key = ?
+                    """, (session_key,))
+                    row = cursor.fetchone()
+                    conn.close()
+
+                    current_session_created = bool(row[0]) if row else False
+                else:
+                    current_session_created = session_created
+
+                if current_session_created:
+                    # 续会模式：使用 -r <session_id> 继续会话
                     cmd_args.extend(['-r', session_id])
                     print(f"🔄 [续会模式] 使用 -r {session_id} 继续会话")
                 else:
@@ -205,7 +221,10 @@ class ClaudeBridge:
                 response_lines = []
 
                 try:
-                    # 实时读取流式输出
+                    # 🔥 方案2：按块读取而不是按行读取，解决 "chunk is longer than limit" 问题
+                    buffer = b''  # 缓冲区，累积不完整的数据
+                    chunk_size = 4096  # 每次读取 4KB
+
                     while True:
                         # AI 开始工作前，使用较短超时(30秒)；AI 开始后，不限制超时
                         read_timeout = None if ai_started_notified else 30.0
@@ -213,54 +232,93 @@ class ClaudeBridge:
                         try:
                             if read_timeout is None:
                                 # AI 已开始，无超时限制
-                                line = await process.stdout.readline()
+                                chunk = await process.stdout.read(chunk_size)
                             else:
                                 # AI 未开始，有超时限制
-                                line = await asyncio.wait_for(
-                                    process.stdout.readline(),
+                                chunk = await asyncio.wait_for(
+                                    process.stdout.read(chunk_size),
                                     timeout=read_timeout
                                 )
                         except asyncio.TimeoutError:
                             # AI 未开始就超时，真正超时
                             raise
 
-                        if not line:  # EOF
+                        if not chunk:  # EOF
                             break
 
-                        line_str = line.decode('utf-8', errors='replace').strip()
+                        # 将新数据添加到缓冲区
+                        buffer += chunk
 
-                        if not line_str:
-                            continue
+                        # 按行处理缓冲区中的数据
+                        while b'\n' in buffer:
+                            # 分割出一行
+                            line_bytes, buffer = buffer.split(b'\n', 1)
 
-                        # 解析 JSON 行
+                            if not line_bytes:
+                                continue
+
+                            line_str = line_bytes.decode('utf-8', errors='replace').strip()
+
+                            if not line_str:
+                                continue
+
+                            # 解析 JSON 行
+                            try:
+                                data = json.loads(line_str)
+
+                                # 检测 AI 开始工作事件
+                                if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
+                                    print(f"🚀 [消息 #{message_id}] AI 开始工作")
+                                    # 立即更新状态为 AI_STARTED
+                                    if message_id:
+                                        self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
+
+                                    # 🔥 关键修改：AI 开始工作时就标记会话为已创建（写入数据库）
+                                    if not session_created and session_key:
+                                        self.message_queue.mark_session_created(session_key)
+                                        print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
+
+                                    ai_started_notified = True
+
+                                # 收集 assistant 消息作为响应
+                                elif data.get('type') == 'assistant' and data.get('message'):
+                                    message_data = data.get('message', {})
+                                    if message_data.get('content'):
+                                        for content_item in message_data['content']:
+                                            if content_item.get('type') == 'text':
+                                                text = content_item.get('text', '')
+                                                response_lines.append(text)
+
+                            except json.JSONDecodeError:
+                                # 不是 JSON 行，可能是普通文本输出
+                                pass
+
+                    # 循环结束后，处理缓冲区剩余的数据（如果有）
+                    if buffer:
                         try:
-                            data = json.loads(line_str)
+                            line_str = buffer.decode('utf-8', errors='replace').strip()
+                            if line_str:
+                                data = json.loads(line_str)
 
-                            # 检测 AI 开始工作事件
-                            if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
-                                print(f"🚀 [消息 #{message_id}] AI 开始工作")
-                                # 立即更新状态为 AI_STARTED
-                                if message_id:
-                                    self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
+                                if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
+                                    print(f"🚀 [消息 #{message_id}] AI 开始工作")
+                                    if message_id:
+                                        self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
 
-                                # 🔥 关键修改：AI 开始工作时就标记会话为已创建
-                                if not session_created and session_key:
-                                    self.message_queue.mark_session_created(session_key)
-                                    print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
+                                    if not session_created and session_key:
+                                        self.message_queue.mark_session_created(session_key)
+                                        print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
 
-                                ai_started_notified = True
+                                    ai_started_notified = True
 
-                            # 收集 assistant 消息作为响应
-                            elif data.get('type') == 'assistant' and data.get('message'):
-                                message_data = data.get('message', {})
-                                if message_data.get('content'):
-                                    for content_item in message_data['content']:
-                                        if content_item.get('type') == 'text':
-                                            text = content_item.get('text', '')
-                                            response_lines.append(text)
-
-                        except json.JSONDecodeError:
-                            # 不是 JSON 行，可能是普通文本输出
+                                elif data.get('type') == 'assistant' and data.get('message'):
+                                    message_data = data.get('message', {})
+                                    if message_data.get('content'):
+                                        for content_item in message_data['content']:
+                                            if content_item.get('type') == 'text':
+                                                text = content_item.get('text', '')
+                                                response_lines.append(text)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
 
                     # 等待进程结束
