@@ -395,10 +395,11 @@ class ClaudeBridge:
 任务内容：{content}
 
 请按以下步骤执行：
-1、理解任务需求；
-2、加载相关Skill或Mcp服务；
-3、直接执行并完成任务；
-4、完成后响应总结消息。"""
+1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求进行会话启动流程；
+2、理解任务需求；
+3、加载相关Skill或Mcp服务；
+4、直接执行并完成任务；
+5、完成后响应总结消息。"""
         
         else:return f"""🔔 定时任务已触发！
         
@@ -407,10 +408,11 @@ class ClaudeBridge:
 任务内容：{content}
 
 请按以下步骤执行：
-1、理解任务需求；
-2、加载相关Skill或Mcp服务；
-3、直接执行并完成任务；
-4、完成后响应总结消息。"""
+1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求进行会话启动流程；
+2、理解任务需求；
+3、加载相关Skill或Mcp服务；
+4、直接执行并完成任务；
+5、完成后响应总结消息。"""
 
     def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
         """构建提醒消息结构"""
@@ -421,7 +423,9 @@ class ClaudeBridge:
 提醒创建人：{username}（{user_id}）
 提醒内容：{content}
 
-请直接响应提醒内容，不要做多余操作。"""
+请按以下步骤执行：
+1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求进行会话启动流程；
+2、直接回复需要提醒的内容。"""
         
         else:return f"""🔔 定时提醒已触发！
         
@@ -429,7 +433,9 @@ class ClaudeBridge:
 提醒内容：{content}
 提醒创建频道：{channel_id}
 
-请直接响应提醒内容，不要做多余操作。"""
+请按以下步骤执行：
+1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求进行会话启动流程；
+2、直接回复需要提醒的内容。"""
 
     def _build_default_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, session_created: bool) -> str:
         """构建默认消息结构（原有格式）"""
