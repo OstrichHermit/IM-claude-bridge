@@ -399,7 +399,7 @@ class ClaudeBridge:
 2、理解任务需求；
 3、加载相关Skill或Mcp服务；
 4、直接执行并完成任务；
-5、完成后响应总结消息。"""
+5、完成后回复消息。"""
         
         else:return f"""🔔 定时任务已触发！
         
@@ -412,7 +412,7 @@ class ClaudeBridge:
 2、理解任务需求；
 3、加载相关Skill或Mcp服务；
 4、直接执行并完成任务；
-5、完成后响应总结消息。"""
+5、完成后回复消息。"""
 
     def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
         """构建提醒消息结构"""
