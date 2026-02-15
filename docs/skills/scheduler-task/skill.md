@@ -39,7 +39,7 @@ description: 创建和管理 Windows 计划任务，包括编写异步执行的 
 5. 设置 `/sc once` 参数
 
 **示例：2分钟后执行**
-```bash
+```powershell
 schtasks /create /tn "任务名称" /tr "D:\path\to\script.bat" /st (Get-Date).AddMinutes(2).ToString('HH:mm') /sc once /f
 ```
 
@@ -55,7 +55,7 @@ schtasks /create /tn "任务名称" /tr "D:\path\to\script.bat" /st (Get-Date).A
 5. 指定具体时间参数
 
 **示例：每天上午9点执行**
-```bash
+```powershell
 schtasks /create /tn "任务名称" /tr "D:\path\to\script.bat" /st 09:00 /sc daily /f
 ```
 
@@ -318,6 +318,35 @@ D:\AgentWorkspace\scheduled-tasks\
 
 ---
 
+## ⚠️ 环境要求
+
+### 必须使用 PowerShell
+
+**重要**：schtasks 命令必须在 **PowerShell** 中执行，不要在 Git Bash 或其他 shell 中使用！
+
+**原因**：
+- Git Bash 对 Windows 原生命令支持不好（路径映射、参数解析问题）
+- PowerShell 是 Windows 原生命令，对 schtasks 支持最好
+- 避免路径、转义字符等常见问题
+
+**如何确认在 PowerShell 中**：
+- 提示符前缀：`PS C:\>` 而不是 `$` 或 `bash`
+- 或者在 Windows Terminal 中选择 "PowerShell" 标签页
+
+**正确示例**：
+```powershell
+PS C:\> schtasks /create /tn "心跳检查" /tr "python D:\AgentWorkspace\discord-claude-bridge\trigger_scheduled_task.py --config-file D:\AgentWorkspace\scheduled-tasks\daily_heartbeat\daily_heartbeat_config.txt" /st 09:37 /sc hourly /f
+```
+
+**错误示例**（Git Bash 中）：
+```bash
+# ❌ 不要在 Git Bash 中执行
+schtasks /create /tn "心跳检查" ...
+# 会报错：ERROR: Invalid argument/option
+```
+
+---
+
 ## 完整示例
 
 详细的配置文件示例、bat 脚本示例和创建命令示例，请参考：
@@ -449,13 +478,6 @@ content<<<MARKER_START
 <<<MARKER_END
 ```
 
-**发送消息：**
-```ini
-content<<<MARKER_START
-使用 Discord MCP 工具的 send_message_to_discord 函数，发送消息"[消息内容]"到我的 Discord 私聊，user_id 是 [你的用户ID]
-<<<MARKER_END
-```
-
 **运行脚本：**
 ```ini
 content<<<MARKER_START
@@ -466,7 +488,7 @@ content<<<MARKER_START
 **组合操作：**
 ```ini
 content<<<MARKER_START
-先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送消息"[完成通知]"到我的私聊，user_id 是 [你的用户ID]
+先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送文件"[文件路径]"到我的私聊，user_id 是 [你的用户ID]
 <<<MARKER_END
 ```
 
@@ -485,3 +507,25 @@ content<<<MARKER_START
 **何时加载：**
 - 需要具体示例时，加载 `bat-templates.md` 或 `config-examples.md`
 - 需要高级 schtasks 功能或故障排查时，加载 `schtasks-reference.md`
+
+
+## ⚠️ 环境要求
+
+### 必须使用 PowerShell
+
+**重要**：schtasks 命令必须在 **PowerShell** 中执行，不要在 Git Bash 或其他 shell 中使用！
+
+**原因**：
+- Git Bash 对 Windows 原生命令支持不好（路径映射、参数解析问题）
+- PowerShell 是 Windows 原生命令，对 schtasks 支持最好
+- 避免路径、转义字符等常见问题
+
+**如何确认在 PowerShell 中**：
+- 提示符前缀：PS C:\:\> 而不是 $ 或 bash
+- 或者在 Windows Terminal 中选择 PowerShell 标签页
+
+**正确示例**：
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+

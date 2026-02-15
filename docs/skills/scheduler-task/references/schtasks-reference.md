@@ -4,7 +4,7 @@
 
 ### 基本语法
 
-```bash
+```powershell
 schtasks /create /tn "任务名称" /tr "要执行的命令" /st "开始时间" /sc "调度类型" /f
 ```
 
@@ -71,7 +71,7 @@ schtasks /create /tn "任务名" /tr "D:\script.bat" /st 10:00 /sd (Get-Date).Ad
 ### 一次性任务
 
 **1 分钟后执行：**
-```bash
+```powershell
 schtasks /create /tn "临时任务" /tr "D:\script.bat" /st 10:30 /sc once /f
 ```
 
@@ -81,29 +81,29 @@ schtasks /create /tn "临时任务" /tr "D:\script.bat" /st (Get-Date).AddMinute
 ```
 
 **指定日期时间执行（明天上午9点）：**
-```bash
+```powershell
 schtasks /create /tn "定时任务" /tr "D:\script.bat" /st 09:00 /sd 2026/02/14 /sc once /f
 ```
 
 ### 循环任务
 
 **每 天上午9点执行：**
-```bash
+```powershell
 schtasks /create /tn "每日报告" /tr "D:\script.bat" /st 09:00 /sc daily /f
 ```
 
 **每 小时执行一次：**
-```bash
+```powershell
 schtasks /create /tn "每小时检查" /tr "D:\script.bat" /sc hourly /f
 ```
 
 **每 周一上午10点执行：**
-```bash
+```powershell
 schtasks /create /tn "周报" /tr "D:\script.bat" /st 10:00 /sc weekly /d MON /f
 ```
 
 **每 月1号执行：**
-```bash
+```powershell
 schtasks /create /tn "月度总结" /tr "D:\script.bat" /st 00:00 /sc monthly /d 1 /f
 ```
 
@@ -114,41 +114,41 @@ schtasks /create /tn "月度总结" /tr "D:\script.bat" /st 00:00 /sc monthly /d
 ### 查询任务详情
 
 **列出所有任务：**
-```bash
+```powershell
 schtasks /query
 ```
 
 **查看特定任务的详细信息：**
-```bash
+```powershell
 schtasks /query /v /tn "任务名称"
 ```
 
 **使用 PowerShell 格式化输出：**
-```bash
+```powershell
 schtasks /query /v /tn "任务名称" | Format-List
 ```
 
 ### 立即执行任务
 
-```bash
+```powershell
 schtasks /run /tn "任务名称"
 ```
 
 ### 删除任务
 
-```bash
+```powershell
 schtasks /delete /tn "任务名称" /f
 ```
 
 ### 禁用/启用任务
 
 **禁用任务：**
-```bash
+```powershell
 schtasks /change /tn "任务名称" /disable
 ```
 
 **启用任务：**
-```bash
+```powershell
 schtasks /change /tn "任务名称" /enable
 ```
 
@@ -270,7 +270,7 @@ endlocal
 
 **创建触发任务（每天运行，用于创建其他临时任务）：**
 
-```bash
+```powershell
 schtasks /create /tn "任务触发器" /tr "D:\AgentWorkspace\scheduled-tasks\trigger_tasks.bat" /st 00:00 /sc daily /f
 ```
 
