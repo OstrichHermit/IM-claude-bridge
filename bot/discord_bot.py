@@ -89,20 +89,19 @@ class DiscordBot(commands.Bot):
         self.message_request_check_task = asyncio.create_task(self.check_message_requests())
 
     async def cleanup_stuck_messages(self):
-        """清理上次崩溃时卡住的消息（将 processing 状态改为 completed）"""
+        """清理上次崩溃时卡住的消息"""
         import sqlite3
         try:
             conn = sqlite3.connect(self.config.database_path)
             cursor = conn.cursor()
 
-            # 查询卡住的消息数量
+            # 1. 清理 PROCESSING 状态的消息
             cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
             stuck_count = cursor.fetchone()[0]
 
             if stuck_count > 0:
-                print(f"🧹 发现 {stuck_count} 条卡住的消息，正在清理...")
+                print(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
 
-                # 将 processing 状态的消息标记为 completed（避免重复处理）
                 cursor.execute("""
                     UPDATE messages
                     SET status = 'completed',
@@ -113,10 +112,30 @@ class DiscordBot(commands.Bot):
 
                 affected = cursor.rowcount
                 conn.commit()
-
                 print(f"✅ 已清理 {affected} 条卡住的消息")
             else:
-                print("✓ 没有发现卡住的消息")
+                print("✓ 没有发现 PROCESSING 状态的消息")
+
+            # 2. 清理 PENDING 状态的消息（避免重启后重复处理）
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending'")
+            pending_count = cursor.fetchone()[0]
+
+            if pending_count > 0:
+                print(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
+
+                cursor.execute("""
+                    UPDATE messages
+                    SET status = 'skipped',
+                        updated_at = CURRENT_TIMESTAMP,
+                        error = 'Bot 重启：消息被跳过，避免重复处理'
+                    WHERE status = 'pending'
+                """)
+
+                affected = cursor.rowcount
+                conn.commit()
+                print(f"✅ 已跳过 {affected} 条旧消息")
+            else:
+                print("✓ 没有发现 PENDING 状态的消息")
 
             conn.close()
 

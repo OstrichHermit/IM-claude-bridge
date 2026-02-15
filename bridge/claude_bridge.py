@@ -447,6 +447,40 @@ class ClaudeBridge:
         else:
             return f"{sender_info}{content}"
 
+    async def cleanup_pending_messages(self):
+        """清理上次崩溃时留下的 PENDING 消息（避免重启后重复处理）"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.message_queue.db_path)
+            cursor = conn.cursor()
+
+            # 查询 PENDING 消息数量
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending'")
+            pending_count = cursor.fetchone()[0]
+
+            if pending_count > 0:
+                print(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
+
+                # 将 PENDING 状态的消息标记为 SKIPPED
+                cursor.execute("""
+                    UPDATE messages
+                    SET status = 'skipped',
+                        updated_at = CURRENT_TIMESTAMP,
+                        error = 'Bridge 重启：消息被跳过，避免重复处理'
+                    WHERE status = 'pending'
+                """)
+
+                affected = cursor.rowcount
+                conn.commit()
+                print(f"✅ 已跳过 {affected} 条旧消息")
+            else:
+                print("✓ 没有发现 PENDING 状态的消息")
+
+            conn.close()
+
+        except Exception as e:
+            print(f"⚠️ 清理 PENDING 消息时出错: {e}")
+
     async def run(self):
         """运行桥接服务主循环"""
         self.running = True
@@ -454,6 +488,9 @@ class ClaudeBridge:
         print(f"📥 轮询间隔: {self.config.poll_interval}ms")
         print(f"⏱️  超时时间: {self.config.claude_timeout}秒")
         print(f"🔄 最大重试: {self.config.max_retries}次")
+
+        # 启动时清理旧的 PENDING 消息
+        await self.cleanup_pending_messages()
 
         while self.running:
             try:
