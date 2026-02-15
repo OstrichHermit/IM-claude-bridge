@@ -19,6 +19,7 @@ class MessageStatus(Enum):
     AI_STARTED = "ai_started" # AI 开始工作（新的中间状态）
     COMPLETED = "completed"   # 已完成
     FAILED = "failed"        # 失败
+    SKIPPED = "skipped"      # 已跳过（服务重启时清理旧消息）
 
 
 class MessageDirection(Enum):
