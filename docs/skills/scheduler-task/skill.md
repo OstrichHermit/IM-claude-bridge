@@ -220,7 +220,7 @@ content<<<MARKER_START
 
 **task 类型 content 检查清单：**
 ```
-□ 是否明确使用哪个工具（Discord MCP、Bash、Read、Write）？
+□ 是否明确使用哪个工具（Discord MCP、powershell、Read、Write）？
 □ 是否指定完整路径（files/xxx.pdf 而非 xxx.pdf）？
 □ 是否包含所有必要参数（user_id、channel_id、文件路径）？
 □ 是否描述了具体操作（发送、读取、运行）？
@@ -414,13 +414,13 @@ exit /b 0
 ### 查看执行日志
 
 **检查日志文件：**
-```bash
+```powershell
 # 如果脚本配置了日志重定向
 type D:\AgentWorkspace\scheduled-tasks\task_name.log
 ```
 
 **查看任务执行历史：**
-```bash
+```powershell
 # 查看上次运行时间和结果
 schtasks /query /v /tn "任务名称" | findstr "Last Run Time Last Result"
 ```
@@ -481,14 +481,14 @@ content<<<MARKER_START
 **运行脚本：**
 ```ini
 content<<<MARKER_START
-使用 Bash 工具运行 [脚本路径]，参数是 [参数列表]
+使用 powershell 工具运行 [脚本路径]，参数是 [参数列表]
 <<<MARKER_END
 ```
 
 **组合操作：**
 ```ini
 content<<<MARKER_START
-先使用 Bash 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送文件"[文件路径]"到我的私聊，user_id 是 [你的用户ID]
+先使用 powershell 工具运行 [脚本路径]，等待执行完成后，使用 Discord MCP 工具发送文件"[文件路径]"到我的私聊，user_id 是 [你的用户ID]
 <<<MARKER_END
 ```
 
@@ -507,25 +507,3 @@ content<<<MARKER_START
 **何时加载：**
 - 需要具体示例时，加载 `bat-templates.md` 或 `config-examples.md`
 - 需要高级 schtasks 功能或故障排查时，加载 `schtasks-reference.md`
-
-
-## ⚠️ 环境要求
-
-### 必须使用 PowerShell
-
-**重要**：schtasks 命令必须在 **PowerShell** 中执行，不要在 Git Bash 或其他 shell 中使用！
-
-**原因**：
-- Git Bash 对 Windows 原生命令支持不好（路径映射、参数解析问题）
-- PowerShell 是 Windows 原生命令，对 schtasks 支持最好
-- 避免路径、转义字符等常见问题
-
-**如何确认在 PowerShell 中**：
-- 提示符前缀：PS C:\:\> 而不是 $ 或 bash
-- 或者在 Windows Terminal 中选择 PowerShell 标签页
-
-**正确示例**：
-Windows PowerShell
-Copyright (C) Microsoft Corporation. All rights reserved.
-
-
