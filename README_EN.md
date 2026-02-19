@@ -99,9 +99,19 @@ cp config/config.example.yaml config.yaml
 Visit [Discord Developer Portal](https://discord.com/developers/applications):
 
 1. Create Application → Bot → Create Bot → Copy Token
-2. OAuth2 → URL Generator → Check `bot`, `messages.read`, `messages.write`
+2. OAuth2 → URL Generator:
+   - **Scopes**: Check `bot` + `applications.commands`
+   - **Bot Permissions**: Check
+     - `Send Messages`
+     - `Read Messages/View Channels`
+     - `Embed Links`
+     - `Attach Files`
+     - `Add Reactions`
+     - `Use Slash Commands`
 3. Bot page → **Privileged Gateway Intents** → Enable **Message Content Intent**
-4. Use the generated URL to invite Bot to your server
+4. Copy the generated URL, open in browser → Select server → Authorize
+
+> 💡 **Tip**: The same Bot can be invited to multiple servers. Just visit the same URL again and select a different server.
 
 ### 4. Start Service
 
