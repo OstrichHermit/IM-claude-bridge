@@ -865,7 +865,7 @@ class DiscordBot(commands.Bot):
                                 # 🔥 立即发送一个初始 Embed
                                 embed = discord.Embed(
                                     title="🤖 Claude Code 处理中",
-                                    description=f"消息 #{msg_id} 已接收，AI 正在思考，请稍候...",
+                                    description=f"消息 #{msg_id} 已接收，AI 正在思考，请稍候……",
                                     color=discord.Color.gold()
                                 )
                                 embed.set_footer(text=f"消息 ID: {msg_id}")
@@ -878,7 +878,7 @@ class DiscordBot(commands.Bot):
 
                                 # 编辑旧的确认消息
                                 await tracking_info["confirmation_msg"].edit(
-                                    content=f"🔄 消息 #{msg_id} AI 开始工作"
+                                    content=f"🔄 消息 #{msg_id} 已接收，AI 正在工作，请稍候……"
                                 )
 
                                 tracking_info["notified_ai_started"] = True
@@ -902,7 +902,7 @@ class DiscordBot(commands.Bot):
 
                         # 如果有流式响应，说明已经通过 Embed 实时编辑了
                         if streaming_result and streaming_result[0]:
-                            print(f"✅ [消息 #{msg_id}] 流式响应已完成（已通过 Embed 显示）")
+                            print(f"✅ [消息 #{msg_id}] 响应已完成")
 
                             # 🔥 更新状态为已完成
                             self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
@@ -921,12 +921,19 @@ class DiscordBot(commands.Bot):
                                     embed = discord.Embed(
                                         title="🤖 Claude Code 响应",
                                         description=display_text,
-                                        color=discord.Color.blue()
+                                        color=discord.Color.green()
                                     )
                                     embed.set_footer(text=f"消息 ID: {msg_id} • 响应已完成")
                                     await discord_msg.edit(embed=embed)
+
+                                # 🔥 同时更新确认消息为完成状态
+                                confirmation_msg = tracking_info.get('confirmation_msg')
+                                if confirmation_msg:
+                                    await confirmation_msg.edit(
+                                        content=f"✅ 消息 #{msg_id} 响应已完成！"
+                                    )
                             except Exception as e:
-                                print(f"⚠️ 无法编辑 Embed: {e}")
+                                print(f"⚠️ 无法编辑消息: {e}")
 
                             messages_to_remove.append(msg_id)
                             continue
@@ -1124,11 +1131,11 @@ class DiscordBot(commands.Bot):
                                     if len(streaming_response) > 4000:
                                         display_text += "\n...(响应过长，已截断)"
 
-                                    # 创建新的 Embed（绿色，表示正在生成中）
+                                    # 创建新的 Embed（蓝色，表示正在生成中）
                                     embed = discord.Embed(
                                         title="🤖 Claude Code 响应",
                                         description=display_text,
-                                        color=discord.Color.green()
+                                        color=discord.Color.blue()
                                     )
                                     embed.set_footer(text=f"消息 ID: {msg_id} • 实时更新中...")
 
