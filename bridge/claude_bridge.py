@@ -219,6 +219,8 @@ class ClaudeBridge:
 
                 ai_started_notified = False  # 标记是否已通知 AI 开始工作
                 response_lines = []
+                partial_response = ""  # 🔥 新增：累积流式响应
+                last_update_time = 0  # 🔥 新增：上次更新时间（节流）
 
                 try:
                     # 🔥 方案2：按块读取而不是按行读取，解决 "chunk is longer than limit" 问题
@@ -289,6 +291,13 @@ class ClaudeBridge:
                                                 text = content_item.get('text', '')
                                                 response_lines.append(text)
 
+                                                # 🔥 实时更新流式响应（节流：每 100ms 更新一次）
+                                                partial_response = '\n'.join(response_lines)
+                                                current_time = time.time()
+                                                if message_id and current_time - last_update_time > 0.1:  # 100ms 节流
+                                                    self.message_queue.update_streaming_response(message_id, partial_response)
+                                                    last_update_time = current_time
+
                             except json.JSONDecodeError:
                                 # 不是 JSON 行，可能是普通文本输出
                                 pass
@@ -318,6 +327,13 @@ class ClaudeBridge:
                                             if content_item.get('type') == 'text':
                                                 text = content_item.get('text', '')
                                                 response_lines.append(text)
+
+                                                # 🔥 实时更新流式响应（节流：每 100ms 更新一次）
+                                                partial_response = '\n'.join(response_lines)
+                                                current_time = time.time()
+                                                if message_id and current_time - last_update_time > 0.1:  # 100ms 节流
+                                                    self.message_queue.update_streaming_response(message_id, partial_response)
+                                                    last_update_time = current_time
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
 
@@ -334,6 +350,10 @@ class ClaudeBridge:
 
                     if returncode == 0:
                         response = '\n'.join(response_lines).strip()
+
+                        # 🔥 最后一次更新流式响应（确保最终响应被记录）
+                        if message_id and response:
+                            self.message_queue.update_streaming_response(message_id, response)
 
                         print(f"✅ Claude 响应成功 (长度: {len(response) if response else 0} 字符)")
                         return response if response else "(Claude 没有返回文本响应)"

@@ -88,6 +88,9 @@ class DiscordBot(commands.Bot):
         # 启动消息发送请求检查任务
         self.message_request_check_task = asyncio.create_task(self.check_message_requests())
 
+        # 🔥 启动流式响应检查任务
+        self.stream_check_task = asyncio.create_task(self.check_streaming_responses())
+
     async def cleanup_stuck_messages(self):
         """清理上次崩溃时卡住的消息"""
         import sqlite3
@@ -788,11 +791,12 @@ class DiscordBot(commands.Bot):
                                 f"消息 ID: {msg_id}"
                             )
 
-                            # 加入 pending_messages 追踪
+                            # 🔥 加入 pending_messages 追踪（保存 initial_message 引用）
                             self.pending_messages[msg_id] = {
                                 "channel": channel,
                                 "user_message": None,
                                 "confirmation_msg": confirmation_msg,
+                                "initial_message": confirmation_msg,  # 🔥 用于流式编辑
                                 "start_time": asyncio.get_event_loop().time(),
                                 "content": content[:50],
                                 "notified_processing": False
@@ -858,17 +862,75 @@ class DiscordBot(commands.Bot):
                     elif status == MessageStatus.AI_STARTED.value:
                         if not tracking_info.get("notified_ai_started"):
                             try:
-                                await tracking_info["confirmation_msg"].edit(
-                                    content=f"🔄 Claude Code 处理中\n"
-                                            f"消息 #{msg_id} 已接收，AI 正在思考，请稍候。"
+                                # 🔥 立即发送一个初始 Embed
+                                embed = discord.Embed(
+                                    title="🤖 Claude Code 处理中",
+                                    description=f"消息 #{msg_id} 已接收，AI 正在思考，请稍候...",
+                                    color=discord.Color.gold()
                                 )
+                                embed.set_footer(text=f"消息 ID: {msg_id}")
+
+                                # 发送初始 Embed
+                                initial_embed_msg = await tracking_info["channel"].send(embed=embed)
+
+                                # 🔥 保存 Embed 引用，供后续流式编辑使用
+                                tracking_info["discord_message"] = initial_embed_msg
+
+                                # 编辑旧的确认消息
+                                await tracking_info["confirmation_msg"].edit(
+                                    content=f"🔄 消息 #{msg_id} AI 开始工作"
+                                )
+
                                 tracking_info["notified_ai_started"] = True
-                                print(f"🤖 [消息 #{msg_id}] AI 开始工作（实时检测）")
+                                print(f"🤖 [消息 #{msg_id}] AI 开始工作，已发送初始 Embed")
                             except Exception as e:
-                                print(f"⚠️ 无法编辑确认消息: {e}")
+                                print(f"⚠️ 无法发送 Embed: {e}")
+                                import traceback
+                                traceback.print_exc()
 
                     # 状态 3: PROCESSING 且有 response - AI 响应完成，发送响应
                     elif status == MessageStatus.PROCESSING.value and response:
+                        # 🔥 检查是否有流式响应（如果有，说明已经通过 Embed 编辑了）
+                        import sqlite3
+                        conn = sqlite3.connect(self.config.database_path)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            SELECT streaming_response FROM messages WHERE id = ?
+                        """, (msg_id,))
+                        streaming_result = cursor.fetchone()
+                        conn.close()
+
+                        # 如果有流式响应，说明已经通过 Embed 实时编辑了
+                        if streaming_result and streaming_result[0]:
+                            print(f"✅ [消息 #{msg_id}] 流式响应已完成（已通过 Embed 显示）")
+
+                            # 🔥 更新状态为已完成
+                            self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
+
+                            # 🔥 编辑 Embed 为成功状态（只改颜色和 footer，保持内容不变）
+                            try:
+                                discord_msg = tracking_info.get('discord_message')
+                                if discord_msg:
+                                    # 获取最终的流式响应内容
+                                    final_response = streaming_result[0]
+                                    display_text = final_response[:4000]
+                                    if len(final_response) > 4000:
+                                        display_text += "\n...(响应过长，已截断)"
+
+                                    # 保持标题和描述不变，只改颜色和 footer
+                                    embed = discord.Embed(
+                                        title="🤖 Claude Code 响应",
+                                        description=display_text,
+                                        color=discord.Color.blue()
+                                    )
+                                    embed.set_footer(text=f"消息 ID: {msg_id} • 响应已完成")
+                                    await discord_msg.edit(embed=embed)
+                            except Exception as e:
+                                print(f"⚠️ 无法编辑 Embed: {e}")
+
+                            messages_to_remove.append(msg_id)
+                            continue
+
                         # AI_STARTED 状态已经提前触发了"Claude Code 处理中"提示
                         # 这里直接发送响应即可
                         try:
@@ -1014,6 +1076,80 @@ class DiscordBot(commands.Bot):
 
             except Exception as e:
                 print(f"❌ 检查响应时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
+    async def check_streaming_responses(self):
+        """定期检查流式响应更新并实时编辑 Discord 消息"""
+        await self.wait_until_ready()
+
+        print("🌊 流式响应检查任务已启动")
+
+        while not self.is_closed():
+            try:
+                import sqlite3
+
+                # 查询有 streaming_response 的消息（ai_started 和 processing 状态）
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, discord_channel_id, streaming_response
+                    FROM messages
+                    WHERE status IN ('ai_started', 'processing')
+                      AND streaming_response IS NOT NULL
+                      AND streaming_response != ''
+                    ORDER BY last_stream_update DESC
+                """)
+                rows = cursor.fetchall()
+                conn.close()
+
+                # 🔥 调试：记录找到的流式响应数量
+                # if rows:
+                     # print(f"🌊 找到 {len(rows)} 个流式响应")
+
+                for msg_id, channel_id, streaming_response in rows:
+                    # 如果消息在 pending_messages 中，编辑它
+                    if msg_id in self.pending_messages:
+                        pending = self.pending_messages[msg_id]
+
+                        # 🔥 检查是否有 discord_message（AI 开始时发送的 Embed）
+                        discord_msg = pending.get('discord_message')
+                        if discord_msg:
+                            try:
+                                # 🔥 实时编辑 Embed（流式更新）
+                                if streaming_response:
+                                    # 如果响应很长，截断到 4000 字符（Discord 限制）
+                                    display_text = streaming_response[:4000]
+                                    if len(streaming_response) > 4000:
+                                        display_text += "\n...(响应过长，已截断)"
+
+                                    # 创建新的 Embed（绿色，表示正在生成中）
+                                    embed = discord.Embed(
+                                        title="🤖 Claude Code 响应",
+                                        description=display_text,
+                                        color=discord.Color.green()
+                                    )
+                                    embed.set_footer(text=f"消息 ID: {msg_id} • 实时更新中...")
+
+                                    # 🔥 实时编辑 Embed
+                                    await discord_msg.edit(embed=embed)
+                                    # print(f"🌊 [消息 #{msg_id}] Embed 已更新 (长度: {len(display_text)})")  # 调试信息（可选）
+
+                            except discord.NotFound:
+                                # 消息已删除，从 pending 移除
+                                print(f"⚠️  消息 #{msg_id} Discord Embed 已删除")
+                                del self.pending_messages[msg_id]
+                            except Exception as e:
+                                print(f"❌ 编辑 Embed #{msg_id} 失败: {e}")
+                                import traceback
+                                traceback.print_exc()
+
+                # 等待一段时间再检查（0.5 秒，比 check_responses 更快）
+                await asyncio.sleep(0.5)
+
+            except Exception as e:
+                print(f"❌ 检查流式响应时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)

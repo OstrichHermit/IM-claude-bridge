@@ -192,6 +192,24 @@ class MessageQueue:
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
+        # 兼容性处理：为旧数据库添加 streaming_response 字段（流式响应）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN streaming_response TEXT")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 兼容性处理：为旧数据库添加 last_stream_update 字段（最后流式更新时间）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN last_stream_update TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 创建流式响应索引（提高查询性能）
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_last_stream_update
+            ON messages(last_stream_update)
+        """)
+
         # 创建会话表
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
@@ -417,6 +435,27 @@ class MessageQueue:
                 SET status = ?, updated_at = ?
                 WHERE id = ?
             """, (status.value, now, message_id))
+
+        conn.commit()
+        conn.close()
+
+    def update_streaming_response(self, message_id: int, streaming_response: str):
+        """更新流式响应（实时更新部分响应内容）
+
+        Args:
+            message_id: 消息 ID
+            streaming_response: 流式响应内容（部分响应）
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+
+        cursor.execute("""
+            UPDATE messages
+            SET streaming_response = ?, last_stream_update = ?, updated_at = ?
+            WHERE id = ?
+        """, (streaming_response, now, now, message_id))
 
         conn.commit()
         conn.close()
