@@ -99,9 +99,19 @@ cp config/config.example.yaml config.yaml
 访问 [Discord Developer Portal](https://discord.com/developers/applications)：
 
 1. 创建应用 → Bot 页面 → 创建 Bot → 复制 Token
-2. OAuth2 → URL Generator → 勾选 `bot`、`messages.read`、`messages.write`
+2. OAuth2 → URL Generator：
+   - **Scopes** 勾选：`bot` + `applications.commands`
+   - **Bot Permissions** 勾选：
+     - `Send Messages`（发送消息）
+     - `Read Messages/View Channels`（查看消息）
+     - `Embed Links`（发送链接卡片）
+     - `Attach Files`（发送文件）
+     - `Add Reactions`（添加表情）
+     - `Use Slash Commands`（使用斜杠命令）
 3. Bot 页面 → **Privileged Gateway Intents** → 启用 **Message Content Intent**
-4. 使用生成的 URL 邀请 Bot 到服务器
+4. 复制生成的 URL，在浏览器打开 → 选择服务器 → 授权
+
+> 💡 **提示**：同一个 Bot 可以被邀请到多个服务器，直接用相同的链接再次访问即可。
 
 ### 4. 启动服务
 
