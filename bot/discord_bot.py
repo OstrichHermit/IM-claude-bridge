@@ -481,6 +481,8 @@ class DiscordBot(commands.Bot):
             await interaction.response.send_message(
                 f"📤 {interaction.user.mention}，正在上传 {len(files_list)} 个文件到 `{save_dir}`..."
             )
+            # 获取原始消息以便后续编辑
+            status_message = await interaction.original_response()
 
             downloaded_files = []
             failed_files = []
@@ -546,9 +548,9 @@ class DiscordBot(commands.Bot):
                 for f in failed_files:
                     response_lines.append(f"  • **{f['filename']}**: {f['error']}")
 
-            # 发送最终结果（文本）
+            # 编辑原消息发送最终结果（文本）
             followup_msg = "\n".join(response_lines)
-            await interaction.followup.send(followup_msg)
+            await status_message.edit(content=followup_msg)
 
             # 将下载的文件发送回原频道（每个文件单独发送）
             if downloaded_files:
