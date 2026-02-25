@@ -60,6 +60,15 @@ class MessageTag(Enum):
 
 
 @dataclass
+class AttachmentInfo:
+    """附件信息数据类"""
+    filename: str  # 文件名
+    size: int  # 文件大小（字节）
+    url: str  # 文件 URL
+    description: Optional[str] = None  # 文件描述
+
+
+@dataclass
 class Message:
     """消息数据类"""
     id: Optional[int]
@@ -75,6 +84,7 @@ class Message:
     is_dm: bool = False  # 是否为私聊消息
     is_external: bool = False  # 是否为外部插入的消息（非真实 Discord 消息）
     tag: str = MessageTag.DEFAULT.value  # 消息标签
+    attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -201,6 +211,12 @@ class MessageQueue:
         # 兼容性处理：为旧数据库添加 last_stream_update 字段（最后流式更新时间）
         try:
             cursor.execute("ALTER TABLE messages ADD COLUMN last_stream_update TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 兼容性处理：为旧数据库添加 attachments 字段（附件信息）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
@@ -340,13 +356,27 @@ class MessageQueue:
         message.created_at = now
         message.updated_at = now
 
+        # 将附件信息转换为 JSON 字符串
+        attachments_json = None
+        if message.attachments:
+            attachments_list = [
+                {
+                    "filename": a.filename,
+                    "size": a.size,
+                    "url": a.url,
+                    "description": a.description
+                }
+                for a in message.attachments
+            ]
+            attachments_json = json.dumps(attachments_list)
+
         cursor.execute("""
             INSERT INTO messages (
                 direction, content, status,
                 discord_channel_id, discord_message_id,
                 discord_user_id, username,
-                response, error, is_dm, is_external, tag, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response, error, is_dm, is_external, tag, attachments, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message.direction,
             message.content,
@@ -360,6 +390,7 @@ class MessageQueue:
             1 if message.is_dm else 0,
             1 if message.is_external else 0,
             message.tag,
+            attachments_json,
             message.created_at,
             message.updated_at
         ))
@@ -379,7 +410,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, is_external, tag, created_at, updated_at
+                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
             FROM messages
             WHERE status = ? AND direction = ?
             ORDER BY created_at ASC
@@ -390,6 +421,23 @@ class MessageQueue:
         conn.close()
 
         if row:
+            # 解析附件信息
+            attachments = None
+            if row[13]:
+                try:
+                    attachments_data = json.loads(row[13])
+                    attachments = [
+                        AttachmentInfo(
+                            filename=a["filename"],
+                            size=a["size"],
+                            url=a["url"],
+                            description=a.get("description")
+                        )
+                        for a in attachments_data
+                    ]
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
             return Message(
                 id=row[0],
                 direction=row[1],
@@ -404,8 +452,9 @@ class MessageQueue:
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
                 tag=row[12] or MessageTag.DEFAULT.value,
-                created_at=row[13],
-                updated_at=row[14]
+                attachments=attachments,
+                created_at=row[14],
+                updated_at=row[15]
             )
         return None
 
@@ -469,7 +518,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, tag, created_at, updated_at
+                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
             FROM messages
             WHERE discord_message_id = ? AND direction = ?
             AND status IN (?, ?)
@@ -482,6 +531,23 @@ class MessageQueue:
         conn.close()
 
         if row:
+            # 解析附件信息
+            attachments = None
+            if row[13]:
+                try:
+                    attachments_data = json.loads(row[13])
+                    attachments = [
+                        AttachmentInfo(
+                            filename=a["filename"],
+                            size=a["size"],
+                            url=a["url"],
+                            description=a.get("description")
+                        )
+                        for a in attachments_data
+                    ]
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
             return Message(
                 id=row[0],
                 direction=row[1],
@@ -496,8 +562,9 @@ class MessageQueue:
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
                 tag=row[12] or MessageTag.DEFAULT.value,
-                created_at=row[13],
-                updated_at=row[14]
+                attachments=attachments,
+                created_at=row[14],
+                updated_at=row[15]
             )
         return None
 

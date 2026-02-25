@@ -83,7 +83,8 @@ class ClaudeBridge:
                 is_dm=message.is_dm,
                 message_id=message.id,
                 channel_id=message.discord_channel_id,
-                message_tag=message.tag  # 传递消息标签
+                message_tag=message.tag,  # 传递消息标签
+                attachments=message.attachments  # 传递附件信息
             )
 
             if response:
@@ -121,7 +122,7 @@ class ClaudeBridge:
             )
             return False
 
-    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None, channel_id: int = None, message_tag: str = None) -> Optional[str]:
+    async def call_claude_cli(self, prompt: str, session_key: Optional[str] = None, session_id: Optional[str] = None, session_created: bool = False, working_dir: str = None, username: str = None, user_id: int = None, is_dm: bool = False, message_id: int = None, channel_id: int = None, message_tag: str = None, attachments: list = None) -> Optional[str]:
         """
         调用 Claude Code CLI
         使用 claude -p 参数进行非交互式调用
@@ -139,6 +140,7 @@ class ClaudeBridge:
             message_id: 消息 ID，用于实时更新状态
             channel_id: 频道 ID（频道模式下需要）
             message_tag: 消息标签（task/reminder/default），用于设置特殊消息结构
+            attachments: 附件信息列表（AttachmentInfo 对象列表）
         """
         import json
 
@@ -159,7 +161,13 @@ class ClaudeBridge:
             print(f"[消息标签] 使用提醒消息结构")
         else:
             # 默认消息：原有格式
-            prompt = self._build_default_prompt(prompt, username, user_id, is_dm, channel_id, session_created)
+            sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments)
+
+            # 如果是首次对话且启用了提示词注入，添加前缀
+            if self.config.auto_load_enabled and not session_created:
+                prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
+            else:
+                prompt = f"{sender_info}{prompt}"
         # ===================================
 
         while retries < max_retries:
@@ -396,18 +404,8 @@ class ClaudeBridge:
 
         return None
 
-    def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
-        """构建发送者信息"""
-        if is_dm:
-            return f"{username}（{user_id}）在私聊中说："
-        elif channel_id:
-            return f"{username}（{user_id}）在频道（{channel_id}）中说："
-        else:
-            return f"{username}（{user_id}）说："
-
     def _build_task_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
         """构建任务消息结构"""
-        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
         if is_dm:
             return f"""🔔 定时任务已触发！
             
@@ -436,7 +434,6 @@ class ClaudeBridge:
 
     def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
         """构建提醒消息结构"""
-        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
         if is_dm:
             return f"""🔔 定时提醒已触发！
             
@@ -457,15 +454,42 @@ class ClaudeBridge:
 1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求进行会话启动流程；
 2、直接回复需要提醒的内容。"""
 
-    def _build_default_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, session_created: bool) -> str:
-        """构建默认消息结构（原有格式）"""
-        sender_info = self._build_sender_info(username, user_id, is_dm, channel_id)
+    def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int, attachments: list = None) -> str:
+        """
+        构建发送者信息
 
-        # 如果是首次对话且启用了提示词注入，添加前缀
-        if self.config.auto_load_enabled and not session_created:
-            return f"{self.config.auto_load_prompt_text}{sender_info}{content}"
+        Args:
+            username: 用户名
+            user_id: 用户 ID
+            is_dm: 是否为私聊
+            channel_id: 频道 ID
+            attachments: 附件信息列表（AttachmentInfo 对象列表）
+
+        Returns:
+            格式化的发送者信息字符串
+        """
+        sender_base = f"{username}（{user_id}）"
+
+        # 如果有附件信息，使用特殊的发送者格式
+        if attachments:
+            filenames_str = '、'.join([a.filename for a in attachments])
+
+            if is_dm:
+                sender_info = f"{sender_base}在私聊中引用了文件名为 {filenames_str} 的已下载附件，并说："
+            elif channel_id:
+                sender_info = f"{sender_base}在频道（{channel_id}）中引用了文件名为 {filenames_str} 的已下载附件，并说："
+            else:
+                sender_info = f"{sender_base}引用了文件名为 {filenames_str} 的已下载附件，并说："
         else:
-            return f"{sender_info}{content}"
+            # 无附件信息，使用默认格式
+            if is_dm:
+                sender_info = f"{sender_base}在私聊中说："
+            elif channel_id:
+                sender_info = f"{sender_base}在频道（{channel_id}）中说："
+            else:
+                sender_info = f"{sender_base}说："
+
+        return sender_info
 
     async def cleanup_pending_messages(self):
         """清理上次崩溃时留下的 PENDING 消息（避免重启后重复处理）"""

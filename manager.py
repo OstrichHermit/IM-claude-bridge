@@ -256,21 +256,13 @@ class Manager:
                     # 执行重启操作
                     self.log(f"⚠️  进程未恢复，尝试手动重启（第 {retry_count + 1}/{self.MAX_RESTART_RETRIES} 次）")
 
-                    if retry_count == 0:
-                        # 第一次：调用 stop + start
-                        self.log("[第 1 次] 执行 stop 命令...")
-                        self.stop_all()
-                        time.sleep(3)
-                        self.log("[第 1 次] 执行 start.bat...")
-                        self.start_all()
-                    else:
-                        # 第二次和第三次：调用 restart.bat
-                        self.log(f"[第 {retry_count + 1} 次] 执行 restart.bat...")
-                        subprocess.Popen(
-                            ["cmd", "/c", str(self.project_dir / "restart.bat")],
-                            cwd=self.project_dir,
-                            creationflags=subprocess.CREATE_NEW_CONSOLE
-                        )
+                    # 统一使用 restart.bat
+                    self.log(f"[第 {retry_count + 1} 次] 执行 restart.bat...")
+                    subprocess.Popen(
+                        ["cmd", "/c", str(self.project_dir / "restart.bat")],
+                        cwd=self.project_dir,
+                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                    )
 
                     # 增加重试次数
                     retry_count += 1
