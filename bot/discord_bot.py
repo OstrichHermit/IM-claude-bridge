@@ -907,24 +907,88 @@ class DiscordBot(commands.Bot):
                             # 🔥 更新状态为已完成
                             self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
 
-                            # 🔥 编辑 Embed 为成功状态（只改颜色和 footer，保持内容不变）
+                            # 🔥 编辑 Embed 为成功状态（支持多 Embed 显示完整内容）
                             try:
                                 discord_msg = tracking_info.get('discord_message')
                                 if discord_msg:
                                     # 获取最终的流式响应内容
                                     final_response = streaming_result[0]
-                                    display_text = final_response[:4000]
-                                    if len(final_response) > 4000:
-                                        display_text += "\n...(响应过长，已截断)"
 
-                                    # 保持标题和描述不变，只改颜色和 footer
-                                    embed = discord.Embed(
-                                        title="🤖 Claude Code 响应",
-                                        description=display_text,
-                                        color=discord.Color.green()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id} • 响应已完成")
-                                    await discord_msg.edit(embed=embed)
+                                    # Discord Embed 限制：
+                                    # - Description: 最多 4096 字符
+                                    # - Embed 总大小: 最多 6000 字符
+                                    max_desc_length = 3800
+
+                                    # 计算可用于实际内容的空间（减去消息 ID 前缀）
+                                    header_text = f"**消息 ID: {msg_id}**\n\n"
+                                    available_space = max_desc_length - len(header_text)
+
+                                    if len(final_response) <= available_space:
+                                        # 短响应：直接编辑 Embed
+                                        display_text = final_response
+                                        footer_text = f"消息 ID: {msg_id} • 响应已完成 ({len(final_response)} 字符)"
+
+                                        embed = discord.Embed(
+                                            title="✨ Claude Code 的回复",
+                                            description=header_text + display_text,
+                                            color=discord.Color.green()
+                                        )
+                                        embed.set_footer(text=footer_text)
+                                        await discord_msg.edit(embed=embed)
+                                    else:
+                                        # 长响应：删除旧 Embed，发送多个新 Embed 显示完整内容
+                                        await discord_msg.delete()
+
+                                        # Discord Embed 限制（保守值）
+                                        # Description 最多 4096，总大小最多 6000
+                                        max_desc_first = 3780  # 第一个 Embed：需要为 header 留空间
+                                        max_desc_other = 4000  # 后续 Embed：不需要 header，可以放更多
+
+                                        # 计算需要多少个 Embed
+                                        total_length = len(final_response)
+                                        parts = []
+                                        current_pos = 0
+
+                                        part_num = 1
+                                        while current_pos < total_length:
+                                            remaining = total_length - current_pos
+
+                                            # 根据是否为第一个 Embed，使用不同的限制
+                                            if part_num == 1:
+                                                chunk_size = min(max_desc_first, remaining)
+                                                chunk = final_response[current_pos:current_pos + chunk_size]
+                                                desc = header_text + chunk
+                                            else:
+                                                chunk_size = min(max_desc_other, remaining)
+                                                chunk = final_response[current_pos:current_pos + chunk_size]
+                                                desc = chunk
+
+                                            parts.append((desc, chunk_size))
+                                            current_pos += chunk_size
+                                            part_num += 1
+
+                                        # 发送所有 Embed
+                                        for i, (part_desc, chunk_size) in enumerate(parts, 1):
+                                            if i == 1:
+                                                # 第一个 Embed
+                                                embed = discord.Embed(
+                                                    title="✨ Claude Code 的回复",
+                                                    description=part_desc,
+                                                    color=discord.Color.green()
+                                                )
+                                                embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分 • 共 {total_length} 字符")
+                                                await discord_msg.channel.send(embed=embed)
+                                            else:
+                                                # 后续 Embed
+                                                embed = discord.Embed(
+                                                    title=f"✨ Claude Code 的回复 (续 {i}/{len(parts)})",
+                                                    description=part_desc,
+                                                    color=discord.Color.green()
+                                                )
+                                                embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分")
+                                                await discord_msg.channel.send(embed=embed)
+
+                                        print(f"[消息 #{msg_id}] 已发送 {len(parts)} 个 Embed (共 {total_length} 字符)")
 
                                 # 🔥 同时更新确认消息为完成状态
                                 confirmation_msg = tracking_info.get('confirmation_msg')
@@ -977,67 +1041,79 @@ class DiscordBot(commands.Bot):
                                         messages_to_remove.append(msg_id)
                                         continue
 
-                                # Discord Embed 字段值长度限制为 1024 字符
-                                # 描述长度限制为 4096 字符
-                                max_desc_length = 4000
-                                max_field_length = 1000
+                                # Discord Embed 限制：
+                                # - Description: 最多 4096 字符
+                                # - Embed 总大小: 最多 6000 字符（包括 title、description、footer）
+                                max_desc_length = 3800
 
-                                # 创建 Embed
-                                embed = discord.Embed(
-                                    title=f"✨ Claude Code 的回复",
-                                    description=f"消息 ID: {msg_id}",
-                                    color=discord.Color.green()
-                                )
+                                # 计算可用于实际内容的空间（减去消息 ID 前缀）
+                                header_text = f"**消息 ID: {msg_id}**\n\n"
+                                available_space = max_desc_length - len(header_text)
 
-                                # 分割长响应
-                                if len(response) <= max_desc_length:
-                                    embed.description = f"**消息 ID: {msg_id}**\n\n{response}"
+                                if len(response) <= available_space:
+                                    # 短响应：直接发送完整内容
+                                    display_text = response
+                                    footer_text = f"消息 ID: {msg_id} • 响应已完成 ({len(response)} 字符)"
+
+                                    # 创建 Embed
+                                    embed = discord.Embed(
+                                        title="✨ Claude Code 的回复",
+                                        description=header_text + display_text,
+                                        color=discord.Color.green()
+                                    )
+                                    embed.set_footer(text=footer_text)
                                     await channel.send(embed=embed)
                                 else:
-                                    chunks = []
-                                    current_chunk = ""
-                                    lines = response.split('\n')
+                                    # 长响应：发送多个 Embed 显示完整内容
+                                    total_length = len(response)
 
-                                    for line in lines:
-                                        if len(current_chunk) + len(line) + 1 <= max_field_length:
-                                            current_chunk += line + '\n'
+                                    # Discord Embed 限制（保守值）
+                                    max_desc_first = 3780  # 第一个 Embed：需要为 header 留空间
+                                    max_desc_other = 4000  # 后续 Embed：不需要 header，可以放更多
+
+                                    parts = []
+                                    current_pos = 0
+
+                                    part_num = 1
+                                    while current_pos < total_length:
+                                        remaining = total_length - current_pos
+
+                                        # 根据是否为第一个 Embed，使用不同的限制
+                                        if part_num == 1:
+                                            chunk_size = min(max_desc_first, remaining)
+                                            chunk = response[current_pos:current_pos + chunk_size]
+                                            desc = header_text + chunk
                                         else:
-                                            if current_chunk:
-                                                chunks.append(current_chunk)
-                                            current_chunk = line + '\n'
+                                            chunk_size = min(max_desc_other, remaining)
+                                            chunk = response[current_pos:current_pos + chunk_size]
+                                            desc = chunk
 
-                                    if current_chunk:
-                                        chunks.append(current_chunk)
+                                        parts.append((desc, chunk_size))
+                                        current_pos += chunk_size
+                                        part_num += 1
 
-                                    if chunks:
-                                        embed.description = f"**消息 ID: {msg_id}**\n\n{chunks[0]}"
-                                        chunks.pop(0)
-
-                                    for i, chunk in enumerate(chunks[:25], 1):
-                                        embed.add_field(
-                                            name=f"续 ({i}/{len(chunks)})" if len(chunks) > 1 else "续",
-                                            value=chunk,
-                                            inline=False
-                                        )
-
-                                    await channel.send(embed=embed)
-
-                                    if len(chunks) > 25:
-                                        remaining_chunks = chunks[25:]
-                                        for extra_idx in range(0, len(remaining_chunks), 25):
-                                            extra_embed = discord.Embed(
-                                                title=f"✨ Claude Code 的回复 (续)",
+                                    # 发送所有 Embed
+                                    for i, (part_desc, chunk_size) in enumerate(parts, 1):
+                                        if i == 1:
+                                            # 第一个 Embed
+                                            embed = discord.Embed(
+                                                title="✨ Claude Code 的回复",
+                                                description=part_desc,
                                                 color=discord.Color.green()
                                             )
-                                            batch = remaining_chunks[extra_idx:extra_idx+25]
-                                            for i, chunk in enumerate(batch, 1):
-                                                extra_embed.add_field(
-                                                    name=f"部分 {extra_idx + i}",
-                                                    value=chunk,
-                                                    inline=False
-                                                )
-                                            await channel.send(embed=extra_embed)
-                                            print(f"[消息 #{msg_id}] 发送额外 Embed {extra_idx//25 + 1}")
+                                            embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分 • 共 {total_length} 字符")
+                                            await channel.send(embed=embed)
+                                        else:
+                                            # 后续 Embed
+                                            embed = discord.Embed(
+                                                title=f"✨ Claude Code 的回复 (续 {i}/{len(parts)})",
+                                                description=part_desc,
+                                                color=discord.Color.green()
+                                            )
+                                            embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分")
+                                            await channel.send(embed=embed)
+
+                                    print(f"[消息 #{msg_id}] 已发送 {len(parts)} 个 Embed (共 {total_length} 字符)")
 
                                 # 更新状态为已完成
                                 self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
@@ -1124,24 +1200,34 @@ class DiscordBot(commands.Bot):
                         discord_msg = pending.get('discord_message')
                         if discord_msg:
                             try:
-                                # 🔥 实时编辑 Embed（流式更新）
+                                # 🔥 实时编辑 Embed（流式更新）- 简化版本，避免 Embed 过大
                                 if streaming_response:
-                                    # 如果响应很长，截断到 4000 字符（Discord 限制）
-                                    display_text = streaming_response[:4000]
-                                    if len(streaming_response) > 4000:
-                                        display_text += "\n...(响应过长，已截断)"
+                                    # Discord Embed 限制：
+                                    # - Description: 最多 4096 字符
+                                    # - Embed 总大小: 最多 6000 字符（包括 title、description、footer）
+                                    # 流式更新时只显示前 3800 字符，为 footer 和消息 ID 前缀留空间
+                                    max_desc_length = 3800
 
-                                    # 创建新的 Embed（蓝色，表示正在生成中）
+                                    # 计算可用于实际内容的空间（减去消息 ID 前缀）
+                                    header_text = f"**消息 ID: {msg_id}**\n\n"
+                                    available_space = max_desc_length - len(header_text)
+
+                                    if len(streaming_response) <= available_space:
+                                        # 短响应：直接编辑原 Embed
+                                        display_text = streaming_response
+                                    else:
+                                        # 长响应：截断并添加提示
+                                        display_text = streaming_response[:available_space]
+                                        display_text += f"\n\n...(实时预览已显示 {available_space}/{len(streaming_response)} 字符，完整内容将在 AI 完成后发送)"
+
+                                    # 编辑 Embed
                                     embed = discord.Embed(
                                         title="🤖 Claude Code 响应",
-                                        description=display_text,
+                                        description=header_text + display_text,
                                         color=discord.Color.blue()
                                     )
-                                    embed.set_footer(text=f"消息 ID: {msg_id} • 实时更新中...")
-
-                                    # 🔥 实时编辑 Embed
+                                    embed.set_footer(text=f"消息 ID: {msg_id} • 实时更新中... ({len(streaming_response)} 字符)")
                                     await discord_msg.edit(embed=embed)
-                                    # print(f"🌊 [消息 #{msg_id}] Embed 已更新 (长度: {len(display_text)})")  # 调试信息（可选）
 
                             except discord.NotFound:
                                 # 消息已删除，从 pending 移除
