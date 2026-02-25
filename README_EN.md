@@ -17,13 +17,15 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Message tracking system (avoid duplicate processing)
 
 **File Transfer**
+- ✅ Upload files to workspace (`/upload` slash command, supports up to 25 files)
+- ✅ Reference attachment metadata (extract attachment info and send to Claude)
 - ✅ Download attachments from Discord to local
 - ✅ Send files to Discord via MCP
 - ✅ Batch file transfer support
 
 **Service Management**
 - ✅ Windows daemon process (auto monitor & restart)
-- ✅ Discord slash commands (`/new`, `/status`, `/restart`, `/stop`)
+- ✅ Discord slash commands (`/new`, `/status`, `/restart`, `/stop`, `/upload`)
 - ✅ Message queue system (SQLite persistence)
 
 ## 🚀 Quick Start
@@ -143,36 +145,32 @@ Bot will:
 - `/status` - View system status (session ID, database statistics, etc.)
 - `/restart` - Restart service
 - `/stop` - Stop service
+- `/upload` - Upload files to workspace (supports batch upload), and send files back to original channel/DM
 
-#### 5.3 File Download
-
-Reply to a message with attachments, @Bot and specify directory:
-
-```
-# Use default directory (D:/AgentWorkspace/downloads)
-@YourBot download
-
-# Specify directory
-@YourBot download to D:/myfiles
-
-# English format
-@YourBot save D:/downloads
-
-# Direct path
-@YourBot D:/AgentWorkspace/files
-```
-
-**Download Features**:
+**Upload Features**:
 - ✅ Support all attachment types (images, documents, archives, etc.)
-- ✅ Batch download (multiple attachments in one message)
+- ✅ Batch upload (multiple attachments in one message)
 - ✅ Auto handle filename conflicts (auto rename)
-- ✅ Real-time progress updates (every 30 seconds)
 
 **Configure default directory** (in `config.yaml`):
 ```yaml
 file_download:
   default_directory: "D:/AgentWorkspace/downloads"
 ```
+
+#### 5.3 File Operations
+
+Reply to a message with attachments and @Bot, Bot will extract attachment metadata and send to Claude, Claude can operate based on attachment information:
+
+```
+[Reply to a message with an image]
+@YourBot Please help me analyze this image
+```
+
+**Features**:
+- ✅ Automatically extract attachment metadata (filename, size, URL)
+- ✅ Send to Claude as structured data
+- ✅ Claude can perform operations based on attachment information
 
 ## 🔌 MCP Server Integration
 
