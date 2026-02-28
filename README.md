@@ -15,6 +15,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ 持续对话支持（会话管理）
 - ✅ 实时状态反馈（接收 → 处理 → 响应）
 - ✅ 消息追踪系统（避免重复处理）
+- ✅ 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
 
 **文件传输**
 - ✅ 上传文件到工作区（`/upload` 斜杠命令，支持 25 个文件）
@@ -140,6 +141,43 @@ Bot 会：
 2. 转发给本地 Claude Code 处理（显示"🔄 正在处理中"）
 3. 将 Claude 的回复发送回 Discord（显示"✅ 消息 #X 响应成功！"）
 
+#### 5.4 响应模式
+
+本系统支持两种响应模式，可通过 `config.yaml` 配置：
+
+**Embed 模式**（默认）：
+- 发送确认消息（"⏳ 消息已接收"）
+- 使用 Discord Embed 卡片展示响应
+- 适合长回复、格式化内容
+- 单条消息（超长时自动分割）
+
+**直接回复模式**（需启用）：
+- 不发送确认消息
+- Claude 的响应直接发送（流式输出）
+- 每个 block 作为独立消息发送
+- 显示 typing indicator（输入状态）
+- 适合实时对话、快速响应
+
+**模式对比**：
+
+| 特性 | Embed 模式（默认） | 直接回复模式 |
+|------|-------------------|-------------|
+| 确认消息 | ✅ 发送 | ❌ 不发送 |
+| 响应方式 | Embed 卡片 | 纯文本消息 |
+| 消息数量 | 1条（可能分割） | 多条（每 block 一条） |
+| 适用场景 | 适合长回复 | 适合实时对话 |
+
+**配置直接回复模式**（在 `config.yaml`）：
+```yaml
+direct_reply:
+  enabled: false  # 是否启用直接回复模式（默认关闭）
+  streaming:
+    min_message_interval: 1.5  # 消息发送间隔（秒），避免 Discord 速率限制
+    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
+    merge_short_blocks: true  # 是否合并短 block
+    short_block_max_length: 50  # 短 block 最大长度（字符）
+```
+
 #### 5.2 斜杠命令
 
 - `/new` - 重置会话，开始新的对话上下文
@@ -227,6 +265,14 @@ queue:
   database_path: "./shared/messages.db"
   poll_interval: 500                   # 轮询间隔（毫秒）
   message_retention_hours: 24          # 消息保留时间
+
+direct_reply:
+  enabled: false                       # 是否启用直接回复模式（默认关闭）
+  streaming:
+    min_message_interval: 1.5          # 消息发送间隔（秒），避免 Discord 速率限制
+    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
+    merge_short_blocks: true           # 是否合并短 block
+    short_block_max_length: 50         # 短 block 最大长度（字符）
 ```
 
 ## 🔧 故障排查
