@@ -53,3 +53,32 @@ auto_load:
   enabled: false
   # 加载记忆的提示文本（会添加到消息前面）
   prompt_text: "加载记忆。"
+
+# 直接回复模式配置
+direct_reply:
+  # 是否启用直接回复模式
+  enabled: false
+
+  # 启用后的行为：
+  # - 不发送 PENDING/PROCESSING/AI_STARTED 等状态提示消息
+  # - 显示 typing indicator（Discord "正在输入"状态）
+  # - 不使用 Embed 卡片，改为纯文本消息
+  # - 不显示消息 ID
+  # - 每个 block 作为新消息发送（而非编辑单条消息）
+
+  # 流式输出配置
+  streaming:
+    # 每条消息的最小间隔（秒），避免触发 Discord 速率限制
+    # Discord 限制：同一频道每 10 秒最多 5 条消息
+    # 推荐值：1.0-2.0 秒
+    min_message_interval: 1.5
+
+    # 是否在第一个 block 发送后停止 typing indicator
+    # false: 保持 typing indicator 直到响应完成
+    # true: 第一个 block 发送后立即停止
+    stop_typing_after_first_block: false
+
+    # 是否合并短 block（减少消息数量）
+    merge_short_blocks: true
+    # 短 block 的最大长度（字符）
+    short_block_max_length: 50

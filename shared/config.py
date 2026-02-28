@@ -141,3 +141,28 @@ class Config:
     def auto_load_prompt_text(self) -> str:
         """获取首次对话提示词注入的文本"""
         return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
+
+    @property
+    def direct_reply_enabled(self) -> bool:
+        """获取是否启用直接回复模式"""
+        return self._config.get('direct_reply', {}).get('enabled', False)
+
+    @property
+    def direct_reply_streaming_min_interval(self) -> float:
+        """获取直接回复模式的消息最小间隔（秒）"""
+        return self._config.get('direct_reply', {}).get('streaming', {}).get('min_message_interval', 1.5)
+
+    @property
+    def direct_reply_stop_typing_after_first_block(self) -> bool:
+        """获取是否在第一个 block 发送后停止 typing indicator"""
+        return self._config.get('direct_reply', {}).get('streaming', {}).get('stop_typing_after_first_block', False)
+
+    @property
+    def direct_reply_merge_short_blocks(self) -> bool:
+        """获取是否合并短 block"""
+        return self._config.get('direct_reply', {}).get('streaming', {}).get('merge_short_blocks', True)
+
+    @property
+    def direct_reply_short_block_max_length(self) -> int:
+        """获取短 block 的最大长度"""
+        return self._config.get('direct_reply', {}).get('streaming', {}).get('short_block_max_length', 50)
