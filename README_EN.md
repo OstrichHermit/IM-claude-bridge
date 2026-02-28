@@ -15,6 +15,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Continuous conversation support (session management)
 - ✅ Real-time status feedback (received → processing → response)
 - ✅ Message tracking system (avoid duplicate processing)
+- ✅ Response modes: Embed mode (default, card-style) + Direct reply mode (streaming)
 
 **File Transfer**
 - ✅ Upload files to workspace (`/upload` slash command, supports up to 25 files)
@@ -139,6 +140,43 @@ Bot will:
 2. Forward to local Claude Code for processing (show "🔄 Processing")
 3. Send Claude's reply back to Discord (show "✅ Message #X response successful!")
 
+#### 5.4 Response Modes
+
+The system supports two response modes, configurable via `config.yaml`:
+
+**Embed Mode** (default):
+- Sends confirmation message ("⏳ Message received")
+- Displays response using Discord Embed cards
+- Suitable for long replies, formatted content
+- Single message (auto-split if too long)
+
+**Direct Reply Mode** (requires enabling):
+- No confirmation message sent
+- Claude's response sent directly (streaming output)
+- Each block sent as independent message
+- Shows typing indicator
+- Suitable for real-time conversations, quick responses
+
+**Mode Comparison**:
+
+| Feature | Embed Mode (Default) | Direct Reply Mode |
+|---------|---------------------|-------------------|
+| Confirmation message | ✅ Sent | ❌ Not sent |
+| Response format | Embed card | Plain text message |
+| Message count | 1 (may split) | Multiple (one per block) |
+| Best for | Long replies | Real-time conversations |
+
+**Configure Direct Reply Mode** (in `config.yaml`):
+```yaml
+direct_reply:
+  enabled: false  # Enable direct reply mode (default: disabled)
+  streaming:
+    min_message_interval: 1.5  # Message send interval (seconds), avoid Discord rate limit
+    stop_typing_after_first_block: false  # Stop typing after first message
+    merge_short_blocks: true  # Merge short blocks
+    short_block_max_length: 50  # Max length for short blocks (characters)
+```
+
 #### 5.2 Slash Commands
 
 - `/new` - Reset session, start new conversation context
@@ -230,6 +268,14 @@ queue:
   database_path: "./shared/messages.db"
   poll_interval: 500                   # Poll interval (milliseconds)
   message_retention_hours: 24          # Message retention time
+
+direct_reply:
+  enabled: false                       # Enable direct reply mode (default: disabled)
+  streaming:
+    min_message_interval: 1.5          # Message send interval (seconds), avoid Discord rate limit
+    stop_typing_after_first_block: false  # Stop typing after first message
+    merge_short_blocks: true           # Merge short blocks
+    short_block_max_length: 50         # Max length for short blocks (characters)
 ```
 
 ## 🔧 Troubleshooting
