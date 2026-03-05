@@ -229,6 +229,7 @@ class ClaudeBridge:
                 response_lines = []
                 partial_response = ""  # 🔥 新增：累积流式响应
                 last_update_time = 0  # 🔥 新增：上次更新时间（节流）
+                aborted = False  # 🔥 新增：标记是否被中止
 
                 try:
                     # 🔥 方案2：按块读取而不是按行读取，解决 "chunk is longer than limit" 问题
@@ -236,6 +237,12 @@ class ClaudeBridge:
                     chunk_size = 4096  # 每次读取 4KB
 
                     while True:
+                        # 🔥 新增：检查是否收到中止信号
+                        if message_id and self.message_queue.is_aborting(message_id):
+                            print(f"🛑 [消息 #{message_id}] 检测到中止请求，正在终止进程...")
+                            aborted = True
+                            break
+
                         # AI 开始工作前，使用较短超时(30秒)；AI 开始后，不限制超时
                         read_timeout = None if ai_started_notified else 30.0
 
@@ -344,6 +351,36 @@ class ClaudeBridge:
                                                     last_update_time = current_time
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
+
+                    # 🔥 新增：处理中止逻辑
+                    if aborted:
+                        print(f"🛑 [消息 #{message_id}] 正在中止进程...")
+                        # 先尝试礼貌终止
+                        process.terminate()
+                        try:
+                            # 等待 5 秒让进程优雅退出
+                            returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
+                            print(f"✅ [消息 #{message_id}] 进程已优雅终止 (退出码: {returncode})")
+                        except asyncio.TimeoutError:
+                            # 5 秒后还没退出，强制终止
+                            print(f"⚠️ [消息 #{message_id}] 进程未在 5 秒内退出，强制终止...")
+                            process.kill()
+                            await process.wait()
+                            print(f"✅ [消息 #{message_id}] 进程已强制终止")
+
+                        # 更新消息状态为 COMPLETED，记录中止原因
+                        if message_id:
+                            partial_response = '\n'.join(response_lines).strip()
+                            abort_msg = partial_response if partial_response else "(响应被用户中止)"
+                            self.message_queue.update_status(
+                                message_id,
+                                MessageStatus.COMPLETED,
+                                response=abort_msg
+                            )
+                            print(f"✅ [消息 #{message_id}] 已更新消息状态为 COMPLETED（中止）")
+
+                        # 返回部分响应或中止消息
+                        return partial_response if partial_response else "(响应被用户中止)"
 
                     # 等待进程结束
                     if ai_started_notified:
