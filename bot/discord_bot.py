@@ -174,7 +174,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/upload` - 上传文件\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -1112,15 +1112,15 @@ class DiscordBot(commands.Bot):
                                     # Embed 模式：编辑确认消息
                                     await tracking_info["confirmation_msg"].edit(
                                         content=f"⏱️ 消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n"
-                                                f"Claude Bridge 可能未运行。\n"
-                                                f"建议：检查服务状态或重新发送消息。"
+                                                f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
+                                                f"建议：检查服务状态，或等待当前消息响应完成。"
                                     )
                                 else:
                                     # 直接回复模式：发送超时消息
                                     await tracking_info["channel"].send(
-                                        f"⏱️ 消息等待时间过长（{int(elapsed_time)}秒）\n"
-                                        f"Claude Bridge 可能未运行。\n"
-                                        f"建议：检查服务状态或重新发送消息。"
+                                        f"⏱️ 消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n"
+                                        f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
+                                        f"建议：检查服务状态，或等待当前消息响应完成。"
                                     )
                                     # 停止 typing indicator
                                     tracking_info["typing_active"] = False
