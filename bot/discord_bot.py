@@ -174,7 +174,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/upload` - 上传文件\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/upload` - 上传文件\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
