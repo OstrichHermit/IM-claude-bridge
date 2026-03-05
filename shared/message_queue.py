@@ -17,6 +17,7 @@ class MessageStatus(Enum):
     PENDING = "pending"      # 等待处理
     PROCESSING = "processing" # 正在处理
     AI_STARTED = "ai_started" # AI 开始工作（新的中间状态）
+    ABORTING = "aborting"     # 正在中止
     COMPLETED = "completed"   # 已完成
     FAILED = "failed"        # 失败
     SKIPPED = "skipped"      # 已跳过（服务重启时清理旧消息）
@@ -508,6 +509,94 @@ class MessageQueue:
 
         conn.commit()
         conn.close()
+
+    def request_abort(self, message_id: int) -> bool:
+        """请求中止消息处理
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            是否成功请求中止
+        """
+        try:
+            self.update_status(message_id, MessageStatus.ABORTING)
+            return True
+        except Exception as e:
+            print(f"❌ 请求中止失败: {e}")
+            return False
+
+    def is_aborting(self, message_id: int) -> bool:
+        """检查消息是否正在中止
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            消息是否正在中止
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM messages WHERE id = ?", (message_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row and row[0] == MessageStatus.ABORTING.value
+
+    def get_processing_messages(self) -> List[Message]:
+        """获取所有正在处理的消息
+
+        Returns:
+            正在处理的消息列表
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, direction, content, status,
+                   discord_channel_id, discord_message_id,
+                   discord_user_id, username,
+                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
+            FROM messages
+            WHERE status IN (?, ?)
+            ORDER BY created_at DESC
+        """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        messages = []
+        for row in rows:
+            # 解析 attachments JSON
+            attachments_json = row[12]
+            attachments = []
+            if attachments_json:
+                try:
+                    attachments_list = json.loads(attachments_json)
+                    attachments = [AttachmentInfo(**a) for a in attachments_list]
+                except:
+                    pass
+
+            message = Message(
+                id=row[0],
+                direction=MessageDirection(row[1]),
+                content=row[2],
+                status=MessageStatus(row[3]),
+                discord_channel_id=row[4],
+                discord_message_id=row[5],
+                discord_user_id=row[6],
+                username=row[7],
+                response=row[8],
+                error=row[9],
+                is_dm=bool(row[10]),
+                is_external=bool(row[11]),
+                tag=row[12] if row[12] else MessageTag.DEFAULT.value,
+                attachments=attachments
+            )
+            messages.append(message)
+
+        return messages
 
     def get_response(self, discord_message_id: int) -> Optional[Message]:
         """获取 Discord 消息的响应"""

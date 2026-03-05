@@ -398,6 +398,35 @@ class DiscordBot(commands.Bot):
                 import traceback
                 traceback.print_exc()
 
+        @self.tree.command(name="abort", description="中止当前正在处理的 Claude 响应")
+        async def abort_command(interaction: discord.Interaction):
+            """中止当前正在处理的 Claude 响应"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    await interaction.response.send_message("❌ 您没有权限执行此操作", ephemeral=True)
+                    return
+
+            # 查找正在处理的消息
+            processing_messages = self.message_queue.get_processing_messages()
+
+            if not processing_messages:
+                await interaction.response.send_message("⚠️ 当前没有正在处理的响应")
+                return
+
+            # 请求中止第一个处理中的消息
+            message_to_abort = processing_messages[0]
+            success = self.message_queue.request_abort(message_to_abort.id)
+
+            if success:
+                await interaction.response.send_message(
+                    f"🛑 已请求中止消息 #{message_to_abort.id} 的处理\n"
+                    f"⏳ Claude 响应将在几秒内停止..."
+                )
+                print(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
+            else:
+                await interaction.response.send_message("❌ 中止请求失败，请稍后重试")
+
         @self.tree.command(name="upload", description="批量上传文件到工作区（最多25个）")
         @app_commands.describe(
             file1="文件 1（必填）",
@@ -569,7 +598,7 @@ class DiscordBot(commands.Bot):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
-        print(f"✓ 斜杠命令: /new, /status, /stop, /restart, /upload")
+        print(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort, /upload")
 
         # 发送启动通知
         await self.send_startup_notification()
