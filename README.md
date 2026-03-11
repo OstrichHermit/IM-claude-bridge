@@ -50,7 +50,7 @@ D:/AgentWorkspace/                    # 工作区根目录
 
 **Skill 使用**（推荐安装）：
 ```bash
-# 复制定时任务 Skill（推荐，用于创建定时提醒）
+# 复制定时任务 Skill（用于创建定时任务）
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 

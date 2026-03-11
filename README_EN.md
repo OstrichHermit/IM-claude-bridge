@@ -50,7 +50,7 @@ D:/AgentWorkspace/                    # Workspace root
 
 **Skill Usage** (recommended installation):
 ```bash
-# Copy scheduled task Skill (recommended, for creating scheduled reminders)
+# Copy scheduled task Skill (for creating scheduled tasks)
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 
