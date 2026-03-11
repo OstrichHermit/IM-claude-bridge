@@ -44,17 +44,23 @@ class ClaudeBridge:
             print(f"[消息 #{message.id}] 临时 Session Key: {temp_session_key}")
             print(f"[消息 #{message.id}] 临时 Session ID: {temp_session_id}")
 
-        # 获取或创建全局会话工作目录
+        # 获取或创建会话工作目录
         if use_temp_session:
-            # 临时会话：使用全局工作目录（不创建独立目录）
+            # 临时会话（task/reminder）：使用临时 session_id 和基础工作目录
             session_key = temp_session_key
             session_id = temp_session_id
             session_created = False  # 标记为首次模式
             working_dir = self.config.working_directory
         else:
-            # 普通会话：使用原有逻辑
+            # 普通会话（default）：根据模式获取 session
             session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
-                self.config.working_directory
+                self.config.working_directory,
+                channel_id=message.discord_channel_id,
+                user_id=message.discord_user_id,
+                is_dm=message.is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
         if session_key:
@@ -243,8 +249,8 @@ class ClaudeBridge:
                             aborted = True
                             break
 
-                        # AI 开始工作前，使用较短超时(30秒)；AI 开始后，不限制超时
-                        read_timeout = None if ai_started_notified else 30.0
+                        # AI 开始工作前，使用配置的超时时间；AI 开始后，不限制超时
+                        read_timeout = None if ai_started_notified else float(self.config.claude_timeout)
 
                         try:
                             if read_timeout is None:
@@ -382,16 +388,8 @@ class ClaudeBridge:
                         # 返回部分响应或中止消息
                         return partial_response if partial_response else "(响应被用户中止)"
 
-                    # 等待进程结束
-                    if ai_started_notified:
-                        # AI 已开始，无超时限制，等待多久都可以
-                        returncode = await process.wait()
-                    else:
-                        # AI 未开始就结束了，使用配置的超时
-                        returncode = await asyncio.wait_for(
-                            process.wait(),
-                            timeout=self.config.claude_timeout
-                        )
+                    # 等待进程结束（无超时限制）
+                    returncode = await process.wait()
 
                     if returncode == 0:
                         response = '\n'.join(response_lines).strip()
@@ -415,7 +413,7 @@ class ClaudeBridge:
                 except asyncio.TimeoutError:
                     process.kill()
                     await process.wait()
-                    raise Exception(f"Claude Code 超时（超过 {self.config.claude_timeout} 秒）")
+                    raise Exception(f"Claude Code 启动超时（超过 {self.config.claude_timeout} 秒未开始输出）")
 
             except FileNotFoundError:
                 # claude 命令不存在

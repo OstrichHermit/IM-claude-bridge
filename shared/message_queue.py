@@ -678,12 +678,27 @@ class MessageQueue:
 
         return deleted_count
 
-    def get_or_create_session(self, base_working_dir: str) -> tuple[str, str, bool, str]:
+    def get_or_create_session(
+        self,
+        base_working_dir: str,
+        channel_id: int = None,
+        user_id: int = None,
+        is_dm: bool = False,
+        use_temp_session: bool = False,
+        temp_session_key: str = None,
+        session_mode: str = "global"
+    ) -> tuple[str, str, bool, str]:
         """
-        获取或创建全局会话的工作目录
+        获取或创建会话的工作目录
 
         Args:
             base_working_dir: 基础工作目录
+            channel_id: Discord 频道 ID（频道消息使用）
+            user_id: Discord 用户 ID（私聊消息使用）
+            is_dm: 是否为私聊消息
+            use_temp_session: 是否使用临时会话（外部消息）
+            temp_session_key: 临时会话 key（use_temp_session=True 时使用）
+            session_mode: 会话模式（"global" 或 "session"）
 
         Returns:
             (session_key, session_id, session_created, working_directory):
@@ -692,11 +707,27 @@ class MessageQueue:
         import os
         from pathlib import Path
 
-        # global 模式：直接使用基础工作目录
-        session_key = "global"
         base_path = Path(base_working_dir)
-        working_dir = str(base_path)
-        # 确保基础目录存在
+
+        # ========== 生成 session_key 和工作目录 ==========
+        if use_temp_session and temp_session_key:
+            # 临时会话（外部消息：task/reminder）- 所有模式下都是独立的
+            session_key = temp_session_key
+            working_dir = str(base_path)  # 使用基础工作目录
+        elif session_mode == "global":
+            # global 模式：所有频道/私聊共享一个全局 session
+            session_key = "global"
+            working_dir = str(base_path)  # 使用基础工作目录
+        elif is_dm:
+            # session 模式 - 私聊：每个用户的私聊使用独立 session
+            session_key = f"dm_{user_id}"
+            working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
+        else:
+            # session 模式 - 频道：每个频道使用独立 session（该频道所有用户共享）
+            session_key = f"channel_{channel_id}"
+            working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
+
+        # 确保工作目录存在
         os.makedirs(working_dir, exist_ok=True)
 
         # 获取或创建 session_id

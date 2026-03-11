@@ -26,7 +26,10 @@ claude:
   # 工作目录（可选，留空则使用当前目录）
   # 对于需要访问特定项目文件的任务很有用
   working_directory: ""
-  # 会话模式：固定为 global（全局共享会话）
+  # 会话模式：
+  # - global: 所有频道/私聊共享一个全局 session（原有模式）
+  # - session: 每个频道/私聊使用独立 session（新功能）
+  session_mode: "global"
 
 # 文件下载配置
 file_download:
@@ -82,3 +85,7 @@ direct_reply:
     merge_short_blocks: true
     # 短 block 的最大长度（字符）
     short_block_max_length: 50
+
+  # PENDING 状态超时时间（秒）
+  # 超过此时间未收到 Claude Bridge 响应时，发送超时提示
+  pending_timeout: 30
