@@ -18,7 +18,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
 
 **文件传输**
-- ✅ 上传文件到工作区（`/upload` 斜杠命令，支持 25 个文件）
+- ✅ 发送消息时附带附件（自动下载并传入附件信息）
 - ✅ 引用附件信息（提取附件元数据发送给 Claude）
 - ✅ 从 Discord 下载附件到本地
 - ✅ 通过 MCP 发送文件到 Discord
@@ -26,7 +26,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 **服务管理**
 - ✅ Windows 守护进程（自动监控重启）
-- ✅ Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/upload`）
+- ✅ Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
 - ✅ 消息队列系统（SQLite 持久化）
 
 ## 🚀 快速开始
@@ -182,20 +182,34 @@ direct_reply:
 
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
+- `/abort` - 中止当前正在处理的输出
 - `/restart` - 重启服务
 - `/stop` - 停止服务
-- `/upload` - 上传文件到工作区（支持批量上传），并将文件发送回原频道/私聊
 
-**上传特性**：
+#### 5.3 文件操作
+
+**方式一：发送消息时附带附件**
+
+直接在 @Bot 消息中附带文件，Bot 会自动下载并传入附件信息：
+
+```
+[@Bot 同时上传文件]
+@YourBot 帮我分析这些文件
+```
+
+**附件处理特性**：
 - ✅ 支持所有附件类型（图片、文档、压缩包等）
-- ✅ 批量上传（一条消息多个附件）
+- ✅ 自动下载到配置的目录
 - ✅ 自动处理文件名冲突（自动重命名）
+- ✅ 提取附件元数据发送给 Claude
 
-**配置默认目录**（在 `config.yaml`）：
+**配置默认下载目录**（在 `config.yaml`）：
 ```yaml
 file_download:
-  default_directory: "D:/AgentWorkspace/downloads"
+  default_directory: "D:/AgentWorkspace/files/downloads"
 ```
+
+**方式二：引用附件信息**
 
 #### 5.3 文件操作
 

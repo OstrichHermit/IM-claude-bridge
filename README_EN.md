@@ -18,7 +18,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Response modes: Embed mode (default, card-style) + Direct reply mode (streaming)
 
 **File Transfer**
-- ✅ Upload files to workspace (`/upload` slash command, supports up to 25 files)
+- ✅ Send attachments with messages (auto download and pass attachment info)
 - ✅ Reference attachment metadata (extract attachment info and send to Claude)
 - ✅ Download attachments from Discord to local
 - ✅ Send files to Discord via MCP
@@ -26,7 +26,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 **Service Management**
 - ✅ Windows daemon process (auto monitor & restart)
-- ✅ Discord slash commands (`/new`, `/status`, `/restart`, `/stop`, `/upload`)
+- ✅ Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
 - ✅ Message queue system (SQLite persistence)
 
 ## 🚀 Quick Start
@@ -181,24 +181,36 @@ direct_reply:
 
 - `/new` - Reset session, start new conversation context
 - `/status` - View system status (session ID, database statistics, etc.)
+- `/abort` - Abort current ongoing output
 - `/restart` - Restart service
 - `/stop` - Stop service
-- `/upload` - Upload files to workspace (supports batch upload), and send files back to original channel/DM
-
-**Upload Features**:
-- ✅ Support all attachment types (images, documents, archives, etc.)
-- ✅ Batch upload (multiple attachments in one message)
-- ✅ Auto handle filename conflicts (auto rename)
-
-**Configure default directory** (in `config.yaml`):
-```yaml
-file_download:
-  default_directory: "D:/AgentWorkspace/downloads"
-```
 
 #### 5.3 File Operations
 
-Reply to a message with attachments and @Bot, Bot will extract attachment metadata and send to Claude, Claude can operate based on attachment information:
+**Method 1: Send Attachments with Messages**
+
+Simply attach files when @Bot, Bot will automatically download and pass attachment info:
+
+```
+[@Bot with file attachments]
+@YourBot Please help me analyze these files
+```
+
+**Attachment Processing Features**:
+- ✅ Support all attachment types (images, documents, archives, etc.)
+- ✅ Auto download to configured directory
+- ✅ Auto handle filename conflicts (auto rename)
+- ✅ Extract attachment metadata and send to Claude
+
+**Configure default download directory** (in `config.yaml`):
+```yaml
+file_download:
+  default_directory: "D:/AgentWorkspace/files/downloads"
+```
+
+**Method 2: Reference Attachment Metadata**
+
+Reply to a message with attachments and @Bot, Bot will extract attachment metadata and send to Claude:
 
 ```
 [Reply to a message with an image]
