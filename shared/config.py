@@ -179,3 +179,13 @@ class Config:
     def pending_timeout(self) -> int:
         """获取 PENDING 状态超时时间（秒）"""
         return self._config.get('direct_reply', {}).get('pending_timeout', 30)
+
+    @property
+    def max_concurrent_sessions(self) -> int:
+        """获取最大并发 session 数（0 = 无限制）"""
+        return self._config.get('claude', {}).get('max_concurrent_sessions', 5)
+
+    @property
+    def worker_idle_timeout(self) -> int:
+        """获取 Worker 空闲超时时间（秒，0 = 永不清理）"""
+        return self._config.get('claude', {}).get('worker_idle_timeout', 300)
