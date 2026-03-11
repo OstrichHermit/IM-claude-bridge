@@ -166,3 +166,16 @@ class Config:
     def direct_reply_short_block_max_length(self) -> int:
         """获取短 block 的最大长度"""
         return self._config.get('direct_reply', {}).get('streaming', {}).get('short_block_max_length', 50)
+
+    @property
+    def session_mode(self) -> str:
+        """获取会话模式（global 或 session）"""
+        mode = self._config.get('claude', {}).get('session_mode', 'global')
+        if mode not in ('global', 'session'):
+            raise ValueError(f"无效的会话模式: {mode}，必须是 'global' 或 'session'")
+        return mode
+
+    @property
+    def pending_timeout(self) -> int:
+        """获取 PENDING 状态超时时间（秒）"""
+        return self._config.get('direct_reply', {}).get('pending_timeout', 30)

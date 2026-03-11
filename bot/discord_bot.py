@@ -156,11 +156,6 @@ class DiscordBot(commands.Bot):
             print("ℹ️  未配置启动通知，跳过")
             return
 
-        # 获取当前会话信息
-        session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
-            self.config.working_directory
-        )
-
         # 创建启动成功消息
         embed = discord.Embed(
             title="🚀 Discord Claude Bridge 启动成功",
@@ -168,13 +163,30 @@ class DiscordBot(commands.Bot):
             color=discord.Color.green()
         )
 
-        # 显示会话信息
-        session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
-        session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
-        embed.add_field(name="📋 当前会话", value=session_info, inline=False)
+        # 根据会话模式显示不同的信息
+        if self.config.session_mode == "global":
+            # global 模式：显示全局会话信息
+            session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
+                self.config.working_directory,
+                session_mode="global"
+            )
+            session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
+            session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
+            embed.add_field(
+                name="📋 会话模式: Global（全局共享）",
+                value=f"所有频道和私聊共享一个全局会话\n{session_info}",
+                inline=False
+            )
+        else:
+            # session 模式：说明独立会话架构
+            embed.add_field(
+                name="📋 会话模式: Session（独立会话）",
+                value="每个频道和每个用户的私聊都使用独立的 Session ID\n在具体频道或私聊中使用 `/status` 查看该会话信息",
+                inline=False
+            )
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`下载附件` - 右键消息下载附件\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -219,9 +231,9 @@ class DiscordBot(commands.Bot):
     async def add_commands(self):
         """注册斜杠命令"""
 
-        @self.tree.command(name="new", description="开始新的对话上下文（重置全局会话）")
+        @self.tree.command(name="new", description="开始新的对话上下文（重置当前频道/私聊的会话）")
         async def reset_command(interaction: discord.Interaction):
-            """重置全局 Claude 会话"""
+            """重置当前频道/私聊的 Claude 会话"""
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
@@ -231,9 +243,18 @@ class DiscordBot(commands.Bot):
                     )
                     return
 
-            # 获取全局会话的工作目录
+            # 判断当前是频道还是私聊
+            is_dm = isinstance(interaction.channel, discord.DMChannel)
+
+            # 获取当前频道/私聊的会话工作目录
             session_key, old_session_id, _, working_dir = self.message_queue.get_or_create_session(
-                self.config.working_directory
+                self.config.working_directory,
+                channel_id=interaction.channel.id if not is_dm else None,
+                user_id=interaction.user.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
             # 删除会话（包括数据库记录和 Claude Code 会话文件）
@@ -241,17 +262,26 @@ class DiscordBot(commands.Bot):
 
             # 验证重置：重新获取会话，应该生成新的 session_id
             session_key, new_session_id, session_created, _ = self.message_queue.get_or_create_session(
-                self.config.working_directory
+                self.config.working_directory,
+                channel_id=interaction.channel.id if not is_dm else None,
+                user_id=interaction.user.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
             if deleted:
+                # 判断会话类型用于显示
+                session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name} 的会话"
                 await interaction.response.send_message(
-                    f"✅ {interaction.user.mention}，全局会话已重置！\n"
+                    f"✅ {interaction.user.mention}，{session_type}已重置！\n"
                     f"**旧的 Session ID**: `{old_session_id[:8]}...` (已删除)\n"
                     f"**新的 Session ID**: `{new_session_id[:8]}...`\n"
                     f"下次对话将使用新的会话 ID 创建全新上下文。"
                 )
-                print(f"[会话重置] 用户 {interaction.user.display_name} 重置了全局会话")
+                print(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
+                print(f"[会话重置] Session Key: {session_key}")
                 print(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
                 print(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
             else:
@@ -263,9 +293,18 @@ class DiscordBot(commands.Bot):
         @self.tree.command(name="status", description="查看当前会话和系统状态")
         async def status_command(interaction: discord.Interaction):
             """查看当前会话状态"""
-            # 获取全局会话信息（包括 session_id）
-            session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
-                self.config.working_directory
+            # 判断当前是频道还是私聊
+            is_dm = isinstance(interaction.channel, discord.DMChannel)
+
+            # 获取当前频道/私聊的会话信息
+            session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
+                self.config.working_directory,
+                channel_id=interaction.channel.id if not is_dm else None,
+                user_id=interaction.user.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
             embed = discord.Embed(
@@ -273,12 +312,16 @@ class DiscordBot(commands.Bot):
                 color=discord.Color.blue()
             )
 
+            # 显示会话类型
+            session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name}"
+            embed.add_field(name="会话类型", value=session_type, inline=False)
+
             # 显示 session ID 和状态（不显示 Key）
             session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
             session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
             embed.add_field(name="当前会话", value=session_info, inline=False)
 
-            embed.add_field(name="工作目录", value=f"`{self.config.working_directory}`", inline=False)
+            embed.add_field(name="工作目录", value=f"`{working_dir}`", inline=False)
 
             await interaction.response.send_message(embed=embed)
 
@@ -645,7 +688,13 @@ class DiscordBot(commands.Bot):
 
             # 获取会话信息，检查是否为首次对话
             session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
-                self.config.working_directory
+                self.config.working_directory,
+                channel_id=message.channel.id if not is_dm else None,
+                user_id=message.author.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
             # 创建消息对象（默认标签）
@@ -792,7 +841,13 @@ class DiscordBot(commands.Bot):
 
             # 获取会话信息
             session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
-                self.config.working_directory
+                self.config.working_directory,
+                channel_id=message.channel.id if not is_dm else None,
+                user_id=message.author.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None,
+                session_mode=self.config.session_mode
             )
 
             # 显示"正在输入"状态
@@ -1127,8 +1182,8 @@ class DiscordBot(commands.Bot):
                         is_direct_reply = tracking_info.get("direct_reply", False)
                         if (not tracking_info.get("notified_ai_started") and
                             not tracking_info.get("notified_pending_timeout") and
-                            elapsed_time > 30):
-                            # 超过 30 秒仍未被接收
+                            elapsed_time > self.config.pending_timeout):
+                            # 超过配置的秒数仍未被接收
                             try:
                                 if not is_direct_reply:
                                     # Embed 模式：编辑确认消息
