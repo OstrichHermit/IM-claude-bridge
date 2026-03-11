@@ -19,7 +19,7 @@ discord:
 claude:
   # claude 可执行文件路径（如果已在 PATH 中可省略）
   executable: "claude"
-  # 每次对话的超时时间（秒）
+  # 每次对话的启动超时时间（秒）
   timeout: 30
   # 最大重试次数
   max_retries: 3
