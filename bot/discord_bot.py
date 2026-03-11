@@ -174,7 +174,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`下载附件` - 右键消息下载附件\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -427,12 +427,107 @@ class DiscordBot(commands.Bot):
             else:
                 await interaction.response.send_message("❌ 中止请求失败，请稍后重试")
 
+        @self.tree.context_menu(name="下载附件")
+        async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
+            """右键消息下载附件（上下文菜单）"""
+            import aiohttp
+            from pathlib import Path
+
+            print(f"[下载命令] 用户 {interaction.user.display_name} 右键点击消息 {message.id}")
+
+            # 检查消息是否有附件
+            if not message.attachments:
+                await interaction.response.send_message(
+                    f"❌ {interaction.user.mention}，这条消息没有附件。",
+                    ephemeral=True
+                )
+                return
+
+            # 使用配置的默认下载目录
+            save_dir = Path(self.config.default_download_directory)
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+            downloaded_files = []
+            failed_files = []
+
+            # 先响应，告知用户正在处理
+            await interaction.response.send_message(
+                f"📥 {interaction.user.mention}，正在下载 {len(message.attachments)} 个附件到 `{save_dir}`..."
+            )
+            # 获取原始消息以便后续编辑
+            status_message = await interaction.original_response()
+
+            # 下载所有附件
+            async with aiohttp.ClientSession() as session:
+                for attachment in message.attachments:
+                    try:
+                        # 处理文件名冲突
+                        local_path = save_dir / attachment.filename
+                        counter = 1
+                        original_stem = Path(attachment.filename).stem
+                        original_suffix = Path(attachment.filename).suffix
+
+                        # 检查文件是否存在，如存在则添加后缀
+                        while local_path.exists():
+                            local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
+                            counter += 1
+
+                        # 下载文件
+                        async with session.get(attachment.url) as resp:
+                            if resp.status == 200:
+                                file_content = await resp.read()
+                                with open(local_path, 'wb') as f:
+                                    f.write(file_content)
+
+                                downloaded_files.append({
+                                    "filename": attachment.filename,
+                                    "local_path": str(local_path),
+                                    "size": len(file_content)
+                                })
+                                print(f"[下载命令] ✓ 已下载: {attachment.filename} -> {local_path}")
+                            else:
+                                raise ValueError(f"HTTP {resp.status}")
+
+                    except Exception as e:
+                        failed_files.append({
+                            "filename": attachment.filename,
+                            "error": str(e)
+                        })
+                        print(f"[下载命令] ✗ 下载失败: {attachment.filename} - {e}")
+
+            # 构建响应消息
+            response_lines = [
+                f"✅ {interaction.user.mention}，附件下载完成！",
+                f"📁 保存目录: `{save_dir}`",
+                ""
+            ]
+
+            if downloaded_files:
+                response_lines.append(f"**成功下载 {len(downloaded_files)} 个文件:**")
+                for f in downloaded_files:
+                    size_kb = f['size'] / 1024
+                    response_lines.append(f"  • **{f['filename']}** ({size_kb:.1f} KB)")
+                    response_lines.append(f"    `{f['local_path']}`")
+
+            if failed_files:
+                response_lines.append("")
+                response_lines.append(f"**失败 {len(failed_files)} 个文件:**")
+                for f in failed_files:
+                    response_lines.append(f"  • **{f['filename']}**: {f['error']}")
+
+            # 编辑原消息发送最终结果
+            followup_msg = "\n".join(response_lines)
+            await status_message.edit(content=followup_msg)
+
+            print(f"[下载命令] 用户 {interaction.user.display_name} 下载了 {len(downloaded_files)}/{len(message.attachments)} 个文件")
+
 
     async def on_ready(self):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
         print(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort")
+        print(f"✓ 上下文菜单: 下载附件")
 
         # 发送启动通知
         await self.send_startup_notification()
