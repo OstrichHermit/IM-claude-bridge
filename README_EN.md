@@ -19,6 +19,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 **File Transfer**
 - ✅ Send attachments with messages (auto download and pass attachment info)
+- ✅ Context menu to download attachments (right-click)
 - ✅ Reference attachment metadata (extract attachment info and send to Claude)
 - ✅ Download attachments from Discord to local
 - ✅ Send files to Discord via MCP
@@ -27,6 +28,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 **Service Management**
 - ✅ Windows daemon process (auto monitor & restart)
 - ✅ Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
+- ✅ Context menus (right-click message to download attachments)
 - ✅ Message queue system (SQLite persistence)
 
 ## 🚀 Quick Start
@@ -46,12 +48,9 @@ D:/AgentWorkspace/                    # Workspace root
         └── discord-bridge-maintenance/  # Maintenance Skill for this project
 ```
 
-**Maintenance Skill Usage** (recommended installation):
+**Skill Usage** (recommended installation):
 ```bash
-# Copy maintenance Skill to Claude Code config directory
-cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
-
-# Copy scheduled task Skill (optional, for creating scheduled reminders)
+# Copy scheduled task Skill (recommended, for creating scheduled reminders)
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 
@@ -185,14 +184,23 @@ direct_reply:
 - `/restart` - Restart service
 - `/stop` - Stop service
 
+**Context Menus** (Right-click on message):
+- **Download Attachments** - Right-click a message with attachments → Apps → Download Attachments
+
 #### 5.3 File Operations
+
+**Configure default download directory** (in `config.yaml`):
+```yaml
+file_download:
+  default_directory: "D:/AgentWorkspace/files/downloads"
+```
 
 **Method 1: Send Attachments with Messages**
 
 Simply attach files when @Bot, Bot will automatically download and pass attachment info:
 
 ```
-[@Bot with file attachments]
+[@YourBot with file attachments]
 @YourBot Please help me analyze these files
 ```
 
@@ -202,25 +210,32 @@ Simply attach files when @Bot, Bot will automatically download and pass attachme
 - ✅ Auto handle filename conflicts (auto rename)
 - ✅ Extract attachment metadata and send to Claude
 
-**Configure default download directory** (in `config.yaml`):
-```yaml
-file_download:
-  default_directory: "D:/AgentWorkspace/files/downloads"
-```
+**Method 2: Download Attachments (Context Menu)**
 
-**Method 2: Reference Attachment Metadata**
+If you sent a message with attachments but forgot to @Bot, you can right-click that message:
 
-Reply to a message with attachments and @Bot, Bot will extract attachment metadata and send to Claude:
+1. Right-click on the message with attachments
+2. Select **Apps** → **Download Attachments**
+3. Bot automatically downloads all attachments to configured directory
+
+**Method 3: Reference Attachment Metadata**
+
+Reply to a message with attachments and @Bot, Bot will extract attachment metadata (filename, size, URL) and send to Claude, but **will not download the file**:
 
 ```
 [Reply to a message with an image]
-@YourBot Please help me analyze this image
+@YourBot Please help me analyze the metadata of this image
 ```
 
-**Features**:
-- ✅ Automatically extract attachment metadata (filename, size, URL)
-- ✅ Send to Claude as structured data
-- ✅ Claude can perform operations based on attachment information
+**Use cases:**
+- Only need attachment information (filename, size, URL)
+- Don't need to download the file
+- File already exists locally, just need to reference it
+
+**Difference from Method 1:**
+- Method 1: Downloads file to local
+- Method 3: Only extracts metadata, no download
+
 
 ## 🔌 MCP Server Integration
 

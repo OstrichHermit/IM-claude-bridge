@@ -19,6 +19,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 **文件传输**
 - ✅ 发送消息时附带附件（自动下载并传入附件信息）
+- ✅ 右键菜单下载附件（上下文菜单）
 - ✅ 引用附件信息（提取附件元数据发送给 Claude）
 - ✅ 从 Discord 下载附件到本地
 - ✅ 通过 MCP 发送文件到 Discord
@@ -27,6 +28,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 **服务管理**
 - ✅ Windows 守护进程（自动监控重启）
 - ✅ Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
+- ✅ 上下文菜单（右键消息下载附件）
 - ✅ 消息队列系统（SQLite 持久化）
 
 ## 🚀 快速开始
@@ -46,12 +48,9 @@ D:/AgentWorkspace/                    # 工作区根目录
         └── discord-bridge-maintenance/  # 本项目的维护 Skill
 ```
 
-**维护 Skill 使用**（推荐安装）：
+**Skill 使用**（推荐安装）：
 ```bash
-# 复制维护 Skill 到 Claude Code 配置目录
-cp -r docs/skills/discord-bridge-maintenance ~/.claude/skills/
-
-# 复制定时任务 Skill（可选，用于创建定时提醒）
+# 复制定时任务 Skill（推荐，用于创建定时提醒）
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
 
@@ -160,12 +159,12 @@ Bot 会：
 
 **模式对比**：
 
-| 特性 | Embed 模式（默认） | 直接回复模式 |
-|------|-------------------|-------------|
-| 确认消息 | ✅ 发送 | ❌ 不发送 |
-| 响应方式 | Embed 卡片 | 纯文本消息 |
-| 消息数量 | 1条（可能分割） | 多条（每 block 一条） |
-| 适用场景 | 适合长回复 | 适合实时对话 |
+| 特性   | Embed 模式（默认） | 直接回复模式         |
+|------|--------------|----------------|
+| 确认消息 | ✅ 发送         | ❌ 不发送          |
+| 响应方式 | Embed 卡片     | 纯文本消息          |
+| 消息数量 | 1条（可能分割）     | 多条（每 block 一条） |
+| 适用场景 | 适合长回复        | 适合实时对话         |
 
 **配置直接回复模式**（在 `config.yaml`）：
 ```yaml
@@ -186,14 +185,23 @@ direct_reply:
 - `/restart` - 重启服务
 - `/stop` - 停止服务
 
+**上下文菜单**（右键消息）：
+- **下载附件** - 右键点击带附件的消息 → Apps → 下载附件
+
 #### 5.3 文件操作
+
+**配置默认下载目录**（在 `config.yaml`）：
+```yaml
+file_download:
+  default_directory: "D:/AgentWorkspace/files/downloads"
+```
 
 **方式一：发送消息时附带附件**
 
 直接在 @Bot 消息中附带文件，Bot 会自动下载并传入附件信息：
 
 ```
-[@Bot 同时上传文件]
+[@YourBot 同时上传文件]
 @YourBot 帮我分析这些文件
 ```
 
@@ -203,22 +211,31 @@ direct_reply:
 - ✅ 自动处理文件名冲突（自动重命名）
 - ✅ 提取附件元数据发送给 Claude
 
-**配置默认下载目录**（在 `config.yaml`）：
-```yaml
-file_download:
-  default_directory: "D:/AgentWorkspace/files/downloads"
-```
+**方式二：下载附件（上下文菜单）**
 
-**方式二：引用附件信息**
+如果你发送了带附件的消息但忘记 @Bot，可以右键点击那条消息：
 
-#### 5.3 文件操作
+1. 右键点击带附件的消息
+2. 选择 **Apps** → **下载附件**
+3. Bot 自动下载所有附件到配置目录
 
-回复一条有附件的消息并 @Bot，Bot 会提取附件信息发送给 Claude，Claude 可以根据附件信息进行操作：
+**方式三：引用附件信息**
+
+回复一条有附件的消息并 @Bot，Bot 会提取附件信息（元数据）发送给 Claude，但**不下载文件**：
 
 ```
 [回复一条有图片的消息]
 @YourBot 帮我分析这张图片
 ```
+
+**适用场景：**
+- 只需要附件信息（文件名、大小、URL）
+- 不需要下载文件
+- 文件已存在本地，只需引用
+
+**与方式一的区别：**
+- 方式一会下载文件到本地
+- 方式三只提取元数据，不下载
 
 
 ## 🔌 MCP 服务器集成
