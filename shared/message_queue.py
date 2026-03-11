@@ -459,6 +459,100 @@ class MessageQueue:
             )
         return None
 
+    def get_pending_messages_by_session(self) -> dict:
+        """
+        获取所有 PENDING 消息，按 session_key 分组
+
+        用于并发处理架构：不同 session 的消息可以并发处理
+
+        Returns:
+            {session_key: [Message, ...]} 按会话分组的消息字典
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # 查询所有 PENDING 消息
+        cursor.execute("""
+            SELECT id, direction, content, status,
+                   discord_channel_id, discord_message_id,
+                   discord_user_id, username,
+                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
+            FROM messages
+            WHERE status = ? AND direction = ?
+            ORDER BY created_at ASC
+        """, (MessageStatus.PENDING.value, MessageDirection.TO_CLAUDE.value))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        # 按 session_key 分组
+        messages_by_session = {}
+        for row in rows:
+            # 解析消息对象
+            attachments = None
+            if row[13]:
+                try:
+                    attachments_data = json.loads(row[13])
+                    attachments = [
+                        AttachmentInfo(
+                            filename=a["filename"],
+                            size=a["size"],
+                            url=a["url"],
+                            description=a.get("description")
+                        )
+                        for a in attachments_data
+                    ]
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+            message = Message(
+                id=row[0],
+                direction=row[1],
+                content=row[2],
+                status=row[3],
+                discord_channel_id=row[4],
+                discord_message_id=row[5],
+                discord_user_id=row[6],
+                username=row[7],
+                response=row[8],
+                error=row[9],
+                is_dm=bool(row[10]),
+                is_external=bool(row[11]),
+                tag=row[12] or MessageTag.DEFAULT.value,
+                attachments=attachments,
+                created_at=row[14],
+                updated_at=row[15]
+            )
+
+            # 计算 session_key
+            session_key = self._calculate_session_key(message)
+
+            if session_key not in messages_by_session:
+                messages_by_session[session_key] = []
+            messages_by_session[session_key].append(message)
+
+        return messages_by_session
+
+    def _calculate_session_key(self, message: Message) -> str:
+        """
+        计算消息的 session_key
+
+        Args:
+            message: 消息对象
+
+        Returns:
+            session_key 字符串
+        """
+        # 外部消息（task/reminder）：使用临时 session
+        if message.is_external and message.tag in (MessageTag.TASK.value, MessageTag.REMINDER.value):
+            return f"temp_{message.id}"
+        # 私聊消息
+        elif message.is_dm:
+            return f"dm_{message.discord_user_id}"
+        # 频道消息
+        else:
+            return f"channel_{message.discord_channel_id}"
+
     def update_status(self, message_id: int, status: MessageStatus,
                      response: Optional[str] = None, error: Optional[str] = None):
         """更新消息状态"""

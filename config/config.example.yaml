@@ -30,6 +30,13 @@ claude:
   # - global: 所有频道/私聊共享一个全局 session（原有模式）
   # - session: 每个频道/私聊使用独立 session（新功能）
   session_mode: "global"
+  # 并发配置
+  # 最大并发 session 数（0 = 无限制）
+  # 每个 session 会启动一个独立的 Worker，并发处理不同频道的消息
+  max_concurrent_sessions: 5
+  # Worker 空闲超时时间（秒）
+  # 超过此时间没有消息的 Worker 会被清理，释放资源（0 = 永不清理）
+  worker_idle_timeout: 300
 
 # 文件下载配置
 file_download:
