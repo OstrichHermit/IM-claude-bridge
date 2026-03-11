@@ -174,7 +174,7 @@ class DiscordBot(commands.Bot):
         embed.add_field(name="📋 当前会话", value=session_info, inline=False)
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/upload` - 上传文件\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -427,178 +427,12 @@ class DiscordBot(commands.Bot):
             else:
                 await interaction.response.send_message("❌ 中止请求失败，请稍后重试")
 
-        @self.tree.command(name="upload", description="批量上传文件到工作区（最多25个）")
-        @app_commands.describe(
-            file1="文件 1（必填）",
-            file2="文件 2（可选）",
-            file3="文件 3（可选）",
-            file4="文件 4（可选）",
-            file5="文件 5（可选）",
-            file6="文件 6（可选）",
-            file7="文件 7（可选）",
-            file8="文件 8（可选）",
-            file9="文件 9（可选）",
-            file10="文件 10（可选）",
-            file11="文件 11（可选）",
-            file12="文件 12（可选）",
-            file13="文件 13（可选）",
-            file14="文件 14（可选）",
-            file15="文件 15（可选）",
-            file16="文件 16（可选）",
-            file17="文件 17（可选）",
-            file18="文件 18（可选）",
-            file19="文件 19（可选）",
-            file20="文件 20（可选）",
-            file21="文件 21（可选）",
-            file22="文件 22（可选）",
-            file23="文件 23（可选）",
-            file24="文件 24（可选）",
-            file25="文件 25（可选）"
-        )
-        async def upload_command(
-            interaction: discord.Interaction,
-            file1: discord.Attachment,
-            file2: discord.Attachment = None,
-            file3: discord.Attachment = None,
-            file4: discord.Attachment = None,
-            file5: discord.Attachment = None,
-            file6: discord.Attachment = None,
-            file7: discord.Attachment = None,
-            file8: discord.Attachment = None,
-            file9: discord.Attachment = None,
-            file10: discord.Attachment = None,
-            file11: discord.Attachment = None,
-            file12: discord.Attachment = None,
-            file13: discord.Attachment = None,
-            file14: discord.Attachment = None,
-            file15: discord.Attachment = None,
-            file16: discord.Attachment = None,
-            file17: discord.Attachment = None,
-            file18: discord.Attachment = None,
-            file19: discord.Attachment = None,
-            file20: discord.Attachment = None,
-            file21: discord.Attachment = None,
-            file22: discord.Attachment = None,
-            file23: discord.Attachment = None,
-            file24: discord.Attachment = None,
-            file25: discord.Attachment = None
-        ):
-            """处理文件上传命令（批量上传）"""
-            import aiohttp
-            from pathlib import Path
-
-            # 收集所有非空文件
-            files_list = [f for f in [file1, file2, file3, file4, file5, file6, file7, file8, file9, file10,
-                                      file11, file12, file13, file14, file15, file16, file17, file18, file19, file20,
-                                      file21, file22, file23, file24, file25] if f is not None]
-
-            # 使用配置的默认下载目录
-            save_dir = Path(self.config.default_download_directory)
-
-            # 确保目录存在
-            try:
-                save_dir.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                await interaction.response.send_message(
-                    f"❌ {interaction.user.mention}，无法创建下载目录: {e}",
-                    ephemeral=True
-                )
-                print(f"[文件上传] 创建目录失败: {e}")
-                return
-
-            # 先响应，告知用户正在处理
-            await interaction.response.send_message(
-                f"📤 {interaction.user.mention}，正在上传 {len(files_list)} 个文件到 `{save_dir}`..."
-            )
-            # 获取原始消息以便后续编辑
-            status_message = await interaction.original_response()
-
-            downloaded_files = []
-            failed_files = []
-
-            # 下载所有文件
-            async with aiohttp.ClientSession() as session:
-                for file in files_list:
-                    try:
-                        # 处理文件名冲突
-                        local_path = save_dir / file.filename
-                        counter = 1
-                        original_stem = Path(file.filename).stem
-                        original_suffix = Path(file.filename).suffix
-
-                        # 检查文件是否存在，如存在则添加后缀
-                        while local_path.exists():
-                            local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
-                            counter += 1
-
-                        # 下载文件
-                        async with session.get(file.url) as resp:
-                            if resp.status == 200:
-                                content = await resp.read()
-                                with open(local_path, 'wb') as f:
-                                    f.write(content)
-
-                                downloaded_files.append({
-                                    "filename": file.filename,
-                                    "local_path": str(local_path),
-                                    "size": len(content)
-                                })
-                                print(f"[文件上传] ✓ 已下载: {file.filename} -> {local_path}")
-                            else:
-                                raise ValueError(f"HTTP {resp.status}")
-
-                    except Exception as e:
-                        failed_files.append({
-                            "filename": file.filename,
-                            "error": str(e)
-                        })
-                        print(f"[文件上传] ✗ 下载失败: {file.filename} - {e}")
-
-            # 获取目标频道（命令执行的频道/私聊）
-            target_channel = interaction.channel
-
-            # 构建响应消息
-            response_lines = [
-                f"✅ {interaction.user.mention}，文件上传完成！",
-                f"📁 保存目录: `{save_dir}`",
-                ""
-            ]
-
-            if downloaded_files:
-                response_lines.append(f"**成功上传 {len(downloaded_files)} 个文件:**")
-                for f in downloaded_files:
-                    size_kb = f['size'] / 1024
-                    response_lines.append(f"  • **{f['filename']}** ({size_kb:.1f} KB)")
-                    response_lines.append(f"    `{f['local_path']}`")
-
-            if failed_files:
-                response_lines.append("")
-                response_lines.append(f"**失败 {len(failed_files)} 个文件:**")
-                for f in failed_files:
-                    response_lines.append(f"  • **{f['filename']}**: {f['error']}")
-
-            # 编辑原消息发送最终结果（文本）
-            followup_msg = "\n".join(response_lines)
-            await status_message.edit(content=followup_msg)
-
-            # 将下载的文件发送回原频道（每个文件单独发送）
-            if downloaded_files:
-                for f in downloaded_files:
-                    try:
-                        discord_file = discord.File(f['local_path'], filename=f['filename'])
-                        await target_channel.send(file=discord_file)
-                        print(f"[文件上传] ✓ 已发送: {f['filename']}")
-                    except Exception as e:
-                        print(f"[文件上传] ✗ 发送文件失败 {f['filename']}: {e}")
-                        await target_channel.send(f"❌ 发送文件失败: {f['filename']} - {e}")
-
-            print(f"[文件上传] 用户 {interaction.user.display_name} 上传了 {len(downloaded_files)}/{len(files_list)} 个文件")
 
     async def on_ready(self):
         """Bot 准备就绪"""
         print(f"✓ Bot 已准备就绪!")
         print(f"✓ 在 {len(self.guilds)} 个服务器中")
-        print(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort, /upload")
+        print(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort")
 
         # 发送启动通知
         await self.send_startup_notification()
@@ -637,6 +471,9 @@ class DiscordBot(commands.Bot):
     async def handle_user_message(self, message: discord.Message):
         """处理用户消息"""
         try:
+            import aiohttp
+            from pathlib import Path
+
             # 移除 bot 提及，提取实际内容
             content = message.content
             for mention in message.mentions:
@@ -646,8 +483,66 @@ class DiscordBot(commands.Bot):
 
             content = content.strip()
 
-            if not content:
-                await message.channel.send("❌ 请提供消息内容。")
+            # 检查并处理附件
+            attachment_infos = None
+            if message.attachments:
+                print(f"[附件检测] 用户 {message.author.display_name} 发送了 {len(message.attachments)} 个附件")
+
+                # 使用配置的默认下载目录
+                save_dir = Path(self.config.default_download_directory)
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                downloaded_files = []
+
+                # 下载所有附件
+                async with aiohttp.ClientSession() as session:
+                    for attachment in message.attachments:
+                        try:
+                            # 处理文件名冲突
+                            local_path = save_dir / attachment.filename
+                            counter = 1
+                            original_stem = Path(attachment.filename).stem
+                            original_suffix = Path(attachment.filename).suffix
+
+                            # 检查文件是否存在，如存在则添加后缀
+                            while local_path.exists():
+                                local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
+                                counter += 1
+
+                            # 下载文件
+                            async with session.get(attachment.url) as resp:
+                                if resp.status == 200:
+                                    file_content = await resp.read()
+                                    with open(local_path, 'wb') as f:
+                                        f.write(file_content)
+
+                                    downloaded_files.append({
+                                        "filename": attachment.filename,
+                                        "local_path": str(local_path),
+                                        "size": len(file_content)
+                                    })
+                                    print(f"[附件下载] ✓ 已下载: {attachment.filename} -> {local_path}")
+                                else:
+                                    raise ValueError(f"HTTP {resp.status}")
+
+                        except Exception as e:
+                            print(f"[附件下载] ✗ 下载失败: {attachment.filename} - {e}")
+
+                # 构建附件信息对象列表
+                if downloaded_files:
+                    attachment_infos = []
+                    for f in downloaded_files:
+                        attachment_infos.append(AttachmentInfo(
+                            filename=f['filename'],
+                            size=f['size'],
+                            url=f"file://{f['local_path']}",  # 使用本地文件路径
+                            description=None
+                        ))
+                    print(f"[附件处理] 成功处理 {len(attachment_infos)} 个附件")
+
+            # 如果没有内容也没有附件，返回错误
+            if not content and not attachment_infos:
+                await message.channel.send("❌ 请提供消息内容或附件。")
                 return
 
             # 检测是否为私聊消息
@@ -662,20 +557,23 @@ class DiscordBot(commands.Bot):
             msg = Message(
                 id=None,
                 direction=MessageDirection.TO_CLAUDE.value,
-                content=content,
+                content=content if content else "",  # 允许空内容，当只有附件时
                 status=MessageStatus.PENDING.value,
                 discord_channel_id=message.channel.id,
                 discord_message_id=message.id,
                 discord_user_id=message.author.id,
                 username=message.author.display_name,
                 is_dm=is_dm,
-                tag=MessageTag.DEFAULT.value
+                tag=MessageTag.DEFAULT.value,
+                attachments=attachment_infos  # 传入附件信息
             )
 
             # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
             message_id = self.message_queue.add_message(msg)
 
-            print(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50]}... ({'私聊' if is_dm else '频道'})")
+            # 打印日志，包含附件信息
+            attach_info = f" (+{len(attachment_infos)}个附件)" if attachment_infos else ""
+            print(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
 
             # 根据配置决定是否发送确认消息
             if self.config.direct_reply_enabled:
