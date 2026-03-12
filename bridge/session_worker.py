@@ -255,7 +255,7 @@ class SessionWorker:
             sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments)
 
             if self.config.auto_load_enabled and not session_created:
-                prompt = f"{sender_info}{self.config.auto_load_prompt_text}{prompt}"
+                prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
             else:
                 prompt = f"{sender_info}{prompt}"
 
