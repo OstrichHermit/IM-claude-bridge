@@ -281,7 +281,7 @@ class DiscordBot(commands.Bot):
                 )
                 embed.add_field(name="旧的 Session ID", value=f"`{old_session_id[:8]}...` (已删除)", inline=False)
                 embed.add_field(name="新的 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
-                embed.add_field(name="\n", value="下次对话将使用新的会话 ID 创建全新上下文。", inline=False)
+                embed.add_field(name="\n说明", value="下次对话将使用新的会话 ID 创建全新上下文。", inline=False)
                 await interaction.response.send_message(embed=embed)
                 print(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
                 print(f"[会话重置] Session Key: {session_key}")
