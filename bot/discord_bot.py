@@ -274,21 +274,27 @@ class DiscordBot(commands.Bot):
             if deleted:
                 # 判断会话类型用于显示
                 session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name} 的会话"
-                await interaction.response.send_message(
-                    f"✅ {interaction.user.mention}，{session_type}已重置！\n"
-                    f"**旧的 Session ID**: `{old_session_id[:8]}...` (已删除)\n"
-                    f"**新的 Session ID**: `{new_session_id[:8]}...`\n"
-                    f"下次对话将使用新的会话 ID 创建全新上下文。"
+                embed = discord.Embed(
+                    title="✅ 会话已重置",
+                    description=f"{interaction.user.mention}，{session_type}已成功重置！",
+                    color=discord.Color.green()
                 )
+                embed.add_field(name="旧的 Session ID", value=f"`{old_session_id[:8]}...` (已删除)", inline=False)
+                embed.add_field(name="新的 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
+                embed.add_field(name="说明", value="下次对话将使用新的会话 ID 创建全新上下文。", inline=False)
+                await interaction.response.send_message(embed=embed)
                 print(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
                 print(f"[会话重置] Session Key: {session_key}")
                 print(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
                 print(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
             else:
-                await interaction.response.send_message(
-                    f"⚠️ {interaction.user.mention}，没有找到活跃的会话。\n"
-                    f"**当前 Session ID**: `{new_session_id[:8]}...`"
+                embed = discord.Embed(
+                    title="⚠️ 没有活跃会话",
+                    description=f"{interaction.user.mention}，当前没有找到活跃的会话。",
+                    color=discord.Color.orange()
                 )
+                embed.add_field(name="当前 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
+                await interaction.response.send_message(embed=embed)
 
         @self.tree.command(name="status", description="查看当前会话和系统状态")
         async def status_command(interaction: discord.Interaction):
@@ -350,10 +356,13 @@ class DiscordBot(commands.Bot):
                     # 确认停止
                     del self.stop_requests[user_id]  # 清除记录
 
-                    await interaction.response.send_message(
-                        f"🛑 {interaction.user.mention}，正在停止 Discord Bridge 服务...\n"
-                        f"服务将在几秒钟后停止。"
+                    embed = discord.Embed(
+                        title="🛑 正在停止服务",
+                        description=f"{interaction.user.mention}，正在停止 Discord Bridge 服务...",
+                        color=discord.Color.orange()
                     )
+                    embed.add_field(name="说明", value="服务将在几秒钟后停止。", inline=False)
+                    await interaction.response.send_message(embed=embed)
                     print(f"[停止命令] 用户 {interaction.user.display_name} 确认停止服务")
 
                     # 执行停止脚本（通过 manager）
@@ -373,11 +382,21 @@ class DiscordBot(commands.Bot):
                             )
                             print(f"✅ 停止命令已执行: python manager.py stop")
                         else:
-                            await interaction.followup.send(f"❌ 找不到 manager.py")
+                            embed = discord.Embed(
+                                title="❌ 文件未找到",
+                                description="找不到 manager.py 文件",
+                                color=discord.Color.red()
+                            )
+                            await interaction.followup.send(embed=embed)
                             print(f"⚠️  manager.py 不存在: {manager_script}")
 
                     except Exception as e:
-                        await interaction.followup.send(f"❌ 停止失败: {str(e)}")
+                        embed = discord.Embed(
+                            title="❌ 停止失败",
+                            description=f"错误: {str(e)}",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed)
                         print(f"❌ 执行停止命令时出错: {e}")
                         import traceback
                         traceback.print_exc()
@@ -387,11 +406,14 @@ class DiscordBot(commands.Bot):
             # 第一次使用 /stop，记录请求
             self.stop_requests[user_id] = {"timestamp": current_time}
 
-            await interaction.response.send_message(
-                f"⚠️ {interaction.user.mention}，确定要停止 Discord Bridge 服务吗？\n"
-                f"此操作将停止 Bot 和 Bridge，服务将不再响应消息。\n\n"
-                f"**如需确认，请在 60 秒内再次使用 `/stop` 命令**"
+            embed = discord.Embed(
+                title="⚠️ 确认停止服务",
+                description=f"{interaction.user.mention}，确定要停止 Discord Bridge 服务吗？",
+                color=discord.Color.orange()
             )
+            embed.add_field(name="警告", value="此操作将停止 Bot 和 Bridge，服务将不再响应消息。", inline=False)
+            embed.add_field(name="确认方式", value="如需确认，请在 60 秒内再次使用 `/stop` 命令", inline=False)
+            await interaction.response.send_message(embed=embed)
 
             print(f"[停止命令] 用户 {interaction.user.display_name} 请求停止服务，等待再次确认...")
 
@@ -408,10 +430,13 @@ class DiscordBot(commands.Bot):
                     return
 
             # 发送确认消息
-            await interaction.response.send_message(
-                f"🔄 {interaction.user.mention}，正在重启 Discord Bridge 服务...\n"
-                f"请稍候，服务将在几秒钟后重新启动。"
+            embed = discord.Embed(
+                title="🔄 正在重启服务",
+                description=f"{interaction.user.mention}，正在重启 Discord Bridge 服务...",
+                color=discord.Color.blue()
             )
+            embed.add_field(name="说明", value="请稍候，服务将在几秒钟后重新启动。", inline=False)
+            await interaction.response.send_message(embed=embed)
             print(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
 
             # 执行重启脚本（通过 manager）
@@ -432,11 +457,21 @@ class DiscordBot(commands.Bot):
                     )
                     print(f"✅ 重启命令已执行: python manager.py restart")
                 else:
-                    await interaction.followup.send(f"❌ 找不到 manager.py")
+                    embed = discord.Embed(
+                        title="❌ 文件未找到",
+                        description="找不到 manager.py 文件",
+                        color=discord.Color.red()
+                    )
+                    await interaction.followup.send(embed=embed)
                     print(f"⚠️  manager.py 不存在: {manager_script}")
 
             except Exception as e:
-                await interaction.followup.send(f"❌ 重启失败: {str(e)}")
+                embed = discord.Embed(
+                    title="❌ 重启失败",
+                    description=f"错误: {str(e)}",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed)
                 print(f"❌ 执行重启命令时出错: {e}")
                 import traceback
                 traceback.print_exc()
@@ -454,7 +489,12 @@ class DiscordBot(commands.Bot):
             processing_messages = self.message_queue.get_processing_messages()
 
             if not processing_messages:
-                await interaction.response.send_message("⚠️ 当前没有正在处理的响应")
+                embed = discord.Embed(
+                    title="⚠️ 没有正在处理的响应",
+                    description="当前没有正在处理的 Claude 响应。",
+                    color=discord.Color.orange()
+                )
+                await interaction.response.send_message(embed=embed)
                 return
 
             # 请求中止第一个处理中的消息
@@ -462,13 +502,21 @@ class DiscordBot(commands.Bot):
             success = self.message_queue.request_abort(message_to_abort.id)
 
             if success:
-                await interaction.response.send_message(
-                    f"🛑 已请求中止消息 #{message_to_abort.id} 的处理\n"
-                    f"⏳ Claude 响应将在几秒内停止..."
+                embed = discord.Embed(
+                    title="🛑 已请求中止",
+                    description=f"已请求中止消息 #{message_to_abort.id} 的处理",
+                    color=discord.Color.orange()
                 )
+                embed.add_field(name="说明", value="Claude 响应将在几秒内停止...", inline=False)
+                await interaction.response.send_message(embed=embed)
                 print(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
             else:
-                await interaction.response.send_message("❌ 中止请求失败，请稍后重试")
+                embed = discord.Embed(
+                    title="❌ 中止请求失败",
+                    description="中止请求失败，请稍后重试。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed)
 
         @self.tree.context_menu(name="下载附件")
         async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
@@ -752,10 +800,14 @@ class DiscordBot(commands.Bot):
                 async with message.channel.typing():
                     pass
 
-                confirmation_msg = await message.reply(
-                    f"✅ 消息已接收！正在等待 Claude Bridge 接收...\n"
-                    f"消息 ID: {message_id}"
+                # 发送确认消息（使用 Embed 卡片）
+                embed = discord.Embed(
+                    title="✅ 消息已接收",
+                    description=f"正在等待 Claude Bridge 接收...\n\n消息 ID: {message_id}",
+                    color=discord.Color.blue()
                 )
+                embed.set_footer(text=f"消息 ID: {message_id}")
+                confirmation_msg = await message.reply(embed=embed)
 
                 self.pending_messages[message_id] = {
                     "channel": message.channel,
@@ -900,11 +952,14 @@ class DiscordBot(commands.Bot):
                     }
                     print(f"[消息 #{message_id}] 直接回复模式：已启用，不发送确认消息")
                 else:
-                    # Embed 模式：发送确认消息（原有逻辑）
-                    confirmation_msg = await message.reply(
-                        f"✅ 消息已接收！检测到 {len(original_message.attachments)} 个附件\n"
-                        f"消息 ID: {message_id}"
+                    # Embed 模式：发送确认消息（使用 Embed 卡片）
+                    embed = discord.Embed(
+                        title="✅ 消息已接收",
+                        description=f"检测到 {len(original_message.attachments)} 个附件\n\n消息 ID: {message_id}",
+                        color=discord.Color.blue()
                     )
+                    embed.set_footer(text=f"消息 ID: {message_id}")
+                    confirmation_msg = await message.reply(embed=embed)
 
                     self.pending_messages[message_id] = {
                         "channel": message.channel,
@@ -968,26 +1023,37 @@ class DiscordBot(commands.Bot):
                                 f"  • {f['filename']} ({f['size']} 字节)"
                                 for f in downloaded_files
                             ])
-                            await confirmation_msg.edit(
-                                content=f"✅ 文件下载完成！请求 #{request_id}\n"
-                                        f"保存目录: `{save_dir}`\n"
-                                        f"已下载 {len(downloaded_files)} 个文件:\n"
-                                        f"{files_info}"
+                            embed = discord.Embed(
+                                title="✅ 文件下载完成",
+                                description=f"请求 #{request_id}\n\n"
+                                            f"保存目录: `{save_dir}`\n"
+                                            f"已下载 {len(downloaded_files)} 个文件:\n"
+                                            f"{files_info}",
+                                color=discord.Color.green()
                             )
+                            embed.set_footer(text=f"请求 ID: {request_id}")
+                            await confirmation_msg.edit(content="", embed=embed)
                         else:
-                            await confirmation_msg.edit(
-                                content=f"⚠️ 文件下载完成，但没有找到文件。请求 #{request_id}"
+                            embed = discord.Embed(
+                                title="⚠️ 下载完成但无文件",
+                                description=f"请求 #{request_id}\n\n文件下载完成，但没有找到文件。",
+                                color=discord.Color.orange()
                             )
+                            embed.set_footer(text=f"请求 ID: {request_id}")
+                            await confirmation_msg.edit(content="", embed=embed)
                         return
 
                     elif status == FileDownloadRequestStatus.FAILED.value:
                         # 下载失败
                         print(f"[文件下载 #{request_id}] 下载失败: {error}")
                         error_msg = error or "未知错误"
-                        await confirmation_msg.edit(
-                            content=f"❌ 文件下载失败！请求 #{request_id}\n"
-                                    f"错误: {error_msg}"
+                        embed = discord.Embed(
+                            title="❌ 文件下载失败",
+                            description=f"请求 #{request_id}\n\n错误: {error_msg}",
+                            color=discord.Color.red()
                         )
+                        embed.set_footer(text=f"请求 ID: {request_id}")
+                        await confirmation_msg.edit(content="", embed=embed)
                         return
 
                     elif status == FileDownloadRequestStatus.PROCESSING.value:
@@ -996,10 +1062,13 @@ class DiscordBot(commands.Bot):
 
                         # 每 30 秒更新一次进度提示
                         if elapsed - last_progress_update >= 30:
-                            await confirmation_msg.edit(
-                                content=f"⏳ 正在下载中... ({elapsed}/{max_wait_time}秒)\n"
-                                        f"请求 ID: {request_id}"
+                            embed = discord.Embed(
+                                title="⏳ 正在下载文件",
+                                description=f"请求 #{request_id}\n\n进度: {elapsed}/{max_wait_time} 秒",
+                                color=discord.Color.blue()
                             )
+                            embed.set_footer(text=f"请求 ID: {request_id}")
+                            await confirmation_msg.edit(content="", embed=embed)
                             last_progress_update = elapsed
 
                 # 等待下一次检查
@@ -1034,28 +1103,106 @@ class DiscordBot(commands.Bot):
                         f"  • {f['filename']} ({f['size']} 字节)"
                         for f in downloaded_files
                     ])
-                    await confirmation_msg.edit(
-                        content=f"✅ 文件下载完成！请求 #{request_id}\n"
-                                f"保存目录: `{db_result[2]}`\n"
-                                f"已下载 {len(downloaded_files)} 个文件:\n"
-                                f"{files_info}"
+                    embed = discord.Embed(
+                        title="✅ 文件下载完成",
+                        description=f"请求 #{request_id}\n\n"
+                                    f"保存目录: `{db_result[2]}`\n"
+                                    f"已下载 {len(downloaded_files)} 个文件:\n"
+                                    f"{files_info}",
+                        color=discord.Color.green()
                     )
+                    embed.set_footer(text=f"请求 ID: {request_id}")
+                    await confirmation_msg.edit(content="", embed=embed)
                 else:
-                    await confirmation_msg.edit(
-                        content=f"⚠️ 文件下载完成，但没有找到文件。请求 #{request_id}"
+                    embed = discord.Embed(
+                        title="⚠️ 下载完成但无文件",
+                        description=f"请求 #{request_id}\n\n文件下载完成，但没有找到文件。",
+                        color=discord.Color.orange()
                     )
+                    embed.set_footer(text=f"请求 ID: {request_id}")
+                    await confirmation_msg.edit(content="", embed=embed)
             else:
                 # 真的超时了
                 print(f"[文件下载 #{request_id}] 真的超时")
-                await confirmation_msg.edit(
-                    content=f"⏱️ 文件下载请求 #{request_id} 超时（{max_wait_time}秒）\n"
-                            f"可能原因：Bot 未运行或消息不存在。"
+                embed = discord.Embed(
+                    title="⏱️ 下载请求超时",
+                    description=f"请求 #{request_id}\n\n文件下载请求超时（{max_wait_time}秒）\n可能原因：Bot 未运行或消息不存在。",
+                    color=discord.Color.orange()
                 )
+                embed.set_footer(text=f"请求 ID: {request_id}")
+                await confirmation_msg.edit(content="", embed=embed)
 
         except Exception as e:
             print(f"❌ 监控下载进度时出错: {e}")
             import traceback
             traceback.print_exc()
+
+    def _check_session_busy(self, current_message_id: int, tracking_info: dict) -> bool:
+        """
+        检查同一 session 的 Worker 是否正在处理其他消息
+
+        Args:
+            current_message_id: 当前消息 ID
+            tracking_info: 消息追踪信息
+
+        Returns:
+            True: Worker 忙碌（有其他消息正在处理）
+            False: Worker 空闲（没有其他消息正在处理）
+        """
+        import sqlite3
+
+        try:
+            # 获取当前消息的 session 信息
+            # 从 tracking_info 中获取 channel 信息
+            channel = tracking_info.get("channel")
+            if not channel:
+                return False
+
+            # 判断是否为私聊
+            is_dm = isinstance(channel, discord.DMChannel)
+
+            conn = sqlite3.connect(self.message_queue.db_path)
+            cursor = conn.cursor()
+
+            if is_dm:
+                # 私聊：检查同一用户的其他消息是否正在处理
+                # 获取 user_id（从数据库查询）
+                cursor.execute("""
+                    SELECT discord_user_id FROM messages WHERE id = ?
+                """, (current_message_id,))
+                row = cursor.fetchone()
+                if not row:
+                    conn.close()
+                    return False
+
+                user_id = row[0]
+
+                # 查询同一用户的私聊消息是否有正在处理的
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE id != ? AND discord_user_id = ? AND is_dm = 1
+                    AND status IN ('processing', 'ai_started')
+                """, (current_message_id, user_id))
+            else:
+                # 频道：检查同一频道的其他消息是否正在处理
+                channel_id = channel.id
+
+                # 查询同一频道的消息是否有正在处理的
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE id != ? AND discord_channel_id = ? AND is_dm = 0
+                    AND status IN ('processing', 'ai_started')
+                """, (current_message_id, channel_id))
+
+            count = cursor.fetchone()[0]
+            conn.close()
+
+            # 如果有其他消息正在处理，说明 Worker 忙碌
+            return count > 0
+
+        except Exception as e:
+            print(f"⚠️ 检查 session 状态时出错: {e}")
+            return False
 
     async def check_responses(self):
         """定期检查 Claude 的响应和消息状态"""
@@ -1132,11 +1279,14 @@ class DiscordBot(commands.Bot):
                                 }
                                 print(f"📨 [消息 #{msg_id}] 已加载外部消息: {username} (直接回复模式)")
                             else:
-                                # Embed 模式：发送确认消息（原有逻辑）
-                                confirmation_msg = await channel.send(
-                                    f"✅ 消息已接收！正在等待 Claude Bridge 接收...\n"
-                                    f"消息 ID: {msg_id}"
+                                # Embed 模式：发送确认消息（使用 Embed 卡片）
+                                embed = discord.Embed(
+                                    title="✅ 消息已接收",
+                                    description=f"正在等待 Claude Bridge 接收...\n\n消息 ID: {msg_id}",
+                                    color=discord.Color.blue()
                                 )
+                                embed.set_footer(text=f"消息 ID: {msg_id}")
+                                confirmation_msg = await channel.send(embed=embed)
 
                                 # 🔥 加入 pending_messages 追踪（保存 initial_message 引用）
                                 self.pending_messages[msg_id] = {
@@ -1186,19 +1336,27 @@ class DiscordBot(commands.Bot):
                             # 超过配置的秒数仍未被接收
                             try:
                                 if not is_direct_reply:
-                                    # Embed 模式：编辑确认消息
-                                    await tracking_info["confirmation_msg"].edit(
-                                        content=f"⏱️ 消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n"
-                                                f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
-                                                f"建议：检查服务状态，或等待当前消息响应完成。"
+                                    # Embed 模式：编辑确认消息为 Embed 卡片
+                                    embed = discord.Embed(
+                                        title="⏱️ 消息等待超时",
+                                        description=f"消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n\n"
+                                                    f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
+                                                    f"建议：检查服务状态，或等待当前消息响应完成。",
+                                        color=discord.Color.orange()
                                     )
+                                    embed.set_footer(text=f"消息 ID: {msg_id}")
+                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
                                 else:
-                                    # 直接回复模式：发送超时消息
-                                    await tracking_info["channel"].send(
-                                        f"⏱️ 消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n"
-                                        f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
-                                        f"建议：检查服务状态，或等待当前消息响应完成。"
+                                    # 直接回复模式：发送超时消息（使用 Embed 卡片）
+                                    embed = discord.Embed(
+                                        title="⏱️ 消息等待超时",
+                                        description=f"消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n\n"
+                                                    f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
+                                                    f"建议：检查服务状态，或等待当前消息响应完成。",
+                                        color=discord.Color.orange()
                                     )
+                                    embed.set_footer(text=f"消息 ID: {msg_id}")
+                                    await tracking_info["channel"].send(embed=embed)
                                     # 停止 typing indicator
                                     tracking_info["typing_active"] = False
                                     typing_task = tracking_info.get("typing_task")
@@ -1209,6 +1367,43 @@ class DiscordBot(commands.Bot):
                                 print(f"⚠️ 无法发送超时消息: {e}")
                             print(f"⚠️ [消息 #{msg_id}] PENDING 超时（{int(elapsed_time)}秒）")
 
+                    # 状态 1.5: QUEUED - 消息已加入处理队列
+                    elif status == MessageStatus.QUEUED.value:
+                        is_direct_reply = tracking_info.get("direct_reply", False)
+                        if not tracking_info.get("notified_queued"):
+                            # 检查是否有同一 session 的其他消息正在处理（避免误报）
+                            session_busy = self._check_session_busy(msg_id, tracking_info)
+
+                            if session_busy:
+                                # Worker 真的忙碌，发送"入队"提示
+                                try:
+                                    if not is_direct_reply:
+                                        # Embed 模式：编辑确认消息为 Embed 卡片
+                                        embed = discord.Embed(
+                                            title="📋 消息已加入队列",
+                                            description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                            color=discord.Color.blue()
+                                        )
+                                        embed.set_footer(text=f"消息 ID: {msg_id}")
+                                        await tracking_info["confirmation_msg"].edit(content="", embed=embed)
+                                    else:
+                                        # 直接回复模式：发送 Embed 卡片
+                                        embed = discord.Embed(
+                                            title="📋 消息已加入队列",
+                                            description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                            color=discord.Color.blue()
+                                        )
+                                        embed.set_footer(text=f"消息 ID: {msg_id}")
+                                        await tracking_info["channel"].send(embed=embed)
+                                    print(f"📋 [消息 #{msg_id}] Worker 忙碌，已显示排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
+                                except Exception as e:
+                                    print(f"⚠️ 无法发送队列消息: {e}")
+                            else:
+                                # Worker 空闲，不发送提示（避免误报）
+                                print(f"✓ [消息 #{msg_id}] Worker 空闲，跳过排队提示")
+
+                            tracking_info["notified_queued"] = True
+
                     # 状态 2: PROCESSING 且无 response - Claude Bridge已接收，正在调用CLI
                     elif status == MessageStatus.PROCESSING.value and not response:
                         is_direct_reply = tracking_info.get("direct_reply", False)
@@ -1216,11 +1411,14 @@ class DiscordBot(commands.Bot):
                             # Claude Bridge成功接收消息
                             try:
                                 if not is_direct_reply:
-                                    # Embed 模式：编辑确认消息
-                                    await tracking_info["confirmation_msg"].edit(
-                                        content=f"⏳ 消息 #{msg_id} 处理中\n"
-                                                f"Claude Bridge 已接收消息，正在调用 Claude Code CLI..."
+                                    # Embed 模式：编辑确认消息为 Embed 卡片
+                                    embed = discord.Embed(
+                                        title="⏳ 消息处理中",
+                                        description=f"消息 #{msg_id}\n\nClaude Bridge 已接收消息，正在调用 Claude Code CLI...",
+                                        color=discord.Color.blue()
                                     )
+                                    embed.set_footer(text=f"消息 ID: {msg_id}")
+                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
                                 # 直接回复模式：不发送任何消息（typing indicator 依然显示）
                                 tracking_info["notified_bridge_received"] = True
                                 print(f"📥 [消息 #{msg_id}] Claude Bridge 已接收消息 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
@@ -1250,10 +1448,14 @@ class DiscordBot(commands.Bot):
                                     # 🔥 保存 Embed 引用，供后续流式编辑使用
                                     tracking_info["discord_message"] = initial_embed_msg
 
-                                    # 编辑旧的确认消息
-                                    await tracking_info["confirmation_msg"].edit(
-                                        content=f"🔄 消息 #{msg_id} 已接收，AI 正在工作，请稍候……"
+                                    # 编辑旧的确认消息为 Embed 卡片
+                                    embed_update = discord.Embed(
+                                        title="🤖 AI 正在处理",
+                                        description=f"消息 #{msg_id} 已接收，AI 正在工作，请稍候……",
+                                        color=discord.Color.gold()
                                     )
+                                    embed_update.set_footer(text=f"消息 ID: {msg_id}")
+                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed_update)
 
                                     tracking_info["notified_ai_started"] = True
                                     print(f"🤖 [消息 #{msg_id}] AI 开始工作，已发送初始 Embed (Embed模式)")
@@ -1524,11 +1726,15 @@ class DiscordBot(commands.Bot):
                                 self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
                                 print(f"[消息 #{msg_id}] 已发送响应到 Discord")
 
-                                # 发送响应成功提示
+                                # 发送响应成功提示（使用 Embed 卡片）
                                 try:
-                                    await tracking_info["confirmation_msg"].edit(
-                                        content=f"✅ 消息 #{msg_id} 响应成功！"
+                                    embed = discord.Embed(
+                                        title="✅ 响应成功",
+                                        description=f"消息 #{msg_id} 已成功处理并回复！",
+                                        color=discord.Color.green()
                                     )
+                                    embed.set_footer(text=f"消息 ID: {msg_id}")
+                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
                                 except Exception as e:
                                     print(f"⚠️ 无法编辑确认消息: {e}")
 
@@ -1546,22 +1752,29 @@ class DiscordBot(commands.Bot):
                         is_direct_reply = tracking_info.get("direct_reply", False)
 
                         if not is_direct_reply:
-                            # Embed 模式：编辑确认消息（原有逻辑）
+                            # Embed 模式：编辑确认消息为 Embed 卡片
                             try:
                                 error_msg = error or "未知错误"
-                                await tracking_info["confirmation_msg"].edit(
-                                    content=f"❌ 消息 #{msg_id} 处理失败\n"
-                                            f"错误: {error_msg}"
+                                embed = discord.Embed(
+                                    title="❌ 消息处理失败",
+                                    description=f"消息 #{msg_id}\n\n错误: {error_msg}",
+                                    color=discord.Color.red()
                                 )
+                                embed.set_footer(text=f"消息 ID: {msg_id}")
+                                await tracking_info["confirmation_msg"].edit(content="", embed=embed)
                             except Exception as e:
                                 print(f"⚠️ 无法编辑确认消息: {e}")
                         else:
-                            # 直接回复模式：发送错误消息
+                            # 直接回复模式：发送错误消息（使用 Embed 卡片）
                             try:
                                 error_msg = error or "未知错误"
-                                await tracking_info["channel"].send(
-                                    f"❌ 消息处理失败\n错误: {error_msg}"
+                                embed = discord.Embed(
+                                    title="❌ 消息处理失败",
+                                    description=f"错误: {error_msg}",
+                                    color=discord.Color.red()
                                 )
+                                embed.set_footer(text=f"消息 ID: {msg_id}")
+                                await tracking_info["channel"].send(embed=embed)
 
                                 # 停止 typing indicator
                                 tracking_info["typing_active"] = False

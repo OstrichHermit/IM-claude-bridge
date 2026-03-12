@@ -12,7 +12,7 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageDirection
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
 from bridge.session_worker import SessionWorker
 
 
@@ -128,6 +128,10 @@ class ClaudeBridge:
                     # 2. 为每个 session 分配消息
                     for session_key, messages in messages_by_session.items():
                         try:
+                            # 先批量更新状态为 QUEUED（防止重复扫描）
+                            for message in messages:
+                                self.message_queue.update_status(message.id, MessageStatus.QUEUED)
+
                             # 获取或创建 Worker
                             worker = await self._get_or_create_worker(session_key)
 
@@ -135,7 +139,7 @@ class ClaudeBridge:
                             for message in messages:
                                 await worker.enqueue(message)
 
-                            print(f"  📌 [{session_key}]: 已分配 {len(messages)} 条消息")
+                            print(f"  📌 [{session_key}]: 已分配 {len(messages)} 条消息（状态已更新为 QUEUED）")
 
                         except Exception as e:
                             print(f"❌ 分配消息到 Worker [{session_key}] 失败: {e}")

@@ -15,6 +15,7 @@ from enum import Enum
 class MessageStatus(Enum):
     """消息状态枚举"""
     PENDING = "pending"      # 等待处理
+    QUEUED = "queued"        # 已加入处理队列（防止重复扫描）
     PROCESSING = "processing" # 正在处理
     AI_STARTED = "ai_started" # AI 开始工作（新的中间状态）
     ABORTING = "aborting"     # 正在中止
