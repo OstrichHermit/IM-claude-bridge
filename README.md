@@ -286,7 +286,7 @@ discord:
 claude:
   executable: "claude"                 # Claude Code CLI 命令
   timeout: 300                         # 超时时间（秒）
-  max_retries: 3                       # 最大重试次数
+  max_attempts: 3                      # 最大调用尝试次数（包括第一次）
   working_directory: ""               # 工作目录（可选）
 
 file_download:

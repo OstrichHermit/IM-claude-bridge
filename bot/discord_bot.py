@@ -1375,31 +1375,10 @@ class DiscordBot(commands.Bot):
                             session_busy = self._check_session_busy(msg_id, tracking_info)
 
                             if session_busy:
-                                # Worker 真的忙碌，发送"入队"提示
-                                try:
-                                    if not is_direct_reply:
-                                        # Embed 模式：编辑确认消息为 Embed 卡片
-                                        embed = discord.Embed(
-                                            title="📋 消息已加入队列",
-                                            description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                            color=discord.Color.blue()
-                                        )
-                                        embed.set_footer(text=f"消息 ID: {msg_id}")
-                                        await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                    else:
-                                        # 直接回复模式：发送 Embed 卡片
-                                        embed = discord.Embed(
-                                            title="📋 消息已加入队列",
-                                            description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                            color=discord.Color.blue()
-                                        )
-                                        embed.set_footer(text=f"消息 ID: {msg_id}")
-                                        queue_msg = await tracking_info["channel"].send(embed=embed)
-                                        # 🔥 保存队列提示消息的引用，以便后续撤销
-                                        tracking_info["queue_notification_message"] = queue_msg
-                                    print(f"📋 [消息 #{msg_id}] Worker 忙碌，已显示排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
-                                except Exception as e:
-                                    print(f"⚠️ 无法发送队列消息: {e}")
+                                # Worker 真的忙碌，记录队列状态，但暂不发送提示
+                                # 等待后续确认真的排队了（>2秒）再发送
+                                tracking_info["queue_start_time"] = current_time
+                                print(f"📋 [消息 #{msg_id}] Worker 忙碌，消息已入队，等待确认是否真的排队...")
                             else:
                                 # Worker 空闲，不发送提示（避免误报）
                                 print(f"✓ [消息 #{msg_id}] Worker 空闲，跳过排队提示")
@@ -1412,23 +1391,39 @@ class DiscordBot(commands.Bot):
                         if not tracking_info.get("notified_bridge_received"):
                             # Claude Bridge成功接收消息
                             try:
-                                # 🔥 如果之前发送了"已加入队列"提示（直接回复模式），检查是否为误报
-                                if tracking_info.get("notified_queued") and is_direct_reply:
-                                    try:
-                                        queue_msg = tracking_info.get("queue_notification_message")
-                                        if queue_msg:
-                                            # 计算从加入队列到开始处理的时间
-                                            time_since_queued = current_time - tracking_info["start_time"]
+                                # 🔥 如果之前记录了队列状态，检查是否真的排队了
+                                if tracking_info.get("notified_queued") and tracking_info.get("queue_start_time"):
+                                    # 计算从加入队列到开始处理的时间
+                                    time_since_queued = current_time - tracking_info["queue_start_time"]
 
-                                            # 如果小于5秒，说明是误报（立即被处理），删除提示
-                                            if time_since_queued < 5.0:
-                                                await queue_msg.delete()
-                                                print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（实际只等待了 {time_since_queued:.1f} 秒）")
-                                                tracking_info["queue_notification_message"] = None
+                                    # 如果大于2秒，说明真的排队了，发送"排队后已被处理"的消息
+                                    if time_since_queued >= 2.0:
+                                        try:
+                                            if not is_direct_reply:
+                                                # Embed 模式：编辑确认消息为 Embed 卡片
+                                                embed = discord.Embed(
+                                                    title="📋 消息已加入队列",
+                                                    description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                                    color=discord.Color.blue()
+                                                )
+                                                embed.set_footer(text=f"消息 ID: {msg_id}")
+                                                await tracking_info["confirmation_msg"].edit(content="", embed=embed)
+                                                print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (Embed模式)")
                                             else:
-                                                print(f"✓ [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，保留队列提示")
-                                    except Exception as e:
-                                        print(f"⚠️ 无法处理队列提示消息: {e}")
+                                                # 直接回复模式：发送 Embed 卡片
+                                                embed = discord.Embed(
+                                                    title="📋 消息已加入队列",
+                                                    description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                                    color=discord.Color.blue()
+                                                )
+                                                embed.set_footer(text=f"消息 ID: {msg_id}")
+                                                queue_msg = await tracking_info["channel"].send(embed=embed)
+                                                print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (直接回复模式)")
+                                        except Exception as e:
+                                            print(f"⚠️ 无法发送队列消息: {e}")
+                                    else:
+                                        # 小于2秒，说明是误报，不发送队列提示
+                                        print(f"✓ [消息 #{msg_id}] 消息只等待了 {time_since_queued:.1f} 秒，跳过排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
 
                                 if not is_direct_reply:
                                     # Embed 模式：编辑确认消息为 Embed 卡片
@@ -1451,23 +1446,41 @@ class DiscordBot(commands.Bot):
                             # 检查是否为直接回复模式
                             is_direct_reply = tracking_info.get("direct_reply", False)
 
-                            # 🔥 如果之前发送了"已加入队列"提示（直接回复模式），检查是否为误报
-                            if tracking_info.get("notified_queued") and is_direct_reply:
-                                try:
-                                    queue_msg = tracking_info.get("queue_notification_message")
-                                    if queue_msg:
-                                        # 计算从加入队列到开始处理的时间
-                                        time_since_queued = current_time - tracking_info["start_time"]
+                            # 🔥 如果之前记录了队列状态（但还没显示提示），检查是否真的排队了
+                            if tracking_info.get("notified_queued") and tracking_info.get("queue_start_time") and not tracking_info.get("queue_notification_sent"):
+                                # 计算从加入队列到开始处理的时间
+                                time_since_queued = current_time - tracking_info["queue_start_time"]
 
-                                        # 如果小于5秒，说明是误报（立即被处理），删除提示
-                                        if time_since_queued < 5.0:
-                                            await queue_msg.delete()
-                                            print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（AI_STARTED，实际只等待了 {time_since_queued:.1f} 秒）")
-                                            tracking_info["queue_notification_message"] = None
+                                # 如果大于2秒，说明真的排队了，发送"排队后已被处理"的消息
+                                if time_since_queued >= 2.0:
+                                    try:
+                                        if not is_direct_reply:
+                                            # Embed 模式：编辑确认消息为 Embed 卡片
+                                            embed = discord.Embed(
+                                                title="📋 消息已加入队列",
+                                                description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                                color=discord.Color.blue()
+                                            )
+                                            embed.set_footer(text=f"消息 ID: {msg_id}")
+                                            await tracking_info["confirmation_msg"].edit(content="", embed=embed)
+                                            print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (Embed模式)")
                                         else:
-                                            print(f"✓ [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，保留队列提示")
-                                except Exception as e:
-                                    print(f"⚠️ 无法处理队列提示消息: {e}")
+                                            # 直接回复模式：发送 Embed 卡片
+                                            embed = discord.Embed(
+                                                title="📋 消息已加入队列",
+                                                description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
+                                                color=discord.Color.blue()
+                                            )
+                                            embed.set_footer(text=f"消息 ID: {msg_id}")
+                                            queue_msg = await tracking_info["channel"].send(embed=embed)
+                                            print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (直接回复模式)")
+                                        # 标记已发送队列提示
+                                        tracking_info["queue_notification_sent"] = True
+                                    except Exception as e:
+                                        print(f"⚠️ 无法发送队列消息: {e}")
+                                else:
+                                    # 小于2秒，说明是误报，不发送队列提示
+                                    print(f"✓ [消息 #{msg_id}] 消息只等待了 {time_since_queued:.1f} 秒，跳过排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
 
                             if not is_direct_reply:
                                 # Embed 模式：发送 Embed 卡片（原有逻辑）
@@ -2267,24 +2280,46 @@ class DiscordBot(commands.Bot):
     async def _maintain_typing_indicator(self, channel):
         """
         维持 typing indicator（仅用于直接回复模式）
+        带重试机制，网络波动时会自动恢复
 
         Args:
             channel: Discord 频道对象
         """
+        retry_count = 0
+        max_retries = self.config.typing_indicator_max_retries  # 最大连续重试次数
+        retry_delay = self.config.typing_indicator_retry_delay  # 重试等待时间（秒）
+
         try:
             while not self.is_closed():
-                async with channel.typing():
-                    # Discord typing indicator 默认持续 10 秒
-                    # 每 9 秒刷新一次，避免中断
-                    for _ in range(9):
-                        await asyncio.sleep(1)
-                        # 每秒检查一次是否应该停止（通过检查 pending_messages）
-                        # 这里我们简单地持续运行，停止信号由外部 cancel 控制
+                try:
+                    async with channel.typing():
+                        # Discord typing indicator 默认持续 10 秒
+                        # 每 9 秒刷新一次，避免中断
+                        for _ in range(9):
+                            await asyncio.sleep(1)
+
+                    # 成功完成一次循环，重置重试计数
+                    retry_count = 0
+
+                except asyncio.CancelledError:
+                    # 任务被取消，正常退出
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    print(f"⚠️ 维持 typing indicator 时出错 (第{retry_count}次): {e}")
+
+                    if retry_count >= max_retries:
+                        print(f"❌ 维持 typing indicator 失败，已达最大重试次数 ({max_retries})，停止尝试")
+                        break
+
+                    print(f"🔄 {retry_delay}秒后重试...")
+                    await asyncio.sleep(retry_delay)
+
         except asyncio.CancelledError:
             # 任务被取消，正常退出
             pass
         except Exception as e:
-            print(f"⚠️ 维持 typing indicator 时出错: {e}")
+            print(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
 
     def _detect_new_blocks(self, previous_content: str, new_content: str) -> list:
         """
