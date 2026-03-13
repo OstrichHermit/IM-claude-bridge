@@ -89,11 +89,14 @@ class SessionWorker:
                     # 超时继续，检查 running 状态
                     continue
 
-                # 更新活动时间
+                # 更新活动时间（消息出队时）
                 self.last_activity_time = time.time()
 
                 # 处理消息
                 await self._process_message(message)
+
+                # 更新活动时间（消息处理完成后，确保完整的空闲窗口期）
+                self.last_activity_time = time.time()
 
             except asyncio.CancelledError:
                 # 任务被取消，正常退出
@@ -576,6 +579,10 @@ class SessionWorker:
         """
         if timeout == 0:
             return False  # 超时时间为 0 表示永不清理
+
+        # 如果正在处理消息，不算空闲（防止长时间运行的任务被误清理）
+        if self.current_message_id is not None:
+            return False
 
         time_since_last_activity = current_time - self.last_activity_time
         queue_empty = self.queue.empty()

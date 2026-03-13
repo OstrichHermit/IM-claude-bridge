@@ -1394,7 +1394,9 @@ class DiscordBot(commands.Bot):
                                             color=discord.Color.blue()
                                         )
                                         embed.set_footer(text=f"消息 ID: {msg_id}")
-                                        await tracking_info["channel"].send(embed=embed)
+                                        queue_msg = await tracking_info["channel"].send(embed=embed)
+                                        # 🔥 保存队列提示消息的引用，以便后续撤销
+                                        tracking_info["queue_notification_message"] = queue_msg
                                     print(f"📋 [消息 #{msg_id}] Worker 忙碌，已显示排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
                                 except Exception as e:
                                     print(f"⚠️ 无法发送队列消息: {e}")
@@ -1410,6 +1412,24 @@ class DiscordBot(commands.Bot):
                         if not tracking_info.get("notified_bridge_received"):
                             # Claude Bridge成功接收消息
                             try:
+                                # 🔥 如果之前发送了"已加入队列"提示（直接回复模式），检查是否为误报
+                                if tracking_info.get("notified_queued") and is_direct_reply:
+                                    try:
+                                        queue_msg = tracking_info.get("queue_notification_message")
+                                        if queue_msg:
+                                            # 计算从加入队列到开始处理的时间
+                                            time_since_queued = current_time - tracking_info["start_time"]
+
+                                            # 如果小于2秒，说明是误报（立即被处理），删除提示
+                                            if time_since_queued < 2.0:
+                                                await queue_msg.delete()
+                                                print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（实际只等待了 {time_since_queued:.1f} 秒）")
+                                                tracking_info["queue_notification_message"] = None
+                                            else:
+                                                print(f"✓ [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，保留队列提示")
+                                    except Exception as e:
+                                        print(f"⚠️ 无法处理队列提示消息: {e}")
+
                                 if not is_direct_reply:
                                     # Embed 模式：编辑确认消息为 Embed 卡片
                                     embed = discord.Embed(
@@ -1430,6 +1450,24 @@ class DiscordBot(commands.Bot):
                         if not tracking_info.get("notified_ai_started"):
                             # 检查是否为直接回复模式
                             is_direct_reply = tracking_info.get("direct_reply", False)
+
+                            # 🔥 如果之前发送了"已加入队列"提示（直接回复模式），检查是否为误报
+                            if tracking_info.get("notified_queued") and is_direct_reply:
+                                try:
+                                    queue_msg = tracking_info.get("queue_notification_message")
+                                    if queue_msg:
+                                        # 计算从加入队列到开始处理的时间
+                                        time_since_queued = current_time - tracking_info["start_time"]
+
+                                        # 如果小于2秒，说明是误报（立即被处理），删除提示
+                                        if time_since_queued < 2.0:
+                                            await queue_msg.delete()
+                                            print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（AI_STARTED，实际只等待了 {time_since_queued:.1f} 秒）")
+                                            tracking_info["queue_notification_message"] = None
+                                        else:
+                                            print(f"✓ [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，保留队列提示")
+                                except Exception as e:
+                                    print(f"⚠️ 无法处理队列提示消息: {e}")
 
                             if not is_direct_reply:
                                 # Embed 模式：发送 Embed 卡片（原有逻辑）
