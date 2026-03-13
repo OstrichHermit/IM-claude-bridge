@@ -1420,8 +1420,8 @@ class DiscordBot(commands.Bot):
                                             # 计算从加入队列到开始处理的时间
                                             time_since_queued = current_time - tracking_info["start_time"]
 
-                                            # 如果小于2秒，说明是误报（立即被处理），删除提示
-                                            if time_since_queued < 2.0:
+                                            # 如果小于5秒，说明是误报（立即被处理），删除提示
+                                            if time_since_queued < 5.0:
                                                 await queue_msg.delete()
                                                 print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（实际只等待了 {time_since_queued:.1f} 秒）")
                                                 tracking_info["queue_notification_message"] = None
@@ -1459,8 +1459,8 @@ class DiscordBot(commands.Bot):
                                         # 计算从加入队列到开始处理的时间
                                         time_since_queued = current_time - tracking_info["start_time"]
 
-                                        # 如果小于2秒，说明是误报（立即被处理），删除提示
-                                        if time_since_queued < 2.0:
+                                        # 如果小于5秒，说明是误报（立即被处理），删除提示
+                                        if time_since_queued < 5.0:
                                             await queue_msg.delete()
                                             print(f"🔄 [消息 #{msg_id}] 已撤销误导性的队列提示（AI_STARTED，实际只等待了 {time_since_queued:.1f} 秒）")
                                             tracking_info["queue_notification_message"] = None
