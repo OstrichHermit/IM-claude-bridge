@@ -65,9 +65,9 @@ class Config:
         return self._config.get('claude', {}).get('timeout', 300)
 
     @property
-    def max_retries(self) -> int:
-        """获取最大重试次数"""
-        return self._config.get('claude', {}).get('max_retries', 3)
+    def max_attempts(self) -> int:
+        """获取 Claude Code 最大调用尝试次数（包括第一次调用）"""
+        return self._config.get('claude', {}).get('max_attempts', 3)
 
     @property
     def working_directory(self) -> str:
@@ -189,3 +189,13 @@ class Config:
     def worker_idle_timeout(self) -> int:
         """获取 Worker 空闲超时时间（秒，0 = 永不清理）"""
         return self._config.get('claude', {}).get('worker_idle_timeout', 300)
+
+    @property
+    def typing_indicator_max_retries(self) -> int:
+        """获取 typing indicator 最大连续重试次数"""
+        return self._config.get('direct_reply', {}).get('typing_indicator', {}).get('max_retries', 3)
+
+    @property
+    def typing_indicator_retry_delay(self) -> int:
+        """获取 typing indicator 重试等待时间（秒）"""
+        return self._config.get('direct_reply', {}).get('typing_indicator', {}).get('retry_delay', 5)

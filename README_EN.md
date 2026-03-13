@@ -285,7 +285,7 @@ discord:
 claude:
   executable: "claude"                 # Claude Code CLI command
   timeout: 300                         # Timeout (seconds)
-  max_retries: 3                       # Max retry count
+  max_attempts: 3                      # Max call attempts (including first)
   working_directory: ""               # Working directory (optional)
 
 file_download:

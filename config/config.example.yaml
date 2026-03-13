@@ -21,8 +21,9 @@ claude:
   executable: "claude"
   # 每次对话的启动超时时间（秒）
   timeout: 30
-  # 最大重试次数
-  max_retries: 3
+  # Claude Code 最大调用尝试次数（包括第一次调用）
+  # 例如设置为 3 表示最多尝试 3 次（1次原始调用 + 2次重试）
+  max_attempts: 3
   # 工作目录（可选，留空则使用当前目录）
   # 对于需要访问特定项目文件的任务很有用
   working_directory: ""
@@ -96,3 +97,10 @@ direct_reply:
   # PENDING 状态超时时间（秒）
   # 超过此时间未收到 Claude Bridge 响应时，发送超时提示
   pending_timeout: 30
+
+  # Typing indicator 配置（"正在输入"状态）
+  typing_indicator:
+    # 最大连续重试次数（网络波动时）
+    max_retries: 3
+    # 重试等待时间（秒）
+    retry_delay: 5

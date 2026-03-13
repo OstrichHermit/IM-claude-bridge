@@ -77,7 +77,7 @@ class ClaudeBridge:
         print("🚀 Claude Code 桥接服务已启动（并发架构）")
         print(f"📥 轮询间隔: {self.config.poll_interval}ms")
         print(f"⏱️  超时时间: {self.config.claude_timeout}秒")
-        print(f"🔄 最大重试: {self.config.max_retries}次")
+        print(f"🔄 最大尝试次数: {self.config.max_attempts}次")
         print(f"🎢 并发模式: {self.config.session_mode}")
         print(f"⚡ 最大并发 session 数: {self.max_concurrent_sessions}")
 

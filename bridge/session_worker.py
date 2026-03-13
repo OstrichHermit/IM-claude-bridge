@@ -242,7 +242,7 @@ class SessionWorker:
         import json
 
         retries = 0
-        max_retries = self.config.max_retries
+        max_attempts = self.config.max_attempts
 
         # 使用传入的 working_dir
         cwd = working_dir or self.config.working_directory
@@ -262,9 +262,9 @@ class SessionWorker:
             else:
                 prompt = f"{sender_info}{prompt}"
 
-        while retries < max_retries:
+        while retries < max_attempts:
             try:
-                print(f"🤖 [Worker {self.session_key}] 调用 Claude Code CLI (尝试 {retries + 1}/{max_retries})...")
+                print(f"🤖 [Worker {self.session_key}] 调用 Claude Code CLI (尝试 {retries + 1}/{max_attempts})...")
                 print(f"📝 提示词: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
 
                 # 构建命令参数
@@ -482,10 +482,10 @@ class SessionWorker:
 
             except Exception as e:
                 retries += 1
-                print(f"❌ 调用失败 (尝试 {retries}/{max_retries}): {e}")
+                print(f"❌ 调用失败 (尝试 {retries}/{max_attempts}): {e}")
 
-                if retries >= max_retries:
-                    raise Exception(f"经过 {max_retries} 次重试后仍然失败: {str(e)}")
+                if retries >= max_attempts:
+                    raise Exception(f"经过 {max_attempts} 次调用尝试后仍然失败: {str(e)}")
 
                 wait_time = 2 ** retries
                 print(f"⏳ {wait_time} 秒后重试...")
