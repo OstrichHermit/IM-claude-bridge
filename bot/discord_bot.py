@@ -2335,9 +2335,56 @@ class DiscordBot(commands.Bot):
         if not new_content:
             return []
 
-        # 如果是首次内容，整个作为一个 block
+        # 如果是首次内容，检测内部是否有空行分隔
         if not previous_content:
-            return [new_content]
+            # 检测首次内容中的 block 边界（与增量检测相同的逻辑）
+            blocks = []
+            current_block = []
+            in_code_block = False
+            empty_line_count = 0
+
+            lines = new_content.split('\n')
+            for line in lines:
+                # 检测代码块开始/结束
+                if line.strip().startswith('```'):
+                    if not in_code_block:
+                        # 代码块开始
+                        if current_block:
+                            blocks.append('\n'.join(current_block))
+                            current_block = []
+                        in_code_block = True
+                        current_block.append(line)
+                    else:
+                        # 代码块结束
+                        current_block.append(line)
+                        blocks.append('\n'.join(current_block))
+                        current_block = []
+                        in_code_block = False
+                        empty_line_count = 0
+                    continue
+
+                # 如果在代码块内，所有内容都视为同一 block
+                if in_code_block:
+                    current_block.append(line)
+                    continue
+
+                # 检测段落分隔（一个空行，即两个连续换行）
+                if not line.strip():
+                    empty_line_count += 1
+                    if empty_line_count >= 1 and current_block:
+                        # 空行，结束当前 block
+                        blocks.append('\n'.join(current_block))
+                        current_block = []
+                        empty_line_count = 0
+                else:
+                    empty_line_count = 0
+                    current_block.append(line)
+
+            # 处理最后一个 block
+            if current_block:
+                blocks.append('\n'.join(current_block))
+
+            return blocks if blocks else [new_content]
 
         # 计算新增的文本部分
         new_text = new_content[len(previous_content):]
@@ -2376,10 +2423,10 @@ class DiscordBot(commands.Bot):
                 current_block.append(line)
                 continue
 
-            # 检测段落分隔（两个或以上连续换行）
+            # 检测段落分隔（一个空行，即两个连续换行）
             if not line.strip():
                 empty_line_count += 1
-                if empty_line_count >= 2 and current_block:
+                if empty_line_count >= 1 and current_block:
                     # 空行，结束当前 block
                     blocks.append('\n'.join(current_block))
                     current_block = []
