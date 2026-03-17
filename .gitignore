@@ -56,3 +56,4 @@ env/
 .DS_Store
 Thumbs.db
 discord_bridge.db
+/stickers
