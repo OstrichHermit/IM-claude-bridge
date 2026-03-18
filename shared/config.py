@@ -199,3 +199,8 @@ class Config:
     def typing_indicator_retry_delay(self) -> int:
         """获取 typing indicator 重试等待时间（秒）"""
         return self._config.get('direct_reply', {}).get('typing_indicator', {}).get('retry_delay', 5)
+
+    @property
+    def tool_use_notification_enabled(self) -> bool:
+        """获取是否启用工具调用通知"""
+        return self._config.get('tool_use_notification', {}).get('enabled', False)

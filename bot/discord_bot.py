@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 import asyncio
 import sys
+import json
 from pathlib import Path
 from typing import List
 
@@ -91,6 +92,9 @@ class DiscordBot(commands.Bot):
 
         # 🔥 启动流式响应检查任务
         self.stream_check_task = asyncio.create_task(self.check_streaming_responses())
+
+        # 🔥 启动工具调用通知检查任务
+        self.tool_use_check_task = asyncio.create_task(self.check_tool_uses())
 
     async def cleanup_stuck_messages(self):
         """清理上次崩溃时卡住的消息"""
@@ -2276,6 +2280,8 @@ class DiscordBot(commands.Bot):
             self.file_download_check_task.cancel()
         if self.message_request_check_task:
             self.message_request_check_task.cancel()
+        if hasattr(self, 'tool_use_check_task') and self.tool_use_check_task:
+            self.tool_use_check_task.cancel()
 
     async def _maintain_typing_indicator(self, channel):
         """
@@ -2486,6 +2492,319 @@ class DiscordBot(commands.Bot):
             merged.append('\n'.join(current_merged))
 
         return merged
+
+    async def check_tool_uses(self):
+        """定期检查工具调用并发送通知"""
+        await self.wait_until_ready()
+
+        # 追踪已处理的工具调用 {message_id: [tool_use_indices]}
+        processed_tool_uses = {}
+
+        while not self.is_closed():
+            try:
+                if not self.config.tool_use_notification_enabled:
+                    await asyncio.sleep(5)
+                    continue
+
+                import sqlite3
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+
+                # 查询有 tool_uses 且状态为 ai_started 或 processing 的消息
+                cursor.execute("""
+                    SELECT id, discord_channel_id, tool_uses
+                    FROM messages
+                    WHERE status IN ('ai_started', 'processing')
+                      AND tool_uses IS NOT NULL
+                      AND tool_uses != ''
+                    ORDER BY id DESC
+                """)
+                rows = cursor.fetchall()
+                conn.close()
+
+                for msg_id, channel_id, tool_uses_json in rows:
+                    try:
+                        tool_uses = json.loads(tool_uses_json)
+
+                        # 检查是否有新的工具调用
+                        if msg_id not in processed_tool_uses:
+                            processed_tool_uses[msg_id] = []
+
+                        last_processed_count = len(processed_tool_uses[msg_id])
+
+                        # 如果有新的工具调用
+                        if len(tool_uses) > last_processed_count:
+                            # 发送新的工具调用通知
+                            for i in range(last_processed_count, len(tool_uses)):
+                                tool_use = tool_uses[i]
+                                await self._send_tool_use_notification(
+                                    tool_use['name'],
+                                    tool_use['input'],
+                                    channel_id
+                                )
+
+                            # 更新已处理的数量
+                            processed_tool_uses[msg_id] = list(range(len(tool_uses)))
+
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+
+                # 清理已完成消息的记录
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id FROM messages
+                    WHERE status IN ('completed', 'failed', 'skipped')
+                """)
+                completed_ids = [row[0] for row in cursor.fetchall()]
+                conn.close()
+
+                for completed_id in completed_ids:
+                    if completed_id in processed_tool_uses:
+                        del processed_tool_uses[completed_id]
+
+                # 等待一段时间再检查（1秒）
+                await asyncio.sleep(1)
+
+            except Exception as e:
+                print(f"❌ 检查工具调用时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
+    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int):
+        """发送工具调用通知
+
+        Args:
+            tool_name: 工具名称
+            tool_input: 工具参数
+            channel_id: Discord 频道 ID
+        """
+        # 工具 emoji 映射
+        TOOL_EMOJIS = {
+            # 文件操作
+            "Read": "📄",
+            "Write": "✍️",
+            "Edit": "✏️",
+            "Glob": "📁",
+            "Grep": "🔍",
+
+            # 命令执行
+            "Bash": "⚡",
+
+            # Web 相关
+            "WebSearch": "🌐",
+
+            # Skill
+            "Skill": "📖",
+
+            # Agent
+            "Agent": "🤖",
+
+            # 计划模式
+            "EnterPlanMode": "📋",
+            "ExitPlanMode": "✅",
+
+            # 用户交互
+            "AskUserQuestion": "❓",
+
+            # 任务管理
+            "TodoWrite": "✅",
+            "CronCreate": "⏰",
+            "CronDelete": "🗑️",
+            "CronList": "📋",
+
+            # 任务控制
+            "TaskOutput": "📤",
+            "TaskStop": "🛑",
+
+            # Jupyter
+            "NotebookEdit": "📓",
+
+            # MCP 资源
+            "ListMcpResourcesTool": "📚",
+            "ReadMcpResourceTool": "📖",
+
+            # Worktree
+            "EnterWorktree": "🌳",
+            "ExitWorktree": "🚪",
+
+            # MCP 服务器 emoji 映射（基于服务器名）
+            "jina-mcp-server": "🌐",
+            "web-reader": "🌐",
+            "image": "🖼️",
+            "discord-bridge": "💬",
+            "memu": "🧠",
+            "cat-litter-monitor": "🐱",
+        }
+
+        # 检查是否是 MCP 工具
+        is_mcp = tool_name.startswith('mcp__')
+
+        if is_mcp:
+            # MCP 工具：提取服务器名和工具名
+            # 格式：mcp__服务器名__工具名
+            parts = tool_name.split('__')
+            if len(parts) >= 3:
+                mcp_server = parts[1]
+                mcp_tool = parts[2]  # 获取工具名，如 save_memory
+
+                display_title = f"MCP {mcp_server}"
+                emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
+
+                # MCP 工具显示工具名
+                embed = discord.Embed(
+                    title=f"{emoji} {display_title}",
+                    color=discord.Color.green()
+                )
+                embed.description = mcp_tool
+            else:
+                # 格式异常，按普通工具处理
+                emoji = TOOL_EMOJIS.get(tool_name, "🔧")
+                embed = discord.Embed(
+                    title=f"{emoji} {tool_name}",
+                    color=discord.Color.green()
+                )
+                embed.description = "无参数"
+        else:
+            # 非 MCP 工具：正常处理
+            emoji = TOOL_EMOJIS.get(tool_name, "🔧")
+
+            # 构建 Embed
+            embed = discord.Embed(
+                title=f"{emoji} {tool_name}",
+                color=discord.Color.green()
+            )
+
+            # 智能显示参数（为每个工具定制显示内容）
+            display_value = None
+
+            if tool_name == 'Read':
+                # Read: 显示文件路径
+                display_value = tool_input.get('file_path', '无路径')
+            elif tool_name == 'Write':
+                # Write: 显示文件路径
+                display_value = tool_input.get('file_path', '无路径')
+            elif tool_name == 'Edit':
+                # Edit: 显示文件路径
+                display_value = tool_input.get('file_path', '无路径')
+            elif tool_name == 'Glob':
+                # Glob: 显示路径和 pattern
+                pattern = tool_input.get('pattern', '无 pattern')
+                path = tool_input.get('path', '')
+                if path:
+                    display_value = f"{path}: {pattern}"
+                else:
+                    display_value = pattern
+            elif tool_name == 'Grep':
+                # Grep: 显示 pattern
+                display_value = tool_input.get('pattern', '无 pattern')
+            elif tool_name == 'Bash':
+                # Bash: 显示命令（截断）
+                cmd = tool_input.get('command', '')
+                if len(cmd) > 50:
+                    cmd = cmd[:47] + "..."
+                display_value = cmd
+            elif tool_name == 'WebSearch':
+                # WebSearch: 显示 query
+                display_value = tool_input.get('query', '无 query')
+            elif tool_name == 'Skill':
+                # Skill: 显示 skill 名称
+                display_value = tool_input.get('skill', '无 skill')
+            elif tool_name == 'Agent':
+                # Agent: 显示描述和 subagent_type
+                desc = tool_input.get('description', '')
+                subagent = tool_input.get('subagent_type', 'general-purpose')
+                display_value = f"{subagent}: {desc}"
+            elif tool_name == 'EnterPlanMode':
+                # EnterPlanMode: 无需显示参数
+                display_value = "进入计划模式"
+            elif tool_name == 'ExitPlanMode':
+                # ExitPlanMode: 无需显示参数
+                display_value = "退出计划模式"
+            elif tool_name == 'AskUserQuestion':
+                # AskUserQuestion: 显示每个问题的内容和选项
+                questions = tool_input.get('questions', [])
+                question_lines = []
+                for i, q in enumerate(questions, 1):
+                    question_text = q.get('question', '无问题')
+                    question_lines.append(f"Q{i}: {question_text}")
+
+                    # 显示选项
+                    options = q.get('options', [])
+                    if options:
+                        for opt in options:
+                            label = opt.get('label', '无标签')
+                            desc = opt.get('description', '')
+                            if desc:
+                                question_lines.append(f"  - {label}: {desc}")
+                            else:
+                                question_lines.append(f"  - {label}")
+
+                display_value = '\n'.join(question_lines)
+            elif tool_name == 'TodoWrite':
+                # TodoWrite: 显示任务数量
+                todos = tool_input.get('todos', [])
+                display_value = f"{len(todos)} 个任务"
+            elif tool_name == 'CronCreate':
+                # CronCreate: 显示 cron 表达式
+                display_value = tool_input.get('cron', '无 cron')
+            elif tool_name == 'CronDelete':
+                # CronDelete: 显示任务 ID
+                display_value = tool_input.get('id', '无 id')
+            elif tool_name == 'CronList':
+                # CronList: 无参数
+                display_value = "列出定时任务"
+            elif tool_name == 'TaskOutput':
+                # TaskOutput: 显示任务 ID
+                display_value = tool_input.get('task_id', '无 id')
+            elif tool_name == 'TaskStop':
+                # TaskStop: 显示任务 ID
+                display_value = tool_input.get('task_id', '无 id')
+            elif tool_name == 'NotebookEdit':
+                # NotebookEdit: 显示 notebook 路径
+                display_value = tool_input.get('notebook_path', '无路径')
+            elif tool_name == 'ListMcpResourcesTool':
+                # ListMcpResourcesTool: 显示服务器名
+                display_value = tool_input.get('server', '全部服务器')
+            elif tool_name == 'ReadMcpResourceTool':
+                # ReadMcpResourceTool: 显示服务器和 URI
+                server = tool_input.get('server', '')
+                uri = tool_input.get('uri', '')
+                display_value = f"{server}: {uri}"
+            elif tool_name == 'EnterWorktree':
+                # EnterWorktree: 显示名称
+                display_value = tool_input.get('name', '默认名称')
+            elif tool_name == 'ExitWorktree':
+                # ExitWorktree: 显示操作
+                action = tool_input.get('action', 'keep')
+                display_value = f"操作: {action}"
+            elif 'prompt' in tool_input:
+                # 有 prompt 字段的工具（完整显示，不截断）
+                display_value = tool_input['prompt']
+            else:
+                # 其他工具：显示第一个参数
+                if tool_input:
+                    first_key = list(tool_input.keys())[0]
+                    first_value = str(tool_input[first_key])
+                    if len(first_value) > 50:
+                        first_value = first_value[:47] + "..."
+                    display_value = f"{first_key}: {first_value}"
+                else:
+                    display_value = "无参数"
+
+            if display_value:
+                embed.description = display_value
+            else:
+                embed.description = "无参数"
+
+        # 发送到 Discord
+        try:
+            channel = self.get_channel(channel_id)
+            if channel:
+                await channel.send(embed=embed)
+        except Exception as e:
+            pass  # 静默失败，避免刷屏
 
 
 def main():

@@ -386,6 +386,15 @@ class SessionWorker:
                                                     self.message_queue.update_streaming_response(message_id, partial_response)
                                                     last_update_time = current_time
 
+                                            elif content_item.get('type') == 'tool_use' and message_id:
+                                                # 工具调用
+                                                tool_name = content_item.get('name', '')
+                                                tool_input = content_item.get('input', {})
+                                                tool_id = content_item.get('id', '')
+
+                                                # 保存到数据库
+                                                self.message_queue.add_tool_use(message_id, tool_name, tool_input)
+
                             except json.JSONDecodeError:
                                 pass
 
@@ -419,6 +428,15 @@ class SessionWorker:
                                                 if message_id and current_time - last_update_time > 0.1:
                                                     self.message_queue.update_streaming_response(message_id, partial_response)
                                                     last_update_time = current_time
+
+                                            elif content_item.get('type') == 'tool_use' and message_id:
+                                                # 工具调用
+                                                tool_name = content_item.get('name', '')
+                                                tool_input = content_item.get('input', {})
+                                                tool_id = content_item.get('id', '')
+
+                                                # 保存到数据库
+                                                self.message_queue.add_tool_use(message_id, tool_name, tool_input)
 
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
