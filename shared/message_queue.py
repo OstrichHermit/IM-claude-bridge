@@ -222,6 +222,12 @@ class MessageQueue:
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
+        # 兼容性处理：为旧数据库添加 tool_uses 字段（工具调用信息）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN tool_uses TEXT")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
         # 创建流式响应索引（提高查询性能）
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_last_stream_update
@@ -604,6 +610,69 @@ class MessageQueue:
 
         conn.commit()
         conn.close()
+
+    def add_tool_use(self, message_id: int, tool_name: str, tool_input: dict):
+        """添加工具调用信息
+
+        Args:
+            message_id: 消息 ID
+            tool_name: 工具名称
+            tool_input: 工具参数
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # 获取现有的 tool_uses
+        cursor.execute("SELECT tool_uses FROM messages WHERE id = ?", (message_id,))
+        row = cursor.fetchone()
+
+        tool_uses = []
+        if row and row[0]:
+            try:
+                tool_uses = json.loads(row[0])
+            except json.JSONDecodeError:
+                tool_uses = []
+
+        # 添加新的工具调用
+        tool_uses.append({
+            "name": tool_name,
+            "input": tool_input
+        })
+
+        # 更新数据库
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE messages
+            SET tool_uses = ?, updated_at = ?
+            WHERE id = ?
+        """, (json.dumps(tool_uses, ensure_ascii=False), now, message_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_tool_uses(self, message_id: int) -> list:
+        """获取消息的所有工具调用
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            工具调用列表
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT tool_uses FROM messages WHERE id = ?", (message_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except json.JSONDecodeError:
+                return []
+
+        return []
 
     def request_abort(self, message_id: int) -> bool:
         """请求中止消息处理
