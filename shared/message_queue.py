@@ -102,7 +102,6 @@ class FileRequest:
     file_paths: List[str]  # 文件路径列表（JSON 数组）
     user_id: Optional[int]  # Discord 用户 ID
     channel_id: Optional[int]  # Discord 频道 ID
-    use_embed: bool  # 是否使用 Embed 格式
     status: str  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
     error: Optional[str] = None  # 错误信息
@@ -270,7 +269,6 @@ class MessageQueue:
                 user_id INTEGER,
                 channel_id INTEGER,
                 message TEXT,
-                use_embed BOOLEAN DEFAULT 0,
                 status TEXT NOT NULL,
                 result TEXT,
                 error TEXT,
@@ -1134,14 +1132,13 @@ class MessageQueue:
 
         cursor.execute("""
             INSERT INTO file_requests (
-                file_paths, user_id, channel_id, use_embed,
+                file_paths, user_id, channel_id,
                 status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             json.dumps(file_request.file_paths, ensure_ascii=False),
             file_request.user_id,
             file_request.channel_id,
-            1 if file_request.use_embed else 0,
             file_request.status,
             file_request.result,
             file_request.error,

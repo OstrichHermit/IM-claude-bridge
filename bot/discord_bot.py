@@ -2632,6 +2632,7 @@ class DiscordBot(commands.Bot):
             # MCP 服务器 emoji 映射（基于服务器名）
             "jina-mcp-server": "🌐",
             "web-reader": "🌐",
+            "brave-search": "🌐",
             "image": "🖼️",
             "discord-bridge": "💬",
             "memu": "🧠",

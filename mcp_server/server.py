@@ -40,8 +40,7 @@ mcp = FastMCP('discord-bridge')
 async def send_file_to_discord(
     file_path: str,
     user_id: Optional[str] = None,
-    channel_id: Optional[str] = None,
-    use_embed: bool = False
+    channel_id: Optional[str] = None
 ) -> str:
     """
     发送文件到 Discord（支持用户私聊或频道）
@@ -53,9 +52,6 @@ async def send_file_to_discord(
         file_path: 要发送的文件路径（必需）
         user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
         channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-        use_embed: 是否使用 Embed 格式发送（默认 False）
-            - False: 直接发送文件（简单）
-            - True: 使用精美卡片格式（推荐）
 
     Returns:
         JSON格式的发送结果，包含成功状态和消息信息
@@ -66,13 +62,6 @@ async def send_file_to_discord(
 
         # 发送到频道
         send_file_to_discord(file_path="report.png", channel_id="987654321")
-
-        # 使用 Embed 格式发送到频道
-        send_file_to_discord(
-            file_path="data.png",
-            channel_id="987654321",
-            use_embed=True
-        )
 
     Note:
         - user_id 和 channel_id 必须指定其中一个
@@ -85,8 +74,7 @@ async def send_file_to_discord(
     return await _send_file_to_discord(
         file_path=file_path,
         user_id=user_id,
-        channel_id=channel_id,
-        use_embed=use_embed
+        channel_id=channel_id
     )
 
 
@@ -94,8 +82,7 @@ async def send_file_to_discord(
 async def send_multiple_files_to_discord(
     file_paths: list,
     user_id: Optional[str] = None,
-    channel_id: Optional[str] = None,
-    use_embed: bool = False
+    channel_id: Optional[str] = None
 ) -> str:
     """
     批量发送多个文件到 Discord（支持用户私聊或频道）
@@ -108,9 +95,6 @@ async def send_multiple_files_to_discord(
         file_paths: 要发送的文件路径列表（必需），最多 10 个文件
         user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
         channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-        use_embed: 是否使用 Embed 格式发送（默认 False）
-            - False: 直接发送文件（简单）
-            - True: 使用精美卡片格式（推荐）
 
     Returns:
         JSON格式的发送结果，包含成功状态和消息信息
@@ -128,13 +112,6 @@ async def send_multiple_files_to_discord(
             channel_id="987654321"
         )
 
-        # 使用 Embed 格式
-        send_multiple_files_to_discord(
-            file_paths=["image1.png", "image2.png"],
-            user_id="123456789",
-            use_embed=True
-        )
-
     Note:
         - user_id 和 channel_id 必须指定其中一个
         - 最多支持 10 个文件（Discord 限制）
@@ -145,8 +122,7 @@ async def send_multiple_files_to_discord(
     return await _send_multiple_files_to_discord(
         file_paths=file_paths,
         user_id=user_id,
-        channel_id=channel_id,
-        use_embed=use_embed
+        channel_id=channel_id
     )
 
 

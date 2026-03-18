@@ -69,7 +69,6 @@ def insert_external_message(
             user_id=user_id if is_dm else None,
             channel_id=None if is_dm else channel_id,
             message=content,
-            use_embed=True,
             status=FileRequestStatus.PENDING.value
         )
         request_id = queue.add_file_request(file_request)
