@@ -330,3 +330,120 @@ async def get_cron_info(job_id: str) -> str:
             "success": False,
             "error": str(e)
         }, ensure_ascii=False)
+
+
+async def update_cron(
+    job_id: str,
+    cron_expr: Optional[str] = None,
+    content: Optional[str] = None,
+    description: Optional[str] = None,
+    repeat: Optional[bool] = None,
+    enabled: Optional[bool] = None
+) -> str:
+    """
+    更新定时任务
+
+    更新指定定时任务的部分或全部字段。只修改提供的参数，未提供的参数保持不变。
+
+    Args:
+        job_id: 任务 ID（必需），8 位字符
+        cron_expr: cron 表达式（可选），格式：分 时 日 月 周
+        content: 任务内容/提示词（可选），任务执行时发送给 Claude 的内容
+        description: 任务描述（可选），用于识别任务
+        repeat: 是否重复执行（可选），true 重复，false 一次性
+        enabled: 是否启用（可选），true 启用，false 禁用
+
+    Returns:
+        JSON 格式的更新结果
+
+    Examples:
+        # 只修改执行时间
+        await update_cron(job_id="a1b2c3d4", cron_expr="0 10 * * *")
+
+        # 修改内容和描述
+        await update_cron(
+            job_id="a1b2c3d4",
+            content="新的提醒内容",
+            description="更新后的任务"
+        )
+
+        # 修改为一次性任务并禁用
+        await update_cron(
+            job_id="a1b2c3d4",
+            repeat=False,
+            enabled=False
+        )
+
+        # 同时修改多个字段
+        await update_cron(
+            job_id="a1b2c3d4",
+            cron_expr="*/30 * * * *",
+            content="每30分钟提醒",
+            description="频繁提醒",
+            repeat=True
+        )
+
+    Note:
+        - 至少需要提供一个要修改的参数
+        - 未提供的参数保持原值不变
+        - 修改 cron_expr 会重新调度任务
+        - 修改 enabled 会立即生效（需要 Bot 重新加载）
+        - 修改 repeat 会影响任务执行后的行为
+    """
+    try:
+        tasks = _load_tasks()
+
+        if job_id not in tasks:
+            return json.dumps({
+                "success": False,
+                "error": f"任务不存在: {job_id}"
+            }, ensure_ascii=False)
+
+        job = tasks[job_id]
+
+        # 记录修改的字段
+        changed_fields = []
+
+        # 更新提供的字段
+        if cron_expr is not None:
+            job['cron_expr'] = cron_expr
+            changed_fields.append('cron_expr')
+
+        if content is not None:
+            job['content'] = content
+            changed_fields.append('content')
+
+        if description is not None:
+            job['description'] = description
+            changed_fields.append('description')
+
+        if repeat is not None:
+            job['repeat'] = repeat
+            changed_fields.append('repeat')
+
+        if enabled is not None:
+            job['enabled'] = enabled
+            changed_fields.append('enabled')
+
+        # 检查是否有修改
+        if not changed_fields:
+            return json.dumps({
+                "success": False,
+                "error": "没有提供任何要修改的参数"
+            }, ensure_ascii=False)
+
+        # 保存修改
+        _save_tasks(tasks)
+
+        return json.dumps({
+            "success": True,
+            "message": f"任务已更新: {job_id}",
+            "job_id": job_id,
+            "changed_fields": changed_fields
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, ensure_ascii=False)
