@@ -5,3 +5,4 @@ aiofiles>=23.2.1
 psutil>=5.9.0
 fastmcp>=2.14.0
 apscheduler>=3.10.0
+pytz>=2023.3
