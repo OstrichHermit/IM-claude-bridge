@@ -206,6 +206,11 @@ class Config:
         return self._config.get('tool_use_notification', {}).get('enabled', False)
 
     @property
+    def tool_emoji_mapping(self) -> Dict[str, str]:
+        """获取工具 emoji 映射配置"""
+        return self._config.get('tool_use_notification', {}).get('emoji_mapping', {})
+
+    @property
     def cron_enabled(self) -> bool:
         """获取是否启用定时任务调度器"""
         return self._config.get('cron_scheduler', {}).get('enabled', True)

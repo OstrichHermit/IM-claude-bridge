@@ -2616,64 +2616,8 @@ class DiscordBot(commands.Bot):
                 # 这是管理命令，不发送通知
                 return
 
-        # 工具 emoji 映射
-        TOOL_EMOJIS = {
-            # 文件操作
-            "Read": "📄",
-            "Write": "✍️",
-            "Edit": "✏️",
-            "Glob": "📁",
-            "Grep": "🔍",
-
-            # 命令执行
-            "Bash": "⚡",
-
-            # Web 相关
-            "WebSearch": "🌐",
-
-            # Skill
-            "Skill": "📖",
-
-            # Agent
-            "Agent": "🤖",
-
-            # 计划模式
-            "EnterPlanMode": "📋",
-            "ExitPlanMode": "✅",
-
-            # 用户交互
-            "AskUserQuestion": "❓",
-
-            # 任务管理
-            "TodoWrite": "✅",
-            "CronCreate": "⏰",
-            "CronDelete": "🗑️",
-            "CronList": "📋",
-
-            # 任务控制
-            "TaskOutput": "📤",
-            "TaskStop": "🛑",
-
-            # Jupyter
-            "NotebookEdit": "📓",
-
-            # MCP 资源
-            "ListMcpResourcesTool": "📚",
-            "ReadMcpResourceTool": "📖",
-
-            # Worktree
-            "EnterWorktree": "🌳",
-            "ExitWorktree": "🚪",
-
-            # MCP 服务器 emoji 映射（基于服务器名）
-            "jina-mcp-server": "🌐",
-            "web-reader": "🌐",
-            "brave-search": "🌐",
-            "image": "🖼️",
-            "discord-bridge": "💬",
-            "memu": "🧠",
-            "cat-litter-monitor": "🐱",
-        }
+        # 从配置文件读取工具 emoji 映射
+        TOOL_EMOJIS = self.config.tool_emoji_mapping
 
         # 检查是否是 MCP 工具
         is_mcp = tool_name.startswith('mcp__')
@@ -2687,7 +2631,12 @@ class DiscordBot(commands.Bot):
                 mcp_tool = parts[2]  # 获取工具名，如 save_memory
 
                 display_title = f"MCP {mcp_server}"
-                emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
+
+                # 优先检查完整的 MCP 工具名（mcp__服务器名__工具名）
+                emoji = TOOL_EMOJIS.get(tool_name)
+                # 如果没有找到完整工具名的映射，检查服务器名
+                if emoji is None:
+                    emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
 
                 # MCP 工具显示工具名
                 embed = discord.Embed(
