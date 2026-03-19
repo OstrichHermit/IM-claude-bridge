@@ -2696,8 +2696,8 @@ class DiscordBot(commands.Bot):
             elif tool_name == 'Bash':
                 # Bash: 显示命令（截断）
                 cmd = tool_input.get('command', '')
-                if len(cmd) > 200:
-                    cmd = cmd[:197] + "..."
+                if len(cmd) > 100:
+                    cmd = cmd[:97] + "..."
                 display_value = cmd
             elif tool_name == 'WebSearch':
                 # WebSearch: 显示 query
