@@ -34,7 +34,8 @@ from mcp_server.tools.scheduler import (
     list_cron as _list_cron_impl,
     delete_cron as _delete_cron_impl,
     toggle_cron as _toggle_cron_impl,
-    get_cron_info as _get_cron_info_impl
+    get_cron_info as _get_cron_info_impl,
+    update_cron as _update_cron_impl
 )
 from mcp_server.tools.time import (
     get_current_time as _get_current_time_impl
@@ -311,6 +312,75 @@ async def get_cron_info(job_id: str) -> str:
 
 
 @mcp.tool
+async def update_cron(
+    job_id: str,
+    cron_expr: Optional[str] = None,
+    content: Optional[str] = None,
+    description: Optional[str] = None,
+    repeat: Optional[bool] = None,
+    enabled: Optional[bool] = None
+) -> str:
+    """
+    更新定时任务
+
+    更新指定定时任务的部分或全部字段。只修改提供的参数，未提供的参数保持不变。
+
+    Args:
+        job_id: 任务 ID（必需），8 位字符
+        cron_expr: cron 表达式（可选），格式：分 时 日 月 周
+        content: 任务内容/提示词（可选），任务执行时发送给 Claude 的内容
+        description: 任务描述（可选），用于识别任务
+        repeat: 是否重复执行（可选），true 重复，false 一次性
+        enabled: 是否启用（可选），true 启用，false 禁用
+
+    Returns:
+        JSON 格式的更新结果
+
+    Examples:
+        # 只修改执行时间
+        await update_cron(job_id="a1b2c3d4", cron_expr="0 10 * * *")
+
+        # 修改内容和描述
+        await update_cron(
+            job_id="a1b2c3d4",
+            content="新的提醒内容",
+            description="更新后的任务"
+        )
+
+        # 修改为一次性任务并禁用
+        await update_cron(
+            job_id="a1b2c3d4",
+            repeat=False,
+            enabled=False
+        )
+
+        # 同时修改多个字段
+        await update_cron(
+            job_id="a1b2c3d4",
+            cron_expr="*/30 * * * *",
+            content="每30分钟提醒",
+            description="频繁提醒",
+            repeat=True
+        )
+
+    Note:
+        - 至少需要提供一个要修改的参数
+        - 未提供的参数保持原值不变
+        - 修改 cron_expr 会重新调度任务
+        - 修改 enabled 会立即生效（需要 Bot 重新加载）
+        - 修改 repeat 会影响任务执行后的行为
+    """
+    return await _update_cron_impl(
+        job_id=job_id,
+        cron_expr=cron_expr,
+        content=content,
+        description=description,
+        repeat=repeat,
+        enabled=enabled
+    )
+
+
+@mcp.tool
 async def get_current_time(timezone: str = "Asia/Taipei") -> str:
     """
     获取当前时间
@@ -392,7 +462,8 @@ def run_server(
     print("    5. delete_cron                  - 删除定时任务")
     print("    6. toggle_cron                  - 启用/禁用定时任务")
     print("    7. get_cron_info                - 获取定时任务详情")
-    print("    8. get_current_time             - 获取当前时间（支持多时区）")
+    print("    8. update_cron                  - 更新定时任务")
+    print("    9. get_current_time             - 获取当前时间（支持多时区）")
     print()
     print("  架构说明:")
     print("    - MCP Server 通过消息队列与 Discord Bot 通信")
