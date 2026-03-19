@@ -2603,6 +2603,15 @@ class DiscordBot(commands.Bot):
             tool_input: 工具参数
             channel_id: Discord 频道 ID
         """
+        # 过滤管理命令的工具调用通知（避免噪音）
+        if tool_name == "Bash" and tool_input.get("command"):
+            command = tool_input["command"]
+            # 检查是否是管理相关的命令
+            management_keywords = ["restart.bat", "manager.py", "restart", "shutdown", "stop"]
+            if any(keyword in command.lower() for keyword in management_keywords):
+                # 这是管理命令，不发送通知
+                return
+
         # 工具 emoji 映射
         TOOL_EMOJIS = {
             # 文件操作
