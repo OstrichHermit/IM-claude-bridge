@@ -2535,7 +2535,7 @@ class DiscordBot(commands.Bot):
 
                 # 查询有 tool_uses 且状态为 ai_started 或 processing 的消息
                 cursor.execute("""
-                    SELECT id, discord_channel_id, tool_uses
+                    SELECT id, discord_channel_id, discord_user_id, tool_uses
                     FROM messages
                     WHERE status IN ('ai_started', 'processing')
                       AND tool_uses IS NOT NULL
@@ -2545,7 +2545,7 @@ class DiscordBot(commands.Bot):
                 rows = cursor.fetchall()
                 conn.close()
 
-                for msg_id, channel_id, tool_uses_json in rows:
+                for msg_id, channel_id, user_id, tool_uses_json in rows:
                     try:
                         tool_uses = json.loads(tool_uses_json)
 
@@ -2563,7 +2563,8 @@ class DiscordBot(commands.Bot):
                                 await self._send_tool_use_notification(
                                     tool_use['name'],
                                     tool_use['input'],
-                                    channel_id
+                                    channel_id,
+                                    user_id
                                 )
 
                             # 更新已处理的数量
@@ -2595,13 +2596,14 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
-    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int):
+    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int, user_id: int):
         """发送工具调用通知
 
         Args:
             tool_name: 工具名称
             tool_input: 工具参数
-            channel_id: Discord 频道 ID
+            channel_id: Discord 频道/私聊 ID
+            user_id: Discord 用户 ID
         """
         # 过滤管理命令的工具调用通知（避免噪音）
         if tool_name == "Bash" and tool_input.get("command"):
@@ -2882,9 +2884,21 @@ class DiscordBot(commands.Bot):
 
         # 发送到 Discord
         try:
-            channel = self.get_channel(channel_id)
-            if channel:
-                await channel.send(embed=embed)
+            # 判断是频道还是私聊
+            # 如果 channel_id 和 user_id 相同，说明是私聊
+            if channel_id == user_id:
+                # 私聊：获取用户对象并发送消息
+                user = self.get_user(user_id)
+                if not user:
+                    user = await self.fetch_user(user_id)
+                if user:
+                    target_channel = await user.create_dm()
+                    await target_channel.send(embed=embed)
+            else:
+                # 频道：获取频道对象并发送消息
+                channel = self.get_channel(channel_id)
+                if channel:
+                    await channel.send(embed=embed)
         except Exception as e:
             pass  # 静默失败，避免刷屏
 
