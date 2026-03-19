@@ -119,7 +119,6 @@ class SessionWorker:
             是否处理成功
         """
         self.current_message_id = message.id
-        print(f"[Worker {self.session_key}] [消息 #{message.id}] 开始处理: {message.content[:50]}...")
 
         # ========== 检查消息标签，决定会话模式 ==========
         use_temp_session = False
@@ -131,9 +130,6 @@ class SessionWorker:
             temp_session_key = f"temp_{message.id}"
             temp_session_id = str(uuid.uuid4())
             use_temp_session = True
-            print(f"[消息 #{message.id}] 检测到特殊标签 '{message.tag}'，使用临时会话模式")
-            print(f"[消息 #{message.id}] 临时 Session Key: {temp_session_key}")
-            print(f"[消息 #{message.id}] 临时 Session ID: {temp_session_id}")
 
         # 获取或创建会话工作目录
         if use_temp_session:
@@ -154,18 +150,8 @@ class SessionWorker:
                 session_mode=self.config.session_mode
             )
 
-        if session_key:
-            print(f"[消息 #{message.id}] ========== 会话信息 ==========")
-            print(f"[消息 #{message.id}] 会话 Key: {session_key}")
-            print(f"[消息 #{message.id}] 会话 ID: {session_id}")
-            print(f"[消息 #{message.id}] 会话已创建: {session_created}")
-            print(f"[消息 #{message.id}] CLI 调用模式: {'--session-id (首次)' if use_temp_session else '-r (续会)'}")
-            print(f"[消息 #{message.id}] 工作目录: {working_dir}")
-            print(f"[消息 #{message.id}] ===============================")
-
         # 先更新状态为 PROCESSING
         self.message_queue.update_status(message.id, MessageStatus.PROCESSING)
-        print(f"[消息 #{message.id}] 已更新状态为 PROCESSING")
 
         try:
             # 调用 Claude Code CLI
@@ -250,10 +236,8 @@ class SessionWorker:
         # 构建提示词
         if message_tag == MessageTag.TASK.value:
             prompt = self._build_task_prompt(prompt, username, user_id, is_dm, channel_id)
-            print(f"[消息标签] 使用任务消息结构")
         elif message_tag == MessageTag.REMINDER.value:
             prompt = self._build_reminder_prompt(prompt, username, user_id, is_dm, channel_id)
-            print(f"[消息标签] 使用提醒消息结构")
         else:
             sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments)
 
@@ -264,9 +248,6 @@ class SessionWorker:
 
         while retries < max_attempts:
             try:
-                print(f"🤖 [Worker {self.session_key}] 调用 Claude Code CLI (尝试 {retries + 1}/{max_attempts})...")
-                print(f"📝 提示词: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-
                 # 构建命令参数
                 cmd_args = ['-p']
                 cmd_args.append('--verbose')
@@ -292,11 +273,9 @@ class SessionWorker:
 
                 if current_session_created:
                     cmd_args.extend(['-r', session_id])
-                    print(f"🔄 [续会模式] 使用 -r {session_id} 继续会话")
                 else:
                     if session_id:
                         cmd_args.extend(['--session-id', session_id])
-                        print(f"🆕 [首次模式] 使用 --session-id {session_id} 创建新会话")
                     else:
                         print(f"⚠️  警告：session_id 为空，将使用 Claude 默认会话")
 
@@ -325,7 +304,6 @@ class SessionWorker:
                     while True:
                         # 检查是否收到中止信号
                         if message_id and self.message_queue.is_aborting(message_id):
-                            print(f"🛑 [消息 #{message_id}] 检测到中止请求，正在终止进程...")
                             aborted = True
                             break
 
@@ -368,9 +346,32 @@ class SessionWorker:
 
                                     if not session_created and session_key:
                                         self.message_queue.mark_session_created(session_key)
-                                        print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
 
                                     ai_started_notified = True
+
+                                elif data.get('type') == 'user' and message_id:
+                                    # 工具执行结果
+                                    message_data = data.get('message', {})
+                                    if message_data.get('content'):
+                                        for content_item in message_data['content']:
+                                            if content_item.get('type') == 'tool_result':
+                                                tool_use_id = content_item.get('tool_use_id', '')
+                                                result = content_item.get('content', '')
+                                                is_error = content_item.get('is_error', False)
+
+                                                # 查找对应的工具调用索引
+                                                tool_uses = self.message_queue.get_tool_uses(message_id)
+
+                                                tool_use_index = None
+                                                for i, tool_use in enumerate(tool_uses):
+                                                    if tool_use.get('id') == tool_use_id:
+                                                        tool_use_index = i
+                                                        break
+
+                                                # 如果找到了对应的工具调用，保存结果
+                                                if tool_use_index is not None:
+                                                    success = not is_error
+                                                    self.message_queue.save_tool_use_result(message_id, tool_use_index, success)
 
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
@@ -392,8 +393,8 @@ class SessionWorker:
                                                 tool_input = content_item.get('input', {})
                                                 tool_id = content_item.get('id', '')
 
-                                                # 保存到数据库
-                                                self.message_queue.add_tool_use(message_id, tool_name, tool_input)
+                                                # 保存到数据库并获取索引（包含 tool_use_id）
+                                                tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
                             except json.JSONDecodeError:
                                 pass
@@ -411,9 +412,32 @@ class SessionWorker:
 
                                     if not session_created and session_key:
                                         self.message_queue.mark_session_created(session_key)
-                                        print(f"✅ [消息 #{message_id}] 会话已在 AI 开始工作时标记为创建")
 
                                     ai_started_notified = True
+
+                                elif data.get('type') == 'user' and message_id:
+                                    # 工具执行结果
+                                    message_data = data.get('message', {})
+                                    if message_data.get('content'):
+                                        for content_item in message_data['content']:
+                                            if content_item.get('type') == 'tool_result':
+                                                tool_use_id = content_item.get('tool_use_id', '')
+                                                result = content_item.get('content', '')
+                                                is_error = content_item.get('is_error', False)
+
+                                                # 查找对应的工具调用索引
+                                                tool_uses = self.message_queue.get_tool_uses(message_id)
+
+                                                tool_use_index = None
+                                                for i, tool_use in enumerate(tool_uses):
+                                                    if tool_use.get('id') == tool_use_id:
+                                                        tool_use_index = i
+                                                        break
+
+                                                # 如果找到了对应的工具调用，保存结果
+                                                if tool_use_index is not None:
+                                                    success = not is_error
+                                                    self.message_queue.save_tool_use_result(message_id, tool_use_index, success)
 
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
@@ -435,14 +459,13 @@ class SessionWorker:
                                                 tool_input = content_item.get('input', {})
                                                 tool_id = content_item.get('id', '')
 
-                                                # 保存到数据库
-                                                self.message_queue.add_tool_use(message_id, tool_name, tool_input)
+                                                # 保存到数据库并获取索引（包含 tool_use_id）
+                                                tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
 
                     if aborted:
-                        print(f"🛑 [消息 #{message_id}] 正在中止进程...")
                         process.terminate()
                         try:
                             returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
@@ -461,7 +484,6 @@ class SessionWorker:
                                 MessageStatus.COMPLETED,
                                 response=abort_msg
                             )
-                            print(f"✅ [消息 #{message_id}] 已更新消息状态为 COMPLETED（中止）")
 
                         return partial_response if partial_response else "(响应被用户中止)"
 

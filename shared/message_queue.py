@@ -233,6 +233,45 @@ class MessageQueue:
             ON messages(last_stream_update)
         """)
 
+        # 创建工具调用卡片引用表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tool_use_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                tool_use_index INTEGER NOT NULL,
+                discord_message_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                is_dm BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(message_id, tool_use_index)
+            )
+        """)
+
+        # 创建索引以提高查询性能
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tool_use_message_id
+            ON tool_use_messages(message_id)
+        """)
+
+        # 创建工具执行结果状态表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tool_use_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                tool_use_index INTEGER NOT NULL,
+                success BOOLEAN NOT NULL,
+                processed BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(message_id, tool_use_index)
+            )
+        """)
+
+        # 创建索引以提高查询性能
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tool_use_results_processed
+            ON tool_use_results(processed)
+        """)
+
         # 创建会话表
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
@@ -609,13 +648,17 @@ class MessageQueue:
         conn.commit()
         conn.close()
 
-    def add_tool_use(self, message_id: int, tool_name: str, tool_input: dict):
+    def add_tool_use(self, message_id: int, tool_name: str, tool_input: dict, tool_use_id: str = None) -> int:
         """添加工具调用信息
 
         Args:
             message_id: 消息 ID
             tool_name: 工具名称
             tool_input: 工具参数
+            tool_use_id: 工具调用 ID（可选）
+
+        Returns:
+            工具调用的索引（从 0 开始）
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -631,11 +674,18 @@ class MessageQueue:
             except json.JSONDecodeError:
                 tool_uses = []
 
+        # 获取当前索引（即添加后的索引）
+        tool_use_index = len(tool_uses)
+
         # 添加新的工具调用
-        tool_uses.append({
+        tool_use_data = {
             "name": tool_name,
             "input": tool_input
-        })
+        }
+        if tool_use_id:
+            tool_use_data["id"] = tool_use_id
+
+        tool_uses.append(tool_use_data)
 
         # 更新数据库
         now = datetime.now().isoformat()
@@ -647,6 +697,8 @@ class MessageQueue:
 
         conn.commit()
         conn.close()
+
+        return tool_use_index
 
     def get_tool_uses(self, message_id: int) -> list:
         """获取消息的所有工具调用
@@ -671,6 +723,129 @@ class MessageQueue:
                 return []
 
         return []
+
+    def save_tool_use_message_ref(self, message_id: int, tool_use_index: int, discord_message_id: int, channel_id: int, is_dm: bool):
+        """保存工具调用卡片的 Discord 消息引用
+
+        Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
+            discord_message_id: Discord 消息 ID
+            channel_id: Discord 频道/私聊 ID
+            is_dm: 是否为私聊
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT OR REPLACE INTO tool_use_messages
+            (message_id, tool_use_index, discord_message_id, channel_id, is_dm, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (message_id, tool_use_index, discord_message_id, channel_id, 1 if is_dm else 0, now))
+
+        conn.commit()
+        conn.close()
+
+    def get_tool_use_message_ref(self, message_id: int, tool_use_index: int) -> Optional[dict]:
+        """获取工具调用卡片的 Discord 消息引用
+
+        Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
+
+        Returns:
+            包含 discord_message_id, channel_id, is_dm 的字典，如果不存在则返回 None
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT discord_message_id, channel_id, is_dm
+            FROM tool_use_messages
+            WHERE message_id = ? AND tool_use_index = ?
+        """, (message_id, tool_use_index))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                "discord_message_id": row[0],
+                "channel_id": row[1],
+                "is_dm": bool(row[2])
+            }
+
+        return None
+
+    def save_tool_use_result(self, message_id: int, tool_use_index: int, success: bool):
+        """保存工具执行结果
+
+        Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
+            success: 工具执行是否成功
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT OR REPLACE INTO tool_use_results
+            (message_id, tool_use_index, success, processed, created_at)
+            VALUES (?, ?, ?, 0, ?)
+        """, (message_id, tool_use_index, 1 if success else 0, now))
+
+        conn.commit()
+        conn.close()
+
+    def get_pending_tool_use_results(self) -> List[dict]:
+        """获取待处理的工具执行结果
+
+        Returns:
+            待处理的工具执行结果列表
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT message_id, tool_use_index, success
+            FROM tool_use_results
+            WHERE processed = 0
+            ORDER BY created_at ASC
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for row in rows:
+            results.append({
+                "message_id": row[0],
+                "tool_use_index": row[1],
+                "success": bool(row[2])
+            })
+
+        return results
+
+    def mark_tool_use_result_processed(self, message_id: int, tool_use_index: int):
+        """标记工具执行结果为已处理
+
+        Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE tool_use_results
+            SET processed = 1
+            WHERE message_id = ? AND tool_use_index = ?
+        """, (message_id, tool_use_index))
+
+        conn.commit()
+        conn.close()
 
     def request_abort(self, message_id: int) -> bool:
         """请求中止消息处理
