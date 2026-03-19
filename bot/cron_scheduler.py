@@ -73,8 +73,13 @@ class BotCronScheduler:
             print(f"⚠️  加载定时任务失败: {e}")
             self.tasks = {}
 
-    async def _schedule_job(self, job: dict):
-        """调度单个任务"""
+    async def _schedule_job(self, job: dict, silent: bool = False):
+        """调度单个任务
+
+        Args:
+            job: 任务字典
+            silent: 是否静默模式（不输出调度信息）
+        """
         try:
             job_id = job['id']
             cron_expr = job['cron_expr']
@@ -95,7 +100,8 @@ class BotCronScheduler:
                 id=job_id,
                 args=[job_id]
             )
-            print(f"✓ 任务已调度: {job_id} ({cron_expr})")
+            if not silent:
+                print(f"✓ 任务已调度: {job_id} ({cron_expr})")
         except Exception as e:
             print(f"⚠️  调度任务失败 {job.get('id')}: {e}")
 
@@ -174,7 +180,11 @@ tag={job.get('tag', 'task')}
             print(f"⚠️  保存定时任务失败: {e}")
 
     async def reload_tasks(self):
-        """重新加载任务文件（检测变化）"""
+        """重新加载任务文件（检测变化）
+
+        Returns:
+            bool: 是否有变化
+        """
         old_task_ids = set(self.tasks.keys())
         self._load_tasks()
         new_task_ids = set(self.tasks.keys())
@@ -190,15 +200,17 @@ tag={job.get('tag', 'task')}
         # 检测删除任务
         removed = old_task_ids - new_task_ids
         for job_id in removed:
-            if job_id in self.scheduler:
+            if self.scheduler.get_job(job_id):
                 self.scheduler.remove_job(job_id)
                 print(f"✓ 检测到任务删除: {job_id}")
 
-        # 检测修改的任务（简单方式：重新调度所有任务）
-        for job_id in self.tasks.keys():
-            job = self.tasks[job_id]
-            if job.get('enabled', True):
-                await self._schedule_job(job)
+        # 只在有变化时重新调度（使用静默模式避免重复输出）
+        if added or removed:
+            # 重新调度所有任务以应用变化
+            for job_id in self.tasks.keys():
+                job = self.tasks[job_id]
+                if job.get('enabled', True):
+                    await self._schedule_job(job, silent=True)
 
         return len(added) + len(removed) > 0
 
