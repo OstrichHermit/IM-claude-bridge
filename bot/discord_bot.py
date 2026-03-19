@@ -101,6 +101,9 @@ class DiscordBot(commands.Bot):
         # 🔥 启动工具调用通知检查任务
         self.tool_use_check_task = asyncio.create_task(self.check_tool_uses())
 
+        # 🔥 启动工具执行结果检查任务
+        self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
+
         # ⏰ 启动定时任务调度器
         try:
             tasks_file = Path(__file__).parent.parent / "shared" / "cron_jobs.json"
@@ -2561,6 +2564,8 @@ class DiscordBot(commands.Bot):
                             for i in range(last_processed_count, len(tool_uses)):
                                 tool_use = tool_uses[i]
                                 await self._send_tool_use_notification(
+                                    msg_id,
+                                    i,
                                     tool_use['name'],
                                     tool_use['input'],
                                     channel_id,
@@ -2571,7 +2576,8 @@ class DiscordBot(commands.Bot):
                             # 更新已处理的数量
                             processed_tool_uses[msg_id] = list(range(len(tool_uses)))
 
-                    except (json.JSONDecodeError, KeyError):
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"❌ [Bot] 解析工具调用失败: {e}")
                         pass
 
                 # 清理已完成消息的记录
@@ -2597,10 +2603,12 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
-    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int, user_id: int, is_dm: bool):
+    async def _send_tool_use_notification(self, message_id: int, tool_use_index: int, tool_name: str, tool_input: dict, channel_id: int, user_id: int, is_dm: bool):
         """发送工具调用通知
 
         Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
             tool_name: 工具名称
             tool_input: 工具参数
             channel_id: Discord 频道/私聊 ID
@@ -2640,16 +2648,16 @@ class DiscordBot(commands.Bot):
 
                 # MCP 工具显示工具名
                 embed = discord.Embed(
-                    title=f"{emoji} {display_title}",
-                    color=discord.Color.green()
+                    title=f"🔄 {emoji} {display_title}",
+                    color=discord.Color.blue()
                 )
                 embed.description = mcp_tool
             else:
                 # 格式异常，按普通工具处理
                 emoji = TOOL_EMOJIS.get(tool_name, "🔧")
                 embed = discord.Embed(
-                    title=f"{emoji} {tool_name}",
-                    color=discord.Color.green()
+                    title=f"🔄 {emoji} {tool_name}",
+                    color=discord.Color.blue()
                 )
                 embed.description = "无参数"
         else:
@@ -2658,8 +2666,8 @@ class DiscordBot(commands.Bot):
 
             # 构建 Embed
             embed = discord.Embed(
-                title=f"{emoji} {tool_name}",
-                color=discord.Color.green()
+                title=f"🔄 {emoji} {tool_name}",
+                color=discord.Color.blue()
             )
 
             # 智能显示参数（为每个工具定制显示内容）
@@ -2835,6 +2843,7 @@ class DiscordBot(commands.Bot):
 
         # 发送到 Discord
         try:
+            sent_message = None
             if is_dm:
                 # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
                 user = self.get_user(user_id)
@@ -2842,14 +2851,118 @@ class DiscordBot(commands.Bot):
                     user = await self.fetch_user(user_id)
                 if user:
                     dm_channel = await user.create_dm()
-                    await dm_channel.send(embed=embed)
+                    sent_message = await dm_channel.send(embed=embed)
             else:
                 # 频道：直接通过 channel_id 获取
                 channel = self.get_channel(channel_id)
                 if channel:
-                    await channel.send(embed=embed)
+                    sent_message = await channel.send(embed=embed)
+
+            # 保存 Discord 消息引用
+            if sent_message:
+                self.message_queue.save_tool_use_message_ref(
+                    message_id,
+                    tool_use_index,
+                    sent_message.id,
+                    channel_id,
+                    is_dm
+                )
+            else:
+                print(f"⚠️ [Bot] 发送卡片失败: 消息 #{message_id}, 工具 #{tool_use_index}, sent_message 为 None")
+        except Exception as e:
+            print(f"❌ [Bot] 发送卡片异常: 消息 #{message_id}, 工具 #{tool_use_index}, 错误: {e}")
+            pass  # 静默失败，避免刷屏
+
+    async def _update_tool_use_card(self, message_id: int, tool_use_index: int, success: bool):
+        """更新工具调用卡片的状态
+
+        Args:
+            message_id: 消息 ID
+            tool_use_index: 工具调用索引
+            success: 工具执行是否成功
+        """
+        # 获取保存的消息引用，带重试机制（最多10次，每次间隔1秒）
+        max_retries = 10
+        ref = None
+
+        for retry in range(max_retries):
+            ref = self.message_queue.get_tool_use_message_ref(message_id, tool_use_index)
+            if ref:
+                break
+
+            if retry < max_retries - 1:  # 不是最后一次重试
+                await asyncio.sleep(1)  # 等待1秒后重试
+            else:
+                print(f"❌ [Bot] 未找到卡片引用: 消息 #{message_id}, 工具 #{tool_use_index}，已达最大重试次数")
+                return  # 达到最大重试次数，放弃
+
+        try:
+            # 获取原消息
+            if ref['is_dm']:
+                user = self.get_user(ref['channel_id'])
+                if not user:
+                    user = await self.fetch_user(ref['channel_id'])
+                if not user:
+                    return
+                dm_channel = await user.create_dm()
+                message = await dm_channel.fetch_message(ref['discord_message_id'])
+            else:
+                channel = self.get_channel(ref['channel_id'])
+                if not channel:
+                    return
+                message = await channel.fetch_message(ref['discord_message_id'])
+
+            if not message or not message.embeds:
+                return
+
+            # 获取原 embed
+            embed = message.embeds[0]
+
+            # 更新标题：将 🔄 替换为 ✅ 或 ❌
+            old_title = embed.title
+            if old_title:
+                new_title = old_title.replace('🔄', '✅' if success else '❌', 1)
+
+                # 更新 embed
+                embed.title = new_title
+
+                # 更新颜色
+                embed.color = discord.Color.green() if success else discord.Color.red()
+
+                # 编辑消息
+                await message.edit(embed=embed)
+
         except Exception as e:
             pass  # 静默失败，避免刷屏
+
+    async def check_tool_use_results(self):
+        """定期检查工具执行结果并更新卡片"""
+        await self.wait_until_ready()
+
+        while not self.is_closed():
+            try:
+                # 获取待处理的工具执行结果
+                pending_results = self.message_queue.get_pending_tool_use_results()
+
+                for result in pending_results:
+                    message_id = result['message_id']
+                    tool_use_index = result['tool_use_index']
+                    success = result['success']
+
+                    # 更新工具调用卡片
+                    await self._update_tool_use_card(message_id, tool_use_index, success)
+
+                    # 标记为已处理
+                    self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
+
+                # 等待一段时间再检查（1秒）
+                await asyncio.sleep(1)
+
+            except Exception as e:
+                print(f"❌ 检查工具执行结果时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
 
 
 def main():
