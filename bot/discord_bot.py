@@ -2776,9 +2776,55 @@ class DiscordBot(commands.Bot):
 
                 display_value = '\n'.join(question_lines)
             elif tool_name == 'TodoWrite':
-                # TodoWrite: 显示任务数量
+                # TodoWrite: 显示任务列表和进度
                 todos = tool_input.get('todos', [])
-                display_value = f"{len(todos)} 个任务"
+
+                if not todos:
+                    display_value = "无任务"
+                else:
+                    # 统计各状态任务数量
+                    status_counts = {'pending': 0, 'in_progress': 0, 'completed': 0}
+                    for todo in todos:
+                        status = todo.get('status', 'pending')
+                        if status in status_counts:
+                            status_counts[status] += 1
+
+                    # 构建任务列表
+                    todo_lines = []
+
+                    # 显示当前正在进行的任务（如果有）
+                    in_progress_tasks = [t for t in todos if t.get('status') == 'in_progress']
+                    if in_progress_tasks:
+                        todo_lines.append("🔄 正在进行:")
+                        for todo in in_progress_tasks:
+                            active_form = todo.get('activeForm', todo.get('content', ''))
+                            todo_lines.append(f"  • {active_form}")
+                        todo_lines.append("")
+
+                    # 显示待办任务
+                    pending_tasks = [t for t in todos if t.get('status') == 'pending']
+                    if pending_tasks:
+                        todo_lines.append("📋 待办:")
+                        for todo in pending_tasks[:3]:  # 最多显示3个
+                            content = todo.get('content', '')
+                            todo_lines.append(f"  • {content}")
+                        if len(pending_tasks) > 3:
+                            todo_lines.append(f"  ... 还有 {len(pending_tasks) - 3} 个任务")
+                        todo_lines.append("")
+
+                    # 显示已完成任务数量
+                    if status_counts['completed'] > 0:
+                        todo_lines.append(f"✅ 已完成: {status_counts['completed']} 个")
+
+                    # 添加进度统计
+                    total = len(todos)
+                    completed = status_counts['completed']
+                    if completed > 0:
+                        todo_lines.append(f"\n进度: {completed}/{total} ({completed*100//total}%)")
+                    else:
+                        todo_lines.append(f"\n总任务: {total} 个")
+
+                    display_value = '\n'.join(todo_lines)
             elif tool_name == 'CronCreate':
                 # CronCreate: 显示 cron 表达式
                 display_value = tool_input.get('cron', '无 cron')
