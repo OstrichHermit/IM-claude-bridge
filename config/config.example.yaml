@@ -109,3 +109,10 @@ direct_reply:
 tool_use_notification:
   # 是否启用工具调用通知（以 Embed 卡片形式转发工具调用信息）
   enabled: true
+
+# 定时任务调度器配置
+cron_scheduler:
+  # 是否启用定时任务调度器
+  enabled: true
+  # 定时任务存储路径（JSON 文件）
+  storage_path: "./shared/cron_jobs.json"

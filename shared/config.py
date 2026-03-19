@@ -204,3 +204,18 @@ class Config:
     def tool_use_notification_enabled(self) -> bool:
         """获取是否启用工具调用通知"""
         return self._config.get('tool_use_notification', {}).get('enabled', False)
+
+    @property
+    def cron_enabled(self) -> bool:
+        """获取是否启用定时任务调度器"""
+        return self._config.get('cron_scheduler', {}).get('enabled', True)
+
+    @property
+    def cron_storage_path(self) -> str:
+        """获取定时任务存储路径"""
+        storage_path = self._config.get('cron_scheduler', {}).get('storage_path', './shared/cron_jobs.json')
+        # 转换为绝对路径
+        if not os.path.isabs(storage_path):
+            project_root = Path(__file__).parent.parent
+            storage_path = project_root / storage_path
+        return str(storage_path)

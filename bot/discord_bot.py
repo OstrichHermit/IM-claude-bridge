@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, AttachmentInfo
+from bot.cron_scheduler import BotCronScheduler
 
 
 class DiscordBot(commands.Bot):
@@ -42,6 +43,10 @@ class DiscordBot(commands.Bot):
         self.message_request_check_task = None  # 新增：消息发送请求检查任务
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
         self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
+
+        # ⏰ 定时任务调度器
+        self.cron_scheduler = None
+        self.cron_scan_task = None
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
@@ -95,6 +100,18 @@ class DiscordBot(commands.Bot):
 
         # 🔥 启动工具调用通知检查任务
         self.tool_use_check_task = asyncio.create_task(self.check_tool_uses())
+
+        # ⏰ 启动定时任务调度器
+        try:
+            tasks_file = Path(__file__).parent.parent / "shared" / "cron_jobs.json"
+            self.cron_scheduler = BotCronScheduler(str(tasks_file))
+            await self.cron_scheduler.start()
+
+            # 启动任务文件扫描任务
+            self.cron_scan_task = asyncio.create_task(self.cron_scheduler.scan_loop())
+        except Exception as e:
+            print(f"⚠️  定时任务调度器启动失败: {e}")
+            self.cron_scheduler = None
 
     async def cleanup_stuck_messages(self):
         """清理上次崩溃时卡住的消息"""
@@ -2282,6 +2299,12 @@ class DiscordBot(commands.Bot):
             self.message_request_check_task.cancel()
         if hasattr(self, 'tool_use_check_task') and self.tool_use_check_task:
             self.tool_use_check_task.cancel()
+
+        # ⏰ 停止定时任务调度器
+        if self.cron_scheduler:
+            await self.cron_scheduler.stop()
+        if self.cron_scan_task:
+            self.cron_scan_task.cancel()
 
     async def _maintain_typing_indicator(self, channel):
         """

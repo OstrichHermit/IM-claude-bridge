@@ -15,6 +15,7 @@ Discord Bridge MCP Server - 基于消息队列的架构
         ↓ (Discord API)
     Discord 用户/频道
 """
+import asyncio
 import sys
 from pathlib import Path
 from typing import Optional
@@ -27,6 +28,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from mcp_server.tools import (
     _send_file_to_discord,
     _send_multiple_files_to_discord
+)
+from mcp_server.tools.scheduler import (
+    add_cron,
+    list_cron,
+    delete_cron,
+    toggle_cron,
+    get_cron_info
 )
 
 
@@ -126,6 +134,179 @@ async def send_multiple_files_to_discord(
     )
 
 
+@mcp.tool
+async def add_cron(
+    cron_expr: str,
+    content: str,
+    username: str,
+    user_id: Optional[str] = None,
+    channel_id: Optional[str] = None,
+    tag: str = "task",
+    description: str = "",
+    repeat: bool = True
+) -> str:
+    """
+    添加定时任务
+
+    创建一个新的定时任务，按照 cron 表达式定时执行。
+
+    Args:
+        cron_expr: cron 表达式（必需），格式：分 时 日 月 周，例如 "0 9 * * *" 表示每天早上 9 点
+        content: 任务内容/提示词（必需），任务执行时发送给 Claude 的内容
+        username: 用户名（必需），任务关联的用户
+        user_id: Discord 用户 ID（可选），私聊模式时使用
+        channel_id: Discord 频道 ID（可选），频道模式时使用
+        tag: 任务标签（可选），默认 "task"，可选值："task"（任务类）、"reminder"（提醒类）
+        description: 任务描述（可选），用于识别任务
+        repeat: 是否重复执行（可选），默认 true，false 表示一次性任务（执行后自动禁用）
+
+    Returns:
+        JSON 格式的创建结果，包含任务 ID
+
+    Examples:
+        # 每天早上 9 点发送报告（循环任务）
+        add_cron(
+            cron_expr="0 9 * * *",
+            content="发送今日报告",
+            username="鸵鸟居士",
+            user_id="USER_DISCORD_ID",
+            tag="task",
+            description="每日报告"
+        )
+
+        # 2小时后提醒开会（一次性任务）
+        add_cron(
+            cron_expr="0 20 * * *",
+            content="该开会啦",
+            username="鸵鸟居士",
+            user_id="USER_DISCORD_ID",
+            tag="reminder",
+            description="会议提醒",
+            repeat=False
+        )
+
+        # 每小时提醒喝水（循环任务）
+        add_cron(
+            cron_expr="0 * * * *",
+            content="该喝水了！",
+            username="鸵鸟居士",
+            user_id="USER_DISCORD_ID",
+            tag="reminder"
+        )
+
+    Note:
+        - user_id 和 channel_id 必须指定其中一个
+        - cron 表达式格式：分 时 日 月 周
+        - 支持 cron 标准语法：* 表示任意，*/N 表示每 N，N-M 表示范围
+        - 任务会由 Discord Bot 读取并执行，确保 Bot 正在运行
+        - repeat=false 的任务执行一次后会自动禁用
+        - 常用示例：
+          * "0 9 * * *" - 每天早上 9 点
+          * "*/30 * * * *" - 每 30 分钟
+          * "0 */2 * * *" - 每 2 小时
+          * "0 9 * * 1-5" - 周一到周五早上 9 点
+    """
+    return await add_cron(
+        cron_expr=cron_expr,
+        content=content,
+        username=username,
+        user_id=user_id,
+        channel_id=channel_id,
+        tag=tag,
+        description=description,
+        repeat=repeat
+    )
+
+
+@mcp.tool
+async def list_cron() -> str:
+    """
+    列出所有定时任务
+
+    返回所有已创建的定时任务列表，包括启用和禁用的任务。
+
+    Returns:
+        JSON 格式的任务列表
+
+    Examples:
+        # 列出所有任务
+        result = await list_cron()
+    """
+    return await list_cron()
+
+
+@mcp.tool
+async def delete_cron(job_id: str) -> str:
+    """
+    删除定时任务
+
+    永久删除指定的定时任务，删除后无法恢复。
+
+    Args:
+        job_id: 任务 ID（必需），8 位字符
+
+    Returns:
+        JSON 格式的删除结果
+
+    Examples:
+        # 删除任务
+        await delete_cron(job_id="a1b2c3d4")
+
+    Note:
+        - 删除操作不可逆，请谨慎操作
+        - 如果任务 ID 不存在，会返回错误
+    """
+    return await delete_cron(job_id)
+
+
+@mcp.tool
+async def toggle_cron(job_id: str, enabled: bool) -> str:
+    """
+    启用/禁用定时任务
+
+    启用或禁用指定的定时任务，禁用后任务不会执行，但不会删除。
+
+    Args:
+        job_id: 任务 ID（必需），8 位字符
+        enabled: 是否启用（必需），true 启用，false 禁用
+
+    Returns:
+        JSON 格式的操作结果
+
+    Examples:
+        # 启用任务
+        await toggle_cron(job_id="a1b2c3d4", enabled=True)
+
+        # 禁用任务
+        await toggle_cron(job_id="a1b2c3d4", enabled=False)
+
+    Note:
+        - 禁用任务不会删除任务，可以重新启用
+        - 启用/禁用操作立即生效
+    """
+    return await toggle_cron(job_id, enabled)
+
+
+@mcp.tool
+async def get_cron_info(job_id: str) -> str:
+    """
+    获取定时任务详情
+
+    获取指定定时任务的详细信息，包括执行历史。
+
+    Args:
+        job_id: 任务 ID（必需），8 位字符
+
+    Returns:
+        JSON 格式的任务详情
+
+    Examples:
+        # 获取任务详情
+        info = await get_cron_info(job_id="a1b2c3d4")
+    """
+    return await get_cron_info(job_id)
+
+
 # ==================== 启动入口 ====================
 
 def run_server(
@@ -157,11 +338,17 @@ def run_server(
     print("  已注册的工具:")
     print("    1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
     print("    2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
+    print("    3. add_cron                     - 添加定时任务")
+    print("    4. list_cron                    - 列出所有定时任务")
+    print("    5. delete_cron                  - 删除定时任务")
+    print("    6. toggle_cron                  - 启用/禁用定时任务")
+    print("    7. get_cron_info                - 获取定时任务详情")
     print()
     print("  架构说明:")
     print("    - MCP Server 通过消息队列与 Discord Bot 通信")
     print("    - 无需创建新的 Discord 客户端")
     print("    - 需要确保 Discord Bot 正在运行")
+    print("    - 定时任务由 Discord Bot 调度执行")
     print("=" * 60)
     print()
 
