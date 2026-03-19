@@ -16,6 +16,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Real-time status feedback (received → processing → response)
 - ✅ Message tracking system (avoid duplicate processing)
 - ✅ Response modes: Embed mode (default, card-style) + Direct reply mode (streaming)
+- ✅ Tool use notification (forward tool calls as Embed cards)
 
 **File Transfer**
 - ✅ Send attachments with messages (auto download and pass attachment info)
@@ -53,13 +54,6 @@ D:/AgentWorkspace/                    # Workspace root
 # Copy scheduled task Skill (for creating scheduled tasks)
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
-
-**discord-bridge-maintenance Skill Features**:
-- 🔧 View system architecture and configuration
-- 📊 Monitor message queue and download status
-- 🐛 Quick troubleshooting (Bot not responding, download timeout, etc.)
-- 📝 View database records (messages, download requests)
-- 🔄 View pending task list
 
 **scheduler-task Skill Features** (scheduled reminders):
 - ⏰ Create and manage Windows scheduled tasks
@@ -303,6 +297,9 @@ direct_reply:
     stop_typing_after_first_block: false  # Stop typing after first message
     merge_short_blocks: true           # Merge short blocks
     short_block_max_length: 50         # Max length for short blocks (characters)
+
+tool_use_notification:
+  enabled: true                        # Enable tool use notification (forward as Embed cards)
 ```
 
 ## 🔧 Troubleshooting

@@ -104,3 +104,8 @@ direct_reply:
     max_retries: 3
     # 重试等待时间（秒）
     retry_delay: 5
+
+# 工具调用通知配置
+tool_use_notification:
+  # 是否启用工具调用通知（以 Embed 卡片形式转发工具调用信息）
+  enabled: true

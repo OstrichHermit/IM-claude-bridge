@@ -16,6 +16,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ 实时状态反馈（接收 → 处理 → 响应）
 - ✅ 消息追踪系统（避免重复处理）
 - ✅ 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
+- ✅ 工具调用通知（支持 Embed 卡片形式转发工具调用信息）
 
 **文件传输**
 - ✅ 发送消息时附带附件（自动下载并传入附件信息）
@@ -53,13 +54,6 @@ D:/AgentWorkspace/                    # 工作区根目录
 # 复制定时任务 Skill（用于创建定时任务）
 cp -r docs/skills/scheduler-task ~/.claude/skills/
 ```
-
-**discord-bridge-maintenance Skill 功能**：
-- 🔧 查看系统架构和配置说明
-- 📊 监控消息队列和下载状态
-- 🐛 快速故障排查（Bot 无响应、下载超时等）
-- 📝 查看数据库记录（消息、下载请求）
-- 🔄 查看待处理任务列表
 
 **scheduler-task Skill 功能**（定时提醒）：
 - ⏰ 创建和管理 Windows 计划任务
@@ -304,6 +298,9 @@ direct_reply:
     stop_typing_after_first_block: false  # 首条消息后是否停止 typing
     merge_short_blocks: true           # 是否合并短 block
     short_block_max_length: 50         # 短 block 最大长度（字符）
+
+tool_use_notification:
+  enabled: true                        # 是否启用工具调用通知（以 Embed 卡片形式转发）
 ```
 
 ## 🔧 故障排查
