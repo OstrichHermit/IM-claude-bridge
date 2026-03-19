@@ -80,7 +80,7 @@ class BotCronScheduler:
             cron_expr = job['cron_expr']
 
             # 移除旧的任务（如果存在）
-            if job_id in self.scheduler:
+            if self.scheduler.get_job(job_id):
                 self.scheduler.remove_job(job_id)
 
             # 如果任务未启用，不调度
