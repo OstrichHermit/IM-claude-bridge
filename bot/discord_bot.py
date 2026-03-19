@@ -2828,9 +2828,6 @@ class DiscordBot(commands.Bot):
                         todo_lines.append(f"总任务: {total} 个")
 
                     display_value = '\n'.join(todo_lines)
-                        todo_lines.append(f"\n总任务: {total} 个")
-
-                    display_value = '\n'.join(todo_lines)
             elif tool_name == 'CronCreate':
                 # CronCreate: 显示 cron 表达式
                 display_value = tool_input.get('cron', '无 cron')
