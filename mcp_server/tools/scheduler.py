@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 
-# 任务文件路径
-TASKS_FILE = Path(__file__).parent.parent / "shared" / "cron_jobs.json"
+# 任务文件路径（使用项目根目录的 shared）
+TASKS_FILE = Path(__file__).parent.parent.parent / "shared" / "cron_jobs.json"
 
 
 def _load_tasks() -> dict:
