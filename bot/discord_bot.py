@@ -2535,7 +2535,7 @@ class DiscordBot(commands.Bot):
 
                 # 查询有 tool_uses 且状态为 ai_started 或 processing 的消息
                 cursor.execute("""
-                    SELECT id, discord_channel_id, discord_user_id, tool_uses
+                    SELECT id, discord_channel_id, discord_user_id, tool_uses, is_dm
                     FROM messages
                     WHERE status IN ('ai_started', 'processing')
                       AND tool_uses IS NOT NULL
@@ -2545,7 +2545,7 @@ class DiscordBot(commands.Bot):
                 rows = cursor.fetchall()
                 conn.close()
 
-                for msg_id, channel_id, user_id, tool_uses_json in rows:
+                for msg_id, channel_id, user_id, tool_uses_json, is_dm in rows:
                     try:
                         tool_uses = json.loads(tool_uses_json)
 
@@ -2564,7 +2564,8 @@ class DiscordBot(commands.Bot):
                                     tool_use['name'],
                                     tool_use['input'],
                                     channel_id,
-                                    user_id
+                                    user_id,
+                                    is_dm
                                 )
 
                             # 更新已处理的数量
@@ -2596,7 +2597,7 @@ class DiscordBot(commands.Bot):
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
-    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int, user_id: int):
+    async def _send_tool_use_notification(self, tool_name: str, tool_input: dict, channel_id: int, user_id: int, is_dm: bool):
         """发送工具调用通知
 
         Args:
@@ -2604,6 +2605,7 @@ class DiscordBot(commands.Bot):
             tool_input: 工具参数
             channel_id: Discord 频道/私聊 ID
             user_id: Discord 用户 ID
+            is_dm: 是否为私聊
         """
         # 过滤管理命令的工具调用通知（避免噪音）
         if tool_name == "Bash" and tool_input.get("command"):
@@ -2884,11 +2886,19 @@ class DiscordBot(commands.Bot):
 
         # 发送到 Discord
         try:
-            # 直接使用 channel_id 获取频道/DM 对象并发送
-            # Discord 中无论是频道还是私聊，都可以通过 channel_id 获取并发送
-            channel = self.get_channel(channel_id)
-            if channel:
-                await channel.send(embed=embed)
+            if is_dm:
+                # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
+                user = self.get_user(user_id)
+                if not user:
+                    user = await self.fetch_user(user_id)
+                if user:
+                    dm_channel = await user.create_dm()
+                    await dm_channel.send(embed=embed)
+            else:
+                # 频道：直接通过 channel_id 获取
+                channel = self.get_channel(channel_id)
+                if channel:
+                    await channel.send(embed=embed)
         except Exception as e:
             pass  # 静默失败，避免刷屏
 
