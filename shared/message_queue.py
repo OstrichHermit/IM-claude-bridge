@@ -102,7 +102,7 @@ class FileRequest:
     file_paths: List[str]  # 文件路径列表（JSON 数组）
     user_id: Optional[int]  # Discord 用户 ID
     channel_id: Optional[int]  # Discord 频道 ID
-    status: str  # 请求状态
+    status: str = FileRequestStatus.PENDING.value  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
     error: Optional[str] = None  # 错误信息
     created_at: Optional[str] = None
@@ -1158,7 +1158,7 @@ class MessageQueue:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, file_paths, user_id, channel_id, use_embed,
+            SELECT id, file_paths, user_id, channel_id,
                    status, result, error, created_at, updated_at
             FROM file_requests
             WHERE status = ?
@@ -1175,12 +1175,11 @@ class MessageQueue:
                 file_paths=json.loads(row[1]),
                 user_id=row[2],
                 channel_id=row[3],
-                use_embed=bool(row[4]),
-                status=row[5],
-                result=row[6],
-                error=row[7],
-                created_at=row[8],
-                updated_at=row[9]
+                status=row[4],
+                result=row[5],
+                error=row[6],
+                created_at=row[7],
+                updated_at=row[8]
             )
         return None
 
@@ -1233,7 +1232,7 @@ class MessageQueue:
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT id, file_paths, user_id, channel_id, use_embed,
+                SELECT id, file_paths, user_id, channel_id,
                        status, result, error, created_at, updated_at
                 FROM file_requests
                 WHERE id = ?
@@ -1248,12 +1247,11 @@ class MessageQueue:
                     file_paths=json.loads(row[1]),
                     user_id=row[2],
                     channel_id=row[3],
-                    use_embed=bool(row[4]),
-                    status=row[5],
-                    result=row[6],
-                    error=row[7],
-                    created_at=row[8],
-                    updated_at=row[9]
+                    status=row[4],
+                    result=row[5],
+                    error=row[6],
+                    created_at=row[7],
+                    updated_at=row[8]
                 )
 
                 # 如果已完成或失败，返回结果
