@@ -10,27 +10,33 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 ## ✨ 核心功能
 
-**消息交互**
-- ✅ @Bot 调用本地 Claude Code CLI
-- ✅ 持续对话支持（会话管理）
-- ✅ 实时状态反馈（接收 → 处理 → 响应）
-- ✅ 消息追踪系统（避免重复处理）
-- ✅ 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
-- ✅ 工具调用通知（支持 Embed 卡片形式转发工具调用信息）
+**💬 消息交互**
+- @Bot 调用本地 Claude Code CLI
+- 持续对话支持（会话管理）
+- 实时状态反馈（接收 → 处理 → 响应）
+- 消息追踪系统（避免重复处理）
+- 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
+- 工具调用通知（支持 Embed 卡片形式转发工具调用信息）
 
-**文件传输**
-- ✅ 发送消息时附带附件（自动下载并传入附件信息）
-- ✅ 右键菜单下载附件（上下文菜单）
-- ✅ 引用附件信息（提取附件元数据发送给 Claude）
-- ✅ 从 Discord 下载附件到本地
-- ✅ 通过 MCP 发送文件到 Discord
-- ✅ 批量文件传输支持
+**📁 文件传输**
+- 发送消息时附带附件（自动下载并传入附件信息）
+- 右键菜单下载附件（上下文菜单）
+- 引用附件信息（提取附件元数据发送给 Claude）
+- 从 Discord 下载附件到本地
+- 通过 MCP 发送文件到 Discord
+- 批量文件传输支持
 
-**服务管理**
-- ✅ Windows 守护进程（自动监控重启）
-- ✅ Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
-- ✅ 上下文菜单（右键消息下载附件）
-- ✅ 消息队列系统（SQLite 持久化）
+**⏰ 定时任务**
+- 创建和管理定时任务（支持 cron 表达式）
+- 支持私聊和频道消息推送
+- 任务启用/禁用/更新/删除
+- 执行历史记录查询
+
+**🎯 服务管理**
+- Windows 守护进程（自动监控重启）
+- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
+- 上下文菜单（右键消息下载附件）
+- 消息队列系统（SQLite 持久化）
 
 ## 🚀 快速开始
 
@@ -45,28 +51,7 @@ D:/AgentWorkspace/                    # 工作区根目录
 ├── my-project-1/                     # 你的其他项目
 ├── downloads/                        # 默认文件下载目录
 └── .claude/                          # Claude Code 配置
-    └── skills/                       # 维护 Skill 目录
-        └── discord-bridge-maintenance/  # 本项目的维护 Skill
 ```
-
-**Skill 使用**（推荐安装）：
-```bash
-# 复制定时任务 Skill（用于创建定时任务）
-cp -r docs/skills/scheduler-task ~/.claude/skills/
-```
-
-**scheduler-task Skill 功能**（定时提醒）：
-- ⏰ 创建和管理 Windows 计划任务
-- 📝 编写异步执行的 bat 脚本（避免任务阻塞）
-- 🎯 配置 Discord Bridge 命令参数（支持私聊和频道）
-- 🔧 正确处理中文字符编码问题
-- 📅 实现定时提醒、日程通知、任务报告等自动化功能
-
-**典型应用场景**：
-- 每天定时提醒（刷牙、休息、喝水等健康提醒）
-- 定时报告（每小时/每天发送状态报告）
-- 日程通知（会议提醒、任务截止提醒）
-- 自动化工作流（定时执行脚本并发送结果通知）
 
 ### 1. 前置要求
 
@@ -121,7 +106,7 @@ start.bat
 
 ### 5. 使用方法
 
-#### 5.1 基本 Chat
+### 5.1 基本对话
 
 在 Discord 中 @Bot 即可：
 
@@ -134,44 +119,7 @@ Bot 会：
 2. 转发给本地 Claude Code 处理（显示"🔄 正在处理中"）
 3. 将 Claude 的回复发送回 Discord（显示"✅ 消息 #X 响应成功！"）
 
-#### 5.4 响应模式
-
-本系统支持两种响应模式，可通过 `config.yaml` 配置：
-
-**Embed 模式**（默认）：
-- 发送确认消息（"⏳ 消息已接收"）
-- 使用 Discord Embed 卡片展示响应
-- 适合长回复、格式化内容
-- 单条消息（超长时自动分割）
-
-**直接回复模式**（需启用）：
-- 不发送确认消息
-- Claude 的响应直接发送（流式输出）
-- 每个 block 作为独立消息发送
-- 显示 typing indicator（输入状态）
-- 适合实时对话、快速响应
-
-**模式对比**：
-
-| 特性   | Embed 模式（默认） | 直接回复模式         |
-|------|--------------|----------------|
-| 确认消息 | ✅ 发送         | ❌ 不发送          |
-| 响应方式 | Embed 卡片     | 纯文本消息          |
-| 消息数量 | 1条（可能分割）     | 多条（每 block 一条） |
-| 适用场景 | 适合长回复        | 适合实时对话         |
-
-**配置直接回复模式**（在 `config.yaml`）：
-```yaml
-direct_reply:
-  enabled: false  # 是否启用直接回复模式（默认关闭）
-  streaming:
-    min_message_interval: 1.5  # 消息发送间隔（秒），避免 Discord 速率限制
-    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
-    merge_short_blocks: true  # 是否合并短 block
-    short_block_max_length: 50  # 短 block 最大长度（字符）
-```
-
-#### 5.2 斜杠命令
+### 5.2 斜杠命令
 
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
@@ -182,7 +130,7 @@ direct_reply:
 **上下文菜单**（右键消息）：
 - **下载附件** - 右键点击带附件的消息 → Apps → 下载附件
 
-#### 5.3 文件操作
+### 5.3 文件操作
 
 **配置默认下载目录**（在 `config.yaml`）：
 ```yaml
@@ -231,12 +179,48 @@ file_download:
 - 方式一会下载文件到本地
 - 方式三只提取元数据，不下载
 
+### 5.4 响应模式
+
+本系统支持两种响应模式，可通过 `config.yaml` 配置：
+
+**Embed 模式**（默认）：
+- 发送确认消息（"⏳ 消息已接收"）
+- 使用 Discord Embed 卡片展示响应
+- 适合长回复、格式化内容
+- 单条消息（超长时自动分割）
+
+**直接回复模式**（需启用）：
+- 不发送确认消息
+- Claude 的响应直接发送（流式输出）
+- 每个 block 作为独立消息发送
+- 显示 typing indicator（输入状态）
+- 适合实时对话、快速响应
+
+**模式对比**：
+
+| 特性   | Embed 模式（默认） | 直接回复模式         |
+|------|--------------|----------------|
+| 确认消息 | ✅ 发送         | ❌ 不发送          |
+| 响应方式 | Embed 卡片     | 纯文本消息          |
+| 消息数量 | 1条（可能分割）     | 多条（每 block 一条） |
+| 适用场景 | 适合长回复        | 适合实时对话         |
+
+**配置直接回复模式**（在 `config.yaml`）：
+```yaml
+direct_reply:
+  enabled: false  # 是否启用直接回复模式（默认关闭）
+  streaming:
+    min_message_interval: 1.5  # 消息发送间隔（秒），避免 Discord 速率限制
+    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
+    merge_short_blocks: true  # 是否合并短 block
+    short_block_max_length: 50  # 短 block 最大长度（字符）
+```
 
 ## 🔌 MCP 服务器集成
 
 Claude Code 可通过 MCP 协议发送文件到 Discord。
 
-### 配置方法
+### MCP 服务器配置方法
 
 **配置文件位置**：`%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -244,15 +228,19 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 ```json
 {
   "mcpServers": {
-    "discord-bridge": {
-      "command": "python",
-      "args": [
-        "D:\\AgentWorkspace\\discord-claude-bridge\\mcp_server\\server.py",
-        "--transport", "stdio"
-      ],
-      "env": {
-        "PYTHONPATH": "D:\\AgentWorkspace\\discord-claude-bridge"
-      }
+    "discord-bridge":  {
+      "type":  "stdio",
+      "command":  "cmd",
+      "args":  [
+        "/c",
+        "cd",
+        "/d",
+        "D:\\AgentWorkspace\\discord-claude-bridge",
+        "\u0026\u0026",
+        "python",
+        "-m",
+        "mcp_server.server"
+      ]
     }
   }
 }
@@ -260,11 +248,19 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 
 ### MCP 工具
 
+**文件传输**：
 1. **发送文件到 Discord** - 支持用户私聊和频道
 2. **批量发送文件** - 一次最多 10 个文件
-3. **列出频道** - 查看 Bot 可访问的所有频道
 
-详细配置请参考：[MCP_SETUP.md](MCP_SETUP.md)
+**定时任务**：
+1. **add_cron** - 添加定时任务（支持 cron 表达式）
+2. **list_cron** - 列出所有定时任务
+3. **delete_cron** - 删除定时任务
+4. **toggle_cron** - 启用/禁用定时任务
+5. **get_cron_info** - 获取定时任务详情
+6. **update_cron** - 更新定时任务
+7. **get_current_time** - 获取当前时间（支持多时区）
+
 
 ## ⚙️ 配置选项
 

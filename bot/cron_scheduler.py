@@ -120,13 +120,13 @@ class BotCronScheduler:
             trigger_script = Path(__file__).parent.parent / "trigger_scheduled_task.py"
 
             # 准备配置内容
-            config_content = f"""username={job['username']}
+            config_content = f"""username={job.get('username') or ''}
 content<<<MARKER_START
 {job['content']}
 <<<MARKER_END
-user_id={job.get('user_id', '')}
-channel_id={job.get('channel_id', '')}
-tag={job.get('tag', 'task')}
+user_id={job.get('user_id') or ''}
+channel_id={job.get('channel_id') or ''}
+tag={job.get('tag') or 'task'}
 """
 
             # 执行脚本
@@ -178,17 +178,21 @@ tag={job.get('tag', 'task')}
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"⚠️  保存定时任务失败: {e}")
-
+    
     async def reload_tasks(self):
-        """重新加载任务文件（检测变化）
-
+        """重新加载任务文件（检测变化、新增、删除）
+    
         Returns:
             bool: 是否有变化
         """
-        old_task_ids = set(self.tasks.keys())
+        # 1. 深度拷贝一份旧任务用于对比
+        old_tasks = {k: v.copy() for k, v in self.tasks.items()}
+    
         self._load_tasks()
+    
+        old_task_ids = set(old_tasks.keys())
         new_task_ids = set(self.tasks.keys())
-
+    
         # 检测新增任务
         added = new_task_ids - old_task_ids
         for job_id in added:
@@ -196,23 +200,40 @@ tag={job.get('tag', 'task')}
             if job.get('enabled', True):
                 await self._schedule_job(job)
                 print(f"✓ 检测到新任务: {job_id}")
-
+    
         # 检测删除任务
         removed = old_task_ids - new_task_ids
         for job_id in removed:
             if self.scheduler.get_job(job_id):
                 self.scheduler.remove_job(job_id)
                 print(f"✓ 检测到任务删除: {job_id}")
-
-        # 只在有变化时重新调度（使用静默模式避免重复输出）
-        if added or removed:
-            # 重新调度所有任务以应用变化
-            for job_id in self.tasks.keys():
-                job = self.tasks[job_id]
-                if job.get('enabled', True):
-                    await self._schedule_job(job, silent=True)
-
-        return len(added) + len(removed) > 0
+    
+        # 检测修改任务（关键修改：对比 cron_expr 和 enabled 状态）
+        modified = set()
+        for job_id in (new_task_ids & old_task_ids):
+            old_job = old_tasks[job_id]
+            new_job = self.tasks[job_id]
+    
+            # 如果定时表达式变了，或者启用状态变了
+            if old_job.get('cron_expr') != new_job.get('cron_expr') or \
+                    old_job.get('enabled') != new_job.get('enabled'):
+                modified.add(job_id)
+    
+        # 处理修改后的任务
+        for job_id in modified:
+            job = self.tasks[job_id]
+            # 先强制移除旧调度
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
+    
+            # 如果新状态是启用的，重新调度
+            if job.get('enabled', True):
+                await self._schedule_job(job, silent=False)
+                print(f"✓ 检测到任务修改，已重新调度: {job_id} -> 新规则 [{job.get('cron_expr')}]")
+            else:
+                print(f"✓ 检测到任务已被禁用: {job_id}")
+    
+        return len(added) + len(removed) + len(modified) > 0
 
     async def scan_loop(self):
         """定期扫描任务文件变化"""

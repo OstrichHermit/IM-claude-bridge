@@ -10,7 +10,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 
 ## ✨ Features
 
-**Message Interaction**
+**💬 Message Interaction**
 - ✅ @Bot to call local Claude Code CLI
 - ✅ Continuous conversation support (session management)
 - ✅ Real-time status feedback (received → processing → response)
@@ -18,7 +18,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Response modes: Embed mode (default, card-style) + Direct reply mode (streaming)
 - ✅ Tool use notification (forward tool calls as Embed cards)
 
-**File Transfer**
+**📁 File Transfer**
 - ✅ Send attachments with messages (auto download and pass attachment info)
 - ✅ Context menu to download attachments (right-click)
 - ✅ Reference attachment metadata (extract attachment info and send to Claude)
@@ -26,7 +26,13 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Send files to Discord via MCP
 - ✅ Batch file transfer support
 
-**Service Management**
+**⏰ Scheduled Tasks**
+- ✅ Create and manage scheduled tasks (supports cron expressions)
+- ✅ Support for DM and channel message pushing
+- ✅ Task enable/disable/update/delete
+- ✅ Execution history query
+
+**🎯 Service Management**
 - ✅ Windows daemon process (auto monitor & restart)
 - ✅ Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
 - ✅ Context menus (right-click message to download attachments)
@@ -45,28 +51,7 @@ D:/AgentWorkspace/                    # Workspace root
 ├── my-project-1/                     # Your other projects
 ├── downloads/                        # Default download directory
 └── .claude/                          # Claude Code configuration
-    └── skills/                       # Maintenance Skill directory
-        └── discord-bridge-maintenance/  # Maintenance Skill for this project
 ```
-
-**Skill Usage** (recommended installation):
-```bash
-# Copy scheduled task Skill (for creating scheduled tasks)
-cp -r docs/skills/scheduler-task ~/.claude/skills/
-```
-
-**scheduler-task Skill Features** (scheduled reminders):
-- ⏰ Create and manage Windows scheduled tasks
-- 📝 Write async-executing batch scripts (avoid task blocking)
-- 🎯 Configure Discord Bridge command parameters (support DM & channels)
-- 🔧 Properly handle Chinese character encoding issues
-- 📅 Implement scheduled reminders, calendar notifications, task reports, and other automation
-
-**Typical Use Cases**:
-- Daily scheduled reminders (health reminders: brushing, resting, hydration, etc.)
-- Scheduled reports (hourly/daily status reports)
-- Calendar notifications (meeting reminders, deadline alerts)
-- Automated workflows (execute scripts on schedule and send result notifications)
 
 ### 1. Prerequisites
 
@@ -118,6 +103,7 @@ start.bat
 
 > Manager daemon will automatically start and monitor all services (Bot + Bridge)
 
+
 ### 5. Usage
 
 #### 5.1 Basic Chat
@@ -132,43 +118,6 @@ Bot will:
 1. Receive message and show "⏳ Message received"
 2. Forward to local Claude Code for processing (show "🔄 Processing")
 3. Send Claude's reply back to Discord (show "✅ Message #X response successful!")
-
-#### 5.4 Response Modes
-
-The system supports two response modes, configurable via `config.yaml`:
-
-**Embed Mode** (default):
-- Sends confirmation message ("⏳ Message received")
-- Displays response using Discord Embed cards
-- Suitable for long replies, formatted content
-- Single message (auto-split if too long)
-
-**Direct Reply Mode** (requires enabling):
-- No confirmation message sent
-- Claude's response sent directly (streaming output)
-- Each block sent as independent message
-- Shows typing indicator
-- Suitable for real-time conversations, quick responses
-
-**Mode Comparison**:
-
-| Feature | Embed Mode (Default) | Direct Reply Mode |
-|---------|---------------------|-------------------|
-| Confirmation message | ✅ Sent | ❌ Not sent |
-| Response format | Embed card | Plain text message |
-| Message count | 1 (may split) | Multiple (one per block) |
-| Best for | Long replies | Real-time conversations |
-
-**Configure Direct Reply Mode** (in `config.yaml`):
-```yaml
-direct_reply:
-  enabled: false  # Enable direct reply mode (default: disabled)
-  streaming:
-    min_message_interval: 1.5  # Message send interval (seconds), avoid Discord rate limit
-    stop_typing_after_first_block: false  # Stop typing after first message
-    merge_short_blocks: true  # Merge short blocks
-    short_block_max_length: 50  # Max length for short blocks (characters)
-```
 
 #### 5.2 Slash Commands
 
@@ -230,12 +179,48 @@ Reply to a message with attachments and @Bot, Bot will extract attachment metada
 - Method 1: Downloads file to local
 - Method 3: Only extracts metadata, no download
 
+#### 5.4 Response Modes
+
+The system supports two response modes, configurable via `config.yaml`:
+
+**Embed Mode** (default):
+- Sends confirmation message ("⏳ Message received")
+- Displays response using Discord Embed cards
+- Suitable for long replies, formatted content
+- Single message (auto-split if too long)
+
+**Direct Reply Mode** (requires enabling):
+- No confirmation message sent
+- Claude's response sent directly (streaming output)
+- Each block sent as independent message
+- Shows typing indicator
+- Suitable for real-time conversations, quick responses
+
+**Mode Comparison**:
+
+| Feature | Embed Mode (Default) | Direct Reply Mode |
+|---------|---------------------|-------------------|
+| Confirmation message | ✅ Sent | ❌ Not sent |
+| Response format | Embed card | Plain text message |
+| Message count | 1 (may split) | Multiple (one per block) |
+| Best for | Long replies | Real-time conversations |
+
+**Configure Direct Reply Mode** (in `config.yaml`):
+```yaml
+direct_reply:
+  enabled: false  # Enable direct reply mode (default: disabled)
+  streaming:
+    min_message_interval: 1.5  # Message send interval (seconds), avoid Discord rate limit
+    stop_typing_after_first_block: false  # Stop typing after first message
+    merge_short_blocks: true  # Merge short blocks
+    short_block_max_length: 50  # Max length for short blocks (characters)
+```
 
 ## 🔌 MCP Server Integration
 
 Claude Code can send files to Discord via MCP protocol.
 
-### Configuration
+### MCP Server Configuration
 
 **Config file location**: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -259,9 +244,40 @@ Claude Code can send files to Discord via MCP protocol.
 
 ### MCP Tools
 
+**File Transfer**:
 1. **Send file to Discord** - Support user DM and channels
 2. **Batch send files** - Up to 10 files at once
-3. **List channels** - View all channels Bot can access
+
+**Scheduled Tasks**:
+1. **add_cron** - Add scheduled task (supports cron expressions)
+2. **list_cron** - List all scheduled tasks
+3. **delete_cron** - Delete scheduled task
+4. **toggle_cron** - Enable/disable scheduled task
+5. **get_cron_info** - Get scheduled task details
+6. **update_cron** - Update scheduled task
+7. **get_current_time** - Get current time (supports multiple timezones)
+
+**Usage Examples**:
+```python
+# Add a daily 9 AM scheduled task
+add_cron(
+    cron_expr="0 9 * * *",
+    content="Send daily report",
+    username="鸵鸟居士",
+    user_id="USER_DISCORD_ID",
+    tag="task",
+    description="Daily Report"
+)
+
+# Add an hourly reminder
+add_cron(
+    cron_expr="0 * * * *",
+    content="Time to hydrate!",
+    username="鸵鸟居士",
+    user_id="USER_DISCORD_ID",
+    tag="reminder"
+)
+```
 
 For detailed configuration, see: [MCP_SETUP.md](MCP_SETUP.md)
 

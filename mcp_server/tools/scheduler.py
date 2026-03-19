@@ -99,7 +99,7 @@ async def add_cron(
         )
 
     Note:
-        - user_id 和 channel_id 必须指定其中一个
+        - user_id 和 channel_id 必须指定其中一个，并且只能二选一，不能两个都填写
         - cron 表达式格式：分 时 日 月 周
         - 支持 cron 标准语法：* 表示任意，*/N 表示每 N，N-M 表示范围
         - 任务会由 Discord Bot 读取并执行，确保 Bot 正在运行
@@ -111,6 +111,19 @@ async def add_cron(
           * "0 9 * * 1-5" - 周一到周五早上 9 点
     """
     try:
+        # 二选一互斥校验
+        if bool(user_id) and bool(channel_id):
+            return json.dumps({
+                "success": False,
+                "error": "user_id 和 channel_id 只能二选一，不能同时填写。如果要发送到私聊，请填写 user_id。如果要发送到频道，请填写 channel_id。"
+            }, ensure_ascii=False)
+
+        if not bool(user_id) and not bool(channel_id):
+            return json.dumps({
+                "success": False,
+                "error": "必须提供 user_id 或 channel_id 中的一个，不能都不填写。如果要发送到私聊，请填写 user_id。如果要发送到频道，请填写 channel_id。"
+            }, ensure_ascii=False)
+        
         # 加载现有任务
         tasks = _load_tasks()
 
@@ -336,7 +349,11 @@ async def update_cron(
     job_id: str,
     cron_expr: Optional[str] = None,
     content: Optional[str] = None,
+    username: Optional[str] = None,
+    user_id: Optional[str] = None,       
+    channel_id: Optional[str] = None,     
     description: Optional[str] = None,
+    tag: Optional[str] = None,
     repeat: Optional[bool] = None,
     enabled: Optional[bool] = None
 ) -> str:
@@ -349,6 +366,10 @@ async def update_cron(
         job_id: 任务 ID（必需），8 位字符
         cron_expr: cron 表达式（可选），格式：分 时 日 月 周
         content: 任务内容/提示词（可选），任务执行时发送给 Claude 的内容
+        username: 用户名（可选），任务关联的用户
+        user_id: Discord 用户 ID（可选），私聊模式时使用
+        channel_id: Discord 频道 ID（可选），频道模式时使用
+        tag: 任务标签（可选），如 "task" 或 "reminder"
         description: 任务描述（可选），用于识别任务
         repeat: 是否重复执行（可选），true 重复，false 一次性
         enabled: 是否启用（可选），true 启用，false 禁用
@@ -384,11 +405,19 @@ async def update_cron(
         )
 
     Note:
+        - user_id 和 channel_id 必须指定其中一个，并且只能二选一，不能两个都填写
+        - cron 表达式格式：分 时 日 月 周
+        - 支持 cron 标准语法：* 表示任意，*/N 表示每 N，N-M 表示范围
+        - 任务会由 Discord Bot 读取并执行，确保 Bot 正在运行
+        - repeat=false 的任务执行一次后会自动禁用
+        - 常用示例：
+          * "0 9 * * *" - 每天早上 9 点
+          * "*/30 * * * *" - 每 30 分钟
+          * "0 */2 * * *" - 每 2 小时
+          * "0 9 * * 1-5" - 周一到周五早上 9 点
         - 至少需要提供一个要修改的参数
         - 未提供的参数保持原值不变
-        - 修改 cron_expr 会重新调度任务
-        - 修改 enabled 会立即生效（需要 Bot 重新加载）
-        - 修改 repeat 会影响任务执行后的行为
+        - 修改后会重新调度任务，不需要重启 Bot
     """
     try:
         tasks = _load_tasks()
@@ -400,6 +429,14 @@ async def update_cron(
             }, ensure_ascii=False)
 
         job = tasks[job_id]
+
+        # 更新时传入参数的互斥校验
+        if user_id is not None and channel_id is not None:
+            if bool(user_id) and bool(channel_id):
+                return json.dumps({
+                    "success": False,
+                    "error": "更新时 user_id 和 channel_id 只能二选一，不能同时填写"
+                }, ensure_ascii=False)
 
         # 记录修改的字段
         changed_fields = []
@@ -413,6 +450,35 @@ async def update_cron(
             job['content'] = content
             changed_fields.append('content')
 
+        if username is not None:
+            job['username'] = username
+            changed_fields.append('username')
+
+        if user_id is not None:
+            job['user_id'] = user_id
+            changed_fields.append('user_id')
+            # 如果更新成了有效的 user_id，自动清空 channel_id 保证二选一
+            if bool(user_id):
+                job['channel_id'] = None
+
+        if channel_id is not None:
+            job['channel_id'] = channel_id
+            changed_fields.append('channel_id')
+            # 如果更新成了有效的 channel_id，自动清空 user_id 保证二选一
+            if bool(channel_id):
+                job['user_id'] = None
+
+        # 最终兜底检查：防止被恶意更新成两个都是空的
+        if not bool(job.get('user_id')) and not bool(job.get('channel_id')):
+            return json.dumps({
+                "success": False,
+                "error": "更新后 user_id 和 channel_id 不能同时为空，必须保留一个目标"
+            }, ensure_ascii=False)
+
+        if tag is not None:
+            job['tag'] = tag
+            changed_fields.append('tag')
+        
         if description is not None:
             job['description'] = description
             changed_fields.append('description')
