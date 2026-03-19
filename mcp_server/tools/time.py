@@ -3,6 +3,7 @@ MCP 时间工具
 
 提供获取当前时间的功能。
 """
+import json
 from datetime import datetime
 import pytz
 
@@ -57,8 +58,19 @@ async def get_current_time(timezone: str = "Asia/Taipei") -> str:
         now = tz.localize(datetime.now())
 
         # 返回时间信息
-        return f'{{"success": true, "timezone": "{timezone}", "datetime": "{now.strftime("%Y-%m-%d %H:%M:%S")}", "timestamp": {int(now.timestamp())}, "date": "{now.strftime("%Y-%m-%d")}", "time": "{now.strftime("%H:%M:%S")}", "unix_timestamp": {int(now.timestamp())}}}'
+        return json.dumps({
+            "success": True,
+            "timezone": timezone,
+            "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": int(now.timestamp()),
+            "date": now.strftime("%Y-%m-%d"),
+            "time": now.strftime("%H:%M:%S"),
+            "unix_timestamp": int(now.timestamp())
+        })
 
     except Exception as e:
         # 时区无效或其他错误
-        return f'{{"success": false, "error": "无效的时区: {timezone}"}'
+        return json.dumps({
+            "success": False,
+            "error": f"无效的时区: {timezone}"
+        })
