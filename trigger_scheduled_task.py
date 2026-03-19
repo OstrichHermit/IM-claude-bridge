@@ -133,7 +133,14 @@ def main():
         multi_line_key = None
         multi_line_content = []
 
-        with open(args.config_file, 'r', encoding='utf-8') as f:
+        # 支持从标准输入读取（config_file="-"）
+        if args.config_file == '-':
+            import sys
+            file_handle = sys.stdin
+        else:
+            file_handle = open(args.config_file, 'r', encoding='utf-8')
+
+        with file_handle as f:
             for line in f:
                 original_line = line
                 line = line.rstrip()  # 保留内容空格，只去除右侧换行符
