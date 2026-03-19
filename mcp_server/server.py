@@ -30,11 +30,11 @@ from mcp_server.tools import (
     _send_multiple_files_to_discord
 )
 from mcp_server.tools.scheduler import (
-    add_cron,
-    list_cron,
-    delete_cron,
-    toggle_cron,
-    get_cron_info
+    add_cron as _add_cron_impl,
+    list_cron as _list_cron_impl,
+    delete_cron as _delete_cron_impl,
+    toggle_cron as _toggle_cron_impl,
+    get_cron_info as _get_cron_info_impl
 )
 
 
@@ -206,7 +206,7 @@ async def add_cron(
           * "0 */2 * * *" - 每 2 小时
           * "0 9 * * 1-5" - 周一到周五早上 9 点
     """
-    return await add_cron(
+    return await _add_cron_impl(
         cron_expr=cron_expr,
         content=content,
         username=username,
@@ -232,7 +232,7 @@ async def list_cron() -> str:
         # 列出所有任务
         result = await list_cron()
     """
-    return await list_cron()
+    return await _list_cron_impl()
 
 
 @mcp.tool
@@ -256,7 +256,7 @@ async def delete_cron(job_id: str) -> str:
         - 删除操作不可逆，请谨慎操作
         - 如果任务 ID 不存在，会返回错误
     """
-    return await delete_cron(job_id)
+    return await _delete_cron_impl(job_id)
 
 
 @mcp.tool
@@ -284,7 +284,7 @@ async def toggle_cron(job_id: str, enabled: bool) -> str:
         - 禁用任务不会删除任务，可以重新启用
         - 启用/禁用操作立即生效
     """
-    return await toggle_cron(job_id, enabled)
+    return await _toggle_cron_impl(job_id, enabled)
 
 
 @mcp.tool
@@ -304,7 +304,7 @@ async def get_cron_info(job_id: str) -> str:
         # 获取任务详情
         info = await get_cron_info(job_id="a1b2c3d4")
     """
-    return await get_cron_info(job_id)
+    return await _get_cron_info_impl(job_id)
 
 
 # ==================== 启动入口 ====================
