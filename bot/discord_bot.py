@@ -2884,21 +2884,11 @@ class DiscordBot(commands.Bot):
 
         # 发送到 Discord
         try:
-            # 判断是频道还是私聊
-            # 如果 channel_id 和 user_id 相同，说明是私聊
-            if channel_id == user_id:
-                # 私聊：获取用户对象并发送消息
-                user = self.get_user(user_id)
-                if not user:
-                    user = await self.fetch_user(user_id)
-                if user:
-                    target_channel = await user.create_dm()
-                    await target_channel.send(embed=embed)
-            else:
-                # 频道：获取频道对象并发送消息
-                channel = self.get_channel(channel_id)
-                if channel:
-                    await channel.send(embed=embed)
+            # 直接使用 channel_id 获取频道/DM 对象并发送
+            # Discord 中无论是频道还是私聊，都可以通过 channel_id 获取并发送
+            channel = self.get_channel(channel_id)
+            if channel:
+                await channel.send(embed=embed)
         except Exception as e:
             pass  # 静默失败，避免刷屏
 

@@ -61,3 +61,4 @@ env/
 Thumbs.db
 discord_bridge.db
 /stickers
+.manager.retry_count
