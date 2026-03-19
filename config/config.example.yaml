@@ -109,6 +109,86 @@ direct_reply:
 tool_use_notification:
   # 是否启用工具调用通知（以 Embed 卡片形式转发工具调用信息）
   enabled: true
+  # 工具 emoji 映射配置
+  emoji_mapping:
+    # ==================== Claude Code 内置工具 ====================
+    # 文件操作
+    Read: "📄"
+    Write: "✍️"
+    Edit: "✏️"
+    Glob: "📁"
+    Grep: "🔍"
+
+    # 命令执行
+    Bash: "⚡"
+
+    # Web 相关
+    WebSearch: "🌐"
+
+    # Skill
+    Skill: "📖"
+
+    # Agent
+    Agent: "🤖"
+
+    # 计划模式
+    EnterPlanMode: "📋"
+    ExitPlanMode: "✅"
+
+    # 用户交互
+    AskUserQuestion: "❓"
+
+    # 任务管理
+    TodoWrite: "✅"
+
+    # 任务控制
+    TaskOutput: "📤"
+    TaskStop: "🛑"
+
+    # Jupyter
+    NotebookEdit: "📓"
+
+    # MCP 资源
+    ListMcpResourcesTool: "📚"
+    ReadMcpResourceTool: "📖"
+
+    # Worktree
+    EnterWorktree: "🌳"
+    ExitWorktree: "🚪"
+
+    # ==================== MCP 服务器 emoji 映射 ====================
+    # 映射格式：服务器名: emoji
+    # 适用于该服务器下的所有工具
+
+    # Web 相关
+    jina-mcp-server: "🌐"
+    web-reader: "🌐"
+    brave-search: "🌐"
+
+    # 图像处理
+    image: "🖼️"
+
+    # Discord 相关
+    discord-bridge: "💬"
+
+    # 记忆系统
+    memu: "🧠"
+
+    # 猫砂盆监控
+    cat-litter-monitor: "🐱"
+
+    # ==================== MCP 具体工具 emoji 映射 ====================
+    # 映射格式：mcp__服务器名__工具名: emoji
+    # 优先级高于服务器映射，可以为特定工具定制 emoji
+
+    # Discord Bridge 定时任务相关（示例）
+    # mcp__discord-bridge__add_cron: "⏰"
+    # mcp__discord-bridge__delete_cron: "⏰"
+    # mcp__discord-bridge__get_cron_info: "⏰"
+    # mcp__discord-bridge__list_cron: "⏰"
+    # mcp__discord-bridge__toggle_cron: "⏰"
+    # mcp__discord-bridge__update_cron: "⏰"
+    # mcp__discord-bridge__get_current_time: "⏰"
 
 # 定时任务调度器配置
 cron_scheduler:
