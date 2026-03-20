@@ -118,6 +118,16 @@ class Config:
         return self._config.get('discord', {}).get('sync_guild_id', '')
 
     @property
+    def stickers_path(self) -> str:
+        """获取表情包目录路径"""
+        stickers_dir = self._config.get('discord', {}).get('stickers_path', './stickers')
+        # 转换为绝对路径
+        if not os.path.isabs(stickers_dir):
+            project_root = Path(__file__).parent.parent
+            stickers_dir = project_root / stickers_dir
+        return str(stickers_dir)
+
+    @property
     def default_download_directory(self) -> str:
         """获取默认文件下载目录"""
         download_dir = self._config.get('file_download', {}).get('default_directory', './downloads')

@@ -14,6 +14,10 @@ discord:
   # 填写服务器 ID 可以立即同步命令到该服务器
   # 获取方法：Discord 开发者模式 → 右键服务器 → 复制 ID
   sync_guild_id: ""  # 服务器 ID（留空则使用全局同步）
+  # 表情包目录配置
+  # 用于 <:文件名.扩展名> 格式的表情包自动发送
+  # 支持相对路径和绝对路径，相对路径基于项目根目录
+  stickers_path: "./stickers"
 
 # Claude Code 桥接配置
 claude:

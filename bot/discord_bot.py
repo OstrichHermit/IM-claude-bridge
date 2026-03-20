@@ -1973,18 +1973,45 @@ class DiscordBot(commands.Bot):
                                     text_block_item_indices = pending.get("text_block_item_indices", {})
                                     current_item_index = text_block_item_indices.get(current_text_block_index, 0)
 
-                                    for i, block in enumerate(new_blocks):
-                                        # 使用实际的 content block 索引
-                                        await streaming_queue.add_message(
-                                            MessageType.TEXT,
-                                            block,
-                                            content_block_index=content_block_index,
-                                            item_index=current_item_index + i
-                                        )
-                                        pending["sent_blocks"].append(block)
+                                    # 实际发送的 block 计数（用于 item_index）
+                                    sent_count = 0
 
-                                    # 更新 item 索引
-                                    text_block_item_indices[current_text_block_index] = current_item_index + len(new_blocks)
+                                    for i, block in enumerate(new_blocks):
+                                        # 处理表情包标记 <:文件名.扩展名>
+                                        channel = pending.get("channel")
+                                        processed_block, stickers, additional_sent = await self._process_sticker_mentions(
+                                            block,
+                                            channel,
+                                            streaming_queue,
+                                            content_block_index,
+                                            current_item_index + sent_count
+                                        )
+
+                                        # 发送表情包（如果找到）
+                                        for sticker_path in stickers:
+                                            try:
+                                                with open(sticker_path, 'rb') as f:
+                                                    await channel.send(file=discord.File(f))
+                                            except Exception as e:
+                                                print(f"[表情包] 发送失败: {sticker_path} - {e}")
+
+                                        # 只有当处理后文本不为空时才发送
+                                        if processed_block and processed_block.strip():
+                                            # 使用实际的 content block 索引
+                                            await streaming_queue.add_message(
+                                                MessageType.TEXT,
+                                                processed_block,
+                                                content_block_index=content_block_index,
+                                                item_index=current_item_index + sent_count + additional_sent
+                                            )
+                                            pending["sent_blocks"].append(block)
+                                            sent_count += 1
+
+                                        # 加上表情包前文本发送的数量
+                                        sent_count += additional_sent
+
+                                    # 更新 item 索引（使用实际发送的数量）
+                                    text_block_item_indices[current_text_block_index] = current_item_index + sent_count
                                     pending["text_block_item_indices"] = text_block_item_indices
 
                                     # 检查是否需要移动到下一个文本 content block
@@ -2603,6 +2630,150 @@ class DiscordBot(commands.Bot):
             merged.append('\n'.join(current_merged))
 
         return merged
+
+    async def _process_sticker_mentions(self, text: str, channel: discord.abc.Messageable, streaming_queue=None, content_block_index=None, base_item_index=0):
+        """
+        处理表情包标记 <:文件名.扩展名>
+
+        注意：会跳过代码块（```）中的内容，避免误处理示例代码
+        如果表情包在文本中间，会将前面的文本直接发送到队列
+
+        Args:
+            text: 要处理的文本
+            channel: Discord 频道对象
+            streaming_queue: 流式队列对象（可选）
+            content_block_index: content block 索引（可选）
+            base_item_index: 基础 item 索引（可选）
+
+        Returns:
+            tuple: (处理后的文本, 表情包路径列表, 发送的文本块数量)
+        """
+        import re
+        from pathlib import Path
+        from bot.streaming_queue import MessageType
+
+        # 表情包目录（从配置读取）
+        sticker_dir = Path(self.config.stickers_path)
+
+        # 检测表情包标记（但不在代码块中）
+        sticker_pattern = re.compile(r'<:([^>]+\.(png|jpg|jpeg|gif))>')
+
+        # 分离代码块和非代码块
+        result_text = text
+        sticker_paths = []
+        sent_blocks_count = 0
+
+        # 检查是否在代码块中
+        lines = text.split('\n')
+        in_code_block = False
+        processed_lines = []
+
+        for line in lines:
+            # 检测代码块开始/结束
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                processed_lines.append(line)
+                continue
+
+            # 如果在代码块中，直接添加，不处理表情包
+            if in_code_block:
+                processed_lines.append(line)
+                continue
+
+            # 不在代码块中，检测表情包
+            matches = sticker_pattern.findall(line)
+            if matches:
+                # 检查表情包是否在行中间（前后都有文本）
+                line_parts = sticker_pattern.split(line)
+
+                # 如果表情包在文本中间（split 后有多部分）
+                if len(line_parts) > 1:
+                    # 使用循环处理每个表情包
+                    current_text = line
+                    for match_index in range(len(matches)):
+                        # 在当前文本中搜索第一个表情包
+                        match_obj = sticker_pattern.search(current_text)
+                        if not match_obj:
+                            break
+
+                        # 分割文本：表情包之前的部分
+                        prefix_text = current_text[:match_obj.start()].rstrip()
+
+                        # 分割文本：表情包之后的部分
+                        suffix_text = current_text[match_obj.end():].lstrip()
+
+                        # 如果前缀不为空，发送到队列
+                        if prefix_text and streaming_queue:
+                            await streaming_queue.add_message(
+                                MessageType.TEXT,
+                                prefix_text,
+                                content_block_index=content_block_index,
+                                item_index=base_item_index + sent_blocks_count
+                            )
+                            sent_blocks_count += 1
+                        elif prefix_text:
+                            # 没有 streaming_queue，添加到 processed_lines
+                            processed_lines.append(prefix_text)
+
+                        # 查找并添加当前表情包文件
+                        # 从匹配中提取文件名（去掉扩展名）
+                        filename_match = match_obj.group(1)  # xxx
+                        ext_match = match_obj.group(2)  # gif
+                        filename = f"{filename_match}.{ext_match}"
+
+                        sticker_path = sticker_dir / filename
+
+                        if sticker_path.exists():
+                            sticker_paths.append(sticker_path)
+                        else:
+                            # 模糊匹配
+                            if '-' in filename:
+                                meaning = filename.split('-')[0]
+                                matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
+                                if matching_files:
+                                    sticker_paths.append(matching_files[0])
+                                else:
+                                    print(f"[表情包] 文件不存在: {filename}")
+                            else:
+                                print(f"[表情包] 文件不存在: {filename}")
+
+                        # 更新当前文本为后缀，继续处理下一个表情包
+                        current_text = suffix_text
+
+                    # 添加最后剩余的文本
+                    if current_text and current_text.strip():
+                        processed_lines.append(current_text)
+                else:
+                    # 表情包在行首或行尾，正常处理
+                    # 查找表情包文件
+                    for filename, _ in matches:
+                        sticker_path = sticker_dir / filename
+
+                        if sticker_path.exists():
+                            # 精确匹配
+                            sticker_paths.append(sticker_path)
+                        else:
+                            # 模糊匹配（只匹配含义部分）
+                            if '-' in filename:
+                                meaning = filename.split('-')[0]
+                                matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
+                                if matching_files:
+                                    sticker_paths.append(matching_files[0])
+                                else:
+                                    print(f"[表情包] 文件不存在: {filename}")
+                            else:
+                                print(f"[表情包] 文件不存在: {filename}")
+
+                    # 移除表情包标记
+                    line = sticker_pattern.sub('', line)
+                    processed_lines.append(line)
+            else:
+                processed_lines.append(line)
+
+        # 重新组合文本
+        processed_text = '\n'.join(processed_lines).strip()
+
+        return processed_text, sticker_paths, sent_blocks_count
 
     async def check_tool_uses(self):
         """定期检查工具调用并发送通知"""
