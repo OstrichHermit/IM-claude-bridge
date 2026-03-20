@@ -44,9 +44,32 @@ class DiscordBot(commands.Bot):
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
         self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
 
+        # 🌉 统一队列管理器（当启用 unified_queue 时使用）
+        self.unified_queues = {}  # {channel_id: StreamingMessageQueue}
+
         # ⏰ 定时任务调度器
         self.cron_scheduler = None
         self.cron_scan_task = None
+
+    def _get_unified_queue(self, channel: discord.abc.Messageable):
+        """
+        获取或创建频道的统一队列
+
+        Args:
+            channel: Discord 频道对象
+
+        Returns:
+            StreamingMessageQueue: 统一队列对象
+        """
+        from bot.streaming_queue import StreamingMessageQueue
+
+        channel_id = channel.id
+        if channel_id not in self.unified_queues:
+            self.unified_queues[channel_id] = StreamingMessageQueue(
+                channel,
+                self.config.unified_queue_interval
+            )
+        return self.unified_queues[channel_id]
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
@@ -1976,8 +1999,8 @@ class DiscordBot(commands.Bot):
                                     import traceback
                                     traceback.print_exc()
 
-                # 等待一段时间再检查（0.5 秒，比 check_responses 更快）
-                await asyncio.sleep(0.5)
+                # 等待一段时间再检查（0.1 秒，快速响应文件请求）
+                await asyncio.sleep(0.1)
 
             except Exception as e:
                 print(f"❌ 检查流式响应时出错: {e}")
@@ -2036,16 +2059,32 @@ class DiscordBot(commands.Bot):
                             raise ValueError("必须指定 user_id 或 channel_id")
 
                         # 发送文件
-                        sent_msg = await target_channel.send(
-                            files=valid_files if len(valid_files) > 1 else valid_files
-                        )
+                        if self.config.unified_queue_enabled:
+                            # 统一队列模式：将文件加入队列
+                            from bot.streaming_queue import MessageType
+                            queue = self._get_unified_queue(target_channel)
+                            await queue.add_message(MessageType.FILES, valid_files)
+                            # 注意：统一队列模式下无法立即获取消息 ID
+                            sent_msg = None
+                        else:
+                            # 原有模式：直接发送
+                            sent_msg = await target_channel.send(
+                                files=valid_files if len(valid_files) > 1 else valid_files
+                            )
 
                         # 标记为完成
-                        result = json.dumps({
-                            "success": True,
-                            "message": f"成功发送 {len(valid_files)} 个文件到 {target_info}",
-                            "message_id": str(sent_msg.id)
-                        }, ensure_ascii=False)
+                        if sent_msg:
+                            result = json.dumps({
+                                "success": True,
+                                "message": f"成功发送 {len(valid_files)} 个文件到 {target_info}",
+                                "message_id": str(sent_msg.id)
+                            }, ensure_ascii=False)
+                        else:
+                            # 统一队列模式：没有消息 ID
+                            result = json.dumps({
+                                "success": True,
+                                "message": f"已将 {len(valid_files)} 个文件加入发送队列到 {target_info}"
+                            }, ensure_ascii=False)
                         self.message_queue.update_file_request_status(
                             file_request.id,
                             FileRequestStatus.COMPLETED,
@@ -2594,8 +2633,8 @@ class DiscordBot(commands.Bot):
                     if completed_id in processed_tool_uses:
                         del processed_tool_uses[completed_id]
 
-                # 等待一段时间再检查（1秒）
-                await asyncio.sleep(1)
+                # 等待一段时间再检查（0.1 秒，快速响应工具调用）
+                await asyncio.sleep(0.1)
 
             except Exception as e:
                 print(f"❌ 检查工具调用时出错: {e}")
@@ -2843,22 +2882,52 @@ class DiscordBot(commands.Bot):
 
         # 发送到 Discord
         try:
-            sent_message = None
-            if is_dm:
-                # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
-                user = self.get_user(user_id)
-                if not user:
-                    user = await self.fetch_user(user_id)
-                if user:
-                    dm_channel = await user.create_dm()
-                    sent_message = await dm_channel.send(embed=embed)
-            else:
-                # 频道：直接通过 channel_id 获取
-                channel = self.get_channel(channel_id)
-                if channel:
-                    sent_message = await channel.send(embed=embed)
+            if self.config.unified_queue_enabled:
+                # 统一队列模式：将 embed 加入队列，并等待发送完成
+                from bot.streaming_queue import MessageType
 
-            # 保存 Discord 消息引用
+                sent_message = None
+                if is_dm:
+                    # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
+                    user = self.get_user(user_id)
+                    if not user:
+                        user = await self.fetch_user(user_id)
+                    if user:
+                        dm_channel = await user.create_dm()
+                        queue = self._get_unified_queue(dm_channel)
+                        # 使用 return_future=True 获取 Future
+                        future = await queue.add_message(MessageType.EMBED, embed, return_future=True)
+                        if future:
+                            # 等待消息发送完成，获取消息对象
+                            sent_message = await future
+                else:
+                    # 频道：直接通过 channel_id 获取
+                    channel = self.get_channel(channel_id)
+                    if channel:
+                        queue = self._get_unified_queue(channel)
+                        # 使用 return_future=True 获取 Future
+                        future = await queue.add_message(MessageType.EMBED, embed, return_future=True)
+                        if future:
+                            # 等待消息发送完成，获取消息对象
+                            sent_message = await future
+            else:
+                # 原有模式：直接发送
+                sent_message = None
+                if is_dm:
+                    # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
+                    user = self.get_user(user_id)
+                    if not user:
+                        user = await self.fetch_user(user_id)
+                    if user:
+                        dm_channel = await user.create_dm()
+                        sent_message = await dm_channel.send(embed=embed)
+                else:
+                    # 频道：直接通过 channel_id 获取
+                    channel = self.get_channel(channel_id)
+                    if channel:
+                        sent_message = await channel.send(embed=embed)
+
+            # 保存 Discord 消息引用（统一队列模式和原有模式都需要）
             if sent_message:
                 self.message_queue.save_tool_use_message_ref(
                     message_id,

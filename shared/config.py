@@ -224,3 +224,13 @@ class Config:
             project_root = Path(__file__).parent.parent
             storage_path = project_root / storage_path
         return str(storage_path)
+
+    @property
+    def unified_queue_enabled(self) -> bool:
+        """获取是否启用统一队列模式（所有消息通过队列发送）"""
+        return self._config.get('unified_queue', {}).get('enabled', False)
+
+    @property
+    def unified_queue_interval(self) -> float:
+        """获取统一队列的消息发送间隔（秒）"""
+        return self._config.get('unified_queue', {}).get('message_interval', 1.5)
