@@ -376,8 +376,21 @@ class SessionWorker:
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
                                     if message_data.get('content'):
-                                        for content_item in message_data['content']:
-                                            if content_item.get('type') == 'text':
+                                        # 记录 content block 顺序
+                                        content_blocks = message_data['content']
+                                        for block_index, content_item in enumerate(content_blocks):
+                                            block_type = content_item.get('type')
+
+                                            if block_type == 'text':
+                                                # 记录 text content block
+                                                self.message_queue.add_content_block(
+                                                    message_id,
+                                                    block_index,
+                                                    'text',
+                                                    {'text': content_item.get('text', '')}
+                                                )
+
+                                                # 收集文本用于流式响应
                                                 text = content_item.get('text', '')
                                                 response_lines.append(text)
 
@@ -387,13 +400,20 @@ class SessionWorker:
                                                     self.message_queue.update_streaming_response(message_id, partial_response)
                                                     last_update_time = current_time
 
-                                            elif content_item.get('type') == 'tool_use' and message_id:
-                                                # 工具调用
+                                            elif block_type == 'tool_use' and message_id:
+                                                # 记录 tool_use content block
                                                 tool_name = content_item.get('name', '')
                                                 tool_input = content_item.get('input', {})
                                                 tool_id = content_item.get('id', '')
 
-                                                # 保存到数据库并获取索引（包含 tool_use_id）
+                                                self.message_queue.add_content_block(
+                                                    message_id,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id}
+                                                )
+
+                                                # 保存工具调用信息到数据库
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
                             except json.JSONDecodeError:
@@ -442,8 +462,21 @@ class SessionWorker:
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
                                     if message_data.get('content'):
-                                        for content_item in message_data['content']:
-                                            if content_item.get('type') == 'text':
+                                        # 记录 content block 顺序
+                                        content_blocks = message_data['content']
+                                        for block_index, content_item in enumerate(content_blocks):
+                                            block_type = content_item.get('type')
+
+                                            if block_type == 'text':
+                                                # 记录 text content block
+                                                self.message_queue.add_content_block(
+                                                    message_id,
+                                                    block_index,
+                                                    'text',
+                                                    {'text': content_item.get('text', '')}
+                                                )
+
+                                                # 收集文本用于流式响应
                                                 text = content_item.get('text', '')
                                                 response_lines.append(text)
 
@@ -453,13 +486,20 @@ class SessionWorker:
                                                     self.message_queue.update_streaming_response(message_id, partial_response)
                                                     last_update_time = current_time
 
-                                            elif content_item.get('type') == 'tool_use' and message_id:
-                                                # 工具调用
+                                            elif block_type == 'tool_use' and message_id:
+                                                # 记录 tool_use content block
                                                 tool_name = content_item.get('name', '')
                                                 tool_input = content_item.get('input', {})
                                                 tool_id = content_item.get('id', '')
 
-                                                # 保存到数据库并获取索引（包含 tool_use_id）
+                                                self.message_queue.add_content_block(
+                                                    message_id,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id}
+                                                )
+
+                                                # 保存工具调用信息到数据库
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
                         except (json.JSONDecodeError, UnicodeDecodeError):

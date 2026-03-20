@@ -839,6 +839,10 @@ class DiscordBot(commands.Bot):
                     ),
                     "last_streaming_content": "",
                     "sent_blocks": [],
+                    # Content block 顺序追踪
+                    "content_blocks": [],  # 从数据库加载的 content block 顺序
+                    "current_text_block_index": 0,  # 当前文本块索引（在所有 text 类型的 content block 中）
+                    "text_block_item_indices": {},  # {text_block_index: item_count}
                 }
                 print(f"[消息 #{message_id}] 直接回复模式：已启用，不发送确认消息")
             else:
@@ -1942,9 +1946,67 @@ class DiscordBot(commands.Bot):
                                 # 将新 block 添加到发送队列
                                 streaming_queue = pending.get("streaming_queue")
                                 if streaming_queue:
-                                    for block in new_blocks:
-                                        await streaming_queue.add_block(block)
+                                    # 导入 MessageType
+                                    from bot.streaming_queue import MessageType
+
+                                    # 获取 content block 顺序（如果还没有加载，先加载）
+                                    content_blocks = pending.get("content_blocks", [])
+                                    if not content_blocks:
+                                        content_blocks = self.message_queue.get_content_blocks(msg_id)
+                                        pending["content_blocks"] = content_blocks
+
+                                    # 找到当前文本对应的 content block 索引
+                                    # 当前文本块索引
+                                    current_text_block_index = pending.get("current_text_block_index", 0)
+
+                                    # 找到对应的 content block 索引
+                                    content_block_index = 0  # 默认为第一个 content block
+                                    text_block_count = 0
+                                    for cb in content_blocks:
+                                        if cb.get("type") == "text":
+                                            if text_block_count == current_text_block_index:
+                                                content_block_index = cb.get("index", 0)
+                                                break
+                                            text_block_count += 1
+
+                                    # 获取当前文本块的 item 索引
+                                    text_block_item_indices = pending.get("text_block_item_indices", {})
+                                    current_item_index = text_block_item_indices.get(current_text_block_index, 0)
+
+                                    for i, block in enumerate(new_blocks):
+                                        # 使用实际的 content block 索引
+                                        await streaming_queue.add_message(
+                                            MessageType.TEXT,
+                                            block,
+                                            content_block_index=content_block_index,
+                                            item_index=current_item_index + i
+                                        )
                                         pending["sent_blocks"].append(block)
+
+                                    # 更新 item 索引
+                                    text_block_item_indices[current_text_block_index] = current_item_index + len(new_blocks)
+                                    pending["text_block_item_indices"] = text_block_item_indices
+
+                                    # 检查是否需要移动到下一个文本 content block
+                                    # 检查 streaming_response 中是否已经包含了下一个 content block 的标记（工具调用）
+                                    # 如果包含工具调用标记，说明当前文本 block 已完成
+                                    if content_blocks:
+                                        # 找到当前文本 block 在 content_blocks 中的位置
+                                        current_text_block_position = -1
+                                        text_block_count = 0
+                                        for i, cb in enumerate(content_blocks):
+                                            if cb.get("type") == "text":
+                                                if text_block_count == current_text_block_index:
+                                                    current_text_block_position = i
+                                                    break
+                                                text_block_count += 1
+
+                                        # 检查下一个 block 是否是 tool_use
+                                        if current_text_block_position >= 0 and current_text_block_position + 1 < len(content_blocks):
+                                            next_block = content_blocks[current_text_block_position + 1]
+                                            if next_block.get("type") == "tool_use":
+                                                # 下一个 block 是工具调用，说明当前文本 block 已完成
+                                                pending["current_text_block_index"] = current_text_block_index + 1
 
                                 # 更新上次的内容
                                 pending["last_streaming_content"] = streaming_response
@@ -2058,33 +2120,17 @@ class DiscordBot(commands.Bot):
                         else:
                             raise ValueError("必须指定 user_id 或 channel_id")
 
-                        # 发送文件
-                        if self.config.unified_queue_enabled:
-                            # 统一队列模式：将文件加入队列
-                            from bot.streaming_queue import MessageType
-                            queue = self._get_unified_queue(target_channel)
-                            await queue.add_message(MessageType.FILES, valid_files)
-                            # 注意：统一队列模式下无法立即获取消息 ID
-                            sent_msg = None
-                        else:
-                            # 原有模式：直接发送
-                            sent_msg = await target_channel.send(
-                                files=valid_files if len(valid_files) > 1 else valid_files
-                            )
+                        # 发送文件（直接发送，不使用统一队列）
+                        sent_msg = await target_channel.send(
+                            files=valid_files if len(valid_files) > 1 else valid_files
+                        )
 
                         # 标记为完成
-                        if sent_msg:
-                            result = json.dumps({
-                                "success": True,
-                                "message": f"成功发送 {len(valid_files)} 个文件到 {target_info}",
-                                "message_id": str(sent_msg.id)
-                            }, ensure_ascii=False)
-                        else:
-                            # 统一队列模式：没有消息 ID
-                            result = json.dumps({
-                                "success": True,
-                                "message": f"已将 {len(valid_files)} 个文件加入发送队列到 {target_info}"
-                            }, ensure_ascii=False)
+                        result = json.dumps({
+                            "success": True,
+                            "message": f"成功发送 {len(valid_files)} 个文件到 {target_info}",
+                            "message_id": str(sent_msg.id) if sent_msg else None
+                        }, ensure_ascii=False)
                         self.message_queue.update_file_request_status(
                             file_request.id,
                             FileRequestStatus.COMPLETED,
@@ -2886,6 +2932,21 @@ class DiscordBot(commands.Bot):
                 # 统一队列模式：将 embed 加入队列，并等待发送完成
                 from bot.streaming_queue import MessageType
 
+                # 获取 content block 顺序，找到工具调用对应的 content block 索引
+                content_blocks = self.message_queue.get_content_blocks(message_id)
+
+                # 找到对应的 content block 索引
+                content_block_index = tool_use_index  # 默认使用 tool_use_index
+
+                # 按 tool_use_index 的顺序查找对应的 content block
+                tool_use_count = 0
+                for cb in content_blocks:
+                    if cb.get("type") == "tool_use":
+                        if tool_use_count == tool_use_index:
+                            content_block_index = cb.get("index", tool_use_index)
+                            break
+                        tool_use_count += 1
+
                 sent_message = None
                 if is_dm:
                     # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
@@ -2895,8 +2956,13 @@ class DiscordBot(commands.Bot):
                     if user:
                         dm_channel = await user.create_dm()
                         queue = self._get_unified_queue(dm_channel)
-                        # 使用 return_future=True 获取 Future
-                        future = await queue.add_message(MessageType.EMBED, embed, return_future=True)
+                        # 使用 return_future=True 获取 Future，并设置 content block 索引
+                        future = await queue.add_message(
+                            MessageType.EMBED,
+                            embed,
+                            return_future=True,
+                            content_block_index=content_block_index
+                        )
                         if future:
                             # 等待消息发送完成，获取消息对象
                             sent_message = await future
@@ -2905,8 +2971,13 @@ class DiscordBot(commands.Bot):
                     channel = self.get_channel(channel_id)
                     if channel:
                         queue = self._get_unified_queue(channel)
-                        # 使用 return_future=True 获取 Future
-                        future = await queue.add_message(MessageType.EMBED, embed, return_future=True)
+                        # 使用 return_future=True 获取 Future，并设置 content block 索引
+                        future = await queue.add_message(
+                            MessageType.EMBED,
+                            embed,
+                            return_future=True,
+                            content_block_index=content_block_index
+                        )
                         if future:
                             # 等待消息发送完成，获取消息对象
                             sent_message = await future

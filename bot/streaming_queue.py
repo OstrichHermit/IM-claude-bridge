@@ -31,10 +31,16 @@ class StreamingMessageQueue:
         """
         self.channel = channel
         self.min_interval = min_interval
-        self.queue = []  # 队列项格式: {"type": MessageType, "data": ...}
+        self.queue = []  # 队列项格式: {"type": MessageType, "data": ..., "content_block_index": int, "item_index": int}
         self.last_send_time = 0
         self.sending = False
         self.send_lock = asyncio.Lock()
+
+        # Content block 顺序追踪
+        self.content_block_sequence = []  # 记录 content block 顺序，例如：[("text", 0), ("tool", 0), ("tool", 1)]
+        self.current_content_block_index = 0  # 当前发送到第几个 content block
+        self.content_block_senders = {}  # 记录每个 content block 的发送状态：{index: {"pending": int, "sent": int}}
+        self.content_block_lock = asyncio.Lock()  # Content block 顺序锁
 
     async def add_block(self, block: str):
         """
@@ -45,7 +51,7 @@ class StreamingMessageQueue:
         """
         await self.add_message(MessageType.TEXT, block)
 
-    async def add_message(self, msg_type: MessageType, data: Union[str, discord.Embed, List[discord.File]], return_future: bool = False):
+    async def add_message(self, msg_type: MessageType, data: Union[str, discord.Embed, List[discord.File]], return_future: bool = False, content_block_index: int = None, item_index: int = None):
         """
         添加一条消息到队列
 
@@ -56,6 +62,8 @@ class StreamingMessageQueue:
                 - EMBED: discord.Embed 嵌入式卡片
                 - FILES: List[discord.File] 文件列表
             return_future: 是否返回 Future（用于获取发送后的消息 ID）
+            content_block_index: Content block 索引（用于保证顺序）
+            item_index: 该 content block 中的第几个 item
 
         Returns:
             如果 return_future=True，返回 asyncio.Future，否则返回 None
@@ -75,7 +83,15 @@ class StreamingMessageQueue:
         if return_future:
             future = asyncio.Future()
 
-        self.queue.append({"type": msg_type, "data": data, "future": future})
+        queue_item = {"type": msg_type, "data": data, "future": future}
+
+        # 添加 content block 索引（如果提供）
+        if content_block_index is not None:
+            queue_item["content_block_index"] = content_block_index
+            if item_index is not None:
+                queue_item["item_index"] = item_index
+
+        self.queue.append(queue_item)
 
         # 如果没有正在发送的任务，启动发送循环
         if not self.sending:
@@ -84,7 +100,7 @@ class StreamingMessageQueue:
         return future
 
     async def _send_loop(self):
-        """发送队列中的消息（控制速率）"""
+        """发送队列中的消息（控制速率，按 content block 顺序）"""
         async with self.send_lock:
             if self.sending:
                 return
@@ -93,10 +109,39 @@ class StreamingMessageQueue:
 
             try:
                 while self.queue:
+                    # 检查是否有 content block 顺序限制
+                    if self.queue[0].get("content_block_index") is not None:
+                        target_block_index = self.queue[0]["content_block_index"]
+
+                        # 如果当前 content block 还没轮到，等待
+                        if target_block_index > self.current_content_block_index:
+                            # 检查前面的 content block 是否已完成
+                            all_previous_done = True
+                            for i in range(target_block_index):
+                                if i in self.content_block_senders:
+                                    sender_info = self.content_block_senders[i]
+                                    if sender_info.get("pending", 0) > sender_info.get("sent", 0):
+                                        all_previous_done = False
+                                        break
+
+                            # 如果前面的 content block 没完成，等待一下再检查
+                            if not all_previous_done:
+                                await asyncio.sleep(0.1)
+                                continue
+
+                        # 更新 content block 发送状态
+                        if target_block_index not in self.content_block_senders:
+                            self.content_block_senders[target_block_index] = {"pending": 0, "sent": 0}
+
                     msg_item = self.queue.pop(0)
                     msg_type = msg_item["type"]
                     data = msg_item["data"]
                     future = msg_item.get("future")
+                    content_block_index = msg_item.get("content_block_index")
+
+                    # 更新 pending 计数
+                    if content_block_index is not None:
+                        self.content_block_senders[content_block_index]["pending"] += 1
 
                     # 计算需要等待的时间
                     current_time = time.time()
@@ -106,6 +151,16 @@ class StreamingMessageQueue:
 
                     # 根据类型发送消息
                     sent_message = await self._send_with_retry(msg_type, data)
+
+                    # 更新 sent 计数
+                    if content_block_index is not None:
+                        self.content_block_senders[content_block_index]["sent"] += 1
+
+                        # 检查当前 content block 是否完成
+                        sender_info = self.content_block_senders[content_block_index]
+                        if sender_info["pending"] == sender_info["sent"]:
+                            # 当前 content block 完成，移动到下一个
+                            self.current_content_block_index = content_block_index + 1
 
                     # 如果有 Future，设置结果
                     if future and not future.done():

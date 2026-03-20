@@ -253,6 +253,25 @@ class MessageQueue:
             ON tool_use_messages(message_id)
         """)
 
+        # 创建 content block 顺序表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS content_blocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                block_index INTEGER NOT NULL,
+                block_type TEXT NOT NULL,
+                block_data TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(message_id, block_index)
+            )
+        """)
+
+        # 创建索引以提高查询性能
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_content_block_message_id
+            ON content_blocks(message_id)
+        """)
+
         # 创建工具执行结果状态表
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tool_use_results (
@@ -699,6 +718,68 @@ class MessageQueue:
         conn.close()
 
         return tool_use_index
+
+    def add_content_block(self, message_id: int, block_index: int, block_type: str, block_data: dict = None):
+        """添加 content block 信息（记录 JSON 中的原始顺序）
+
+        Args:
+            message_id: 消息 ID
+            block_index: Content block 索引（从 0 开始）
+            block_type: Content block 类型（text 或 tool_use）
+            block_data: Content block 数据（可选）
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        data_json = json.dumps(block_data, ensure_ascii=False) if block_data else None
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO content_blocks
+            (message_id, block_index, block_type, block_data, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (message_id, block_index, block_type, data_json, now))
+
+        conn.commit()
+        conn.close()
+
+    def get_content_blocks(self, message_id: int) -> list:
+        """获取消息的所有 content blocks（按原始顺序）
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            Content block 列表，格式：[{"index": 0, "type": "text", "data": {...}}, ...]
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT block_index, block_type, block_data
+            FROM content_blocks
+            WHERE message_id = ?
+            ORDER BY block_index ASC
+        """, (message_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        content_blocks = []
+        for row in rows:
+            block_index, block_type, block_data = row
+            block_info = {
+                "index": block_index,
+                "type": block_type
+            }
+            if block_data:
+                try:
+                    block_info["data"] = json.loads(block_data)
+                except json.JSONDecodeError:
+                    pass
+            content_blocks.append(block_info)
+
+        return content_blocks
 
     def get_tool_uses(self, message_id: int) -> list:
         """获取消息的所有工具调用
