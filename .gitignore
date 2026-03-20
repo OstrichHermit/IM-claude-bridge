@@ -4,7 +4,11 @@ config/config.local.yaml
 
 # 消息数据库
 shared/messages.db
+messages.db
 *.db-journal
+
+# 文件映射表
+file_mapping.json
 
 # 定时任务数据
 shared/cron_jobs.json

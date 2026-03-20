@@ -64,9 +64,11 @@ class MessageTag(Enum):
 @dataclass
 class AttachmentInfo:
     """附件信息数据类"""
-    filename: str  # 文件名
+    id: int  # Discord 附件 ID（唯一标识）
+    filename: str  # Discord 原始文件名
     size: int  # 文件大小（字节）
     url: str  # 文件 URL
+    local_filename: Optional[str] = None  # 本地实际文件名
     description: Optional[str] = None  # 文件描述
 
 
@@ -425,7 +427,9 @@ class MessageQueue:
         if message.attachments:
             attachments_list = [
                 {
+                    "id": a.id,
                     "filename": a.filename,
+                    "local_filename": a.local_filename,
                     "size": a.size,
                     "url": a.url,
                     "description": a.description
@@ -492,7 +496,9 @@ class MessageQueue:
                     attachments_data = json.loads(row[13])
                     attachments = [
                         AttachmentInfo(
+                            id=a["id"],
                             filename=a["filename"],
+                            local_filename=a.get("local_filename"),
                             size=a["size"],
                             url=a["url"],
                             description=a.get("description")
@@ -558,7 +564,9 @@ class MessageQueue:
                     attachments_data = json.loads(row[13])
                     attachments = [
                         AttachmentInfo(
+                            id=a["id"],
                             filename=a["filename"],
+                            local_filename=a.get("local_filename"),
                             size=a["size"],
                             url=a["url"],
                             description=a.get("description")
@@ -1045,7 +1053,9 @@ class MessageQueue:
                     attachments_data = json.loads(row[13])
                     attachments = [
                         AttachmentInfo(
+                            id=a["id"],
                             filename=a["filename"],
+                            local_filename=a.get("local_filename"),
                             size=a["size"],
                             url=a["url"],
                             description=a.get("description")
