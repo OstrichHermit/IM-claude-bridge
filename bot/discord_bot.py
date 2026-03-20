@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, AttachmentInfo
+from shared.file_mapping import FileMapping
 from bot.cron_scheduler import BotCronScheduler
 
 
@@ -37,6 +38,7 @@ class DiscordBot(commands.Bot):
 
         self.config = config
         self.message_queue = MessageQueue(config.database_path)
+        self.file_mapping = FileMapping()  # 文件映射表管理器
         self.response_check_task = None
         self.file_request_check_task = None
         self.file_download_check_task = None
@@ -599,16 +601,26 @@ class DiscordBot(commands.Bot):
             async with aiohttp.ClientSession() as session:
                 for attachment in message.attachments:
                     try:
-                        # 处理文件名冲突
-                        local_path = save_dir / attachment.filename
-                        counter = 1
-                        original_stem = Path(attachment.filename).stem
-                        original_suffix = Path(attachment.filename).suffix
+                        # 检查映射表中是否已有该附件的本地文件名
+                        mapped_filename = self.file_mapping.get_local_filename(attachment.id)
+                        if mapped_filename:
+                            # 使用映射表中的文件名
+                            local_path = save_dir / mapped_filename
+                            print(f"[下载命令] 使用已映射文件名: {mapped_filename}")
+                        else:
+                            # 处理文件名冲突
+                            local_path = save_dir / attachment.filename
+                            counter = 1
+                            original_stem = Path(attachment.filename).stem
+                            original_suffix = Path(attachment.filename).suffix
 
-                        # 检查文件是否存在，如存在则添加后缀
-                        while local_path.exists():
-                            local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
-                            counter += 1
+                            # 检查文件是否存在，如存在则添加后缀
+                            while local_path.exists():
+                                local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
+                                counter += 1
+
+                            # 记录映射关系
+                            self.file_mapping.set_local_filename(attachment.id, local_path.name)
 
                         # 下载文件
                         async with session.get(attachment.url) as resp:
@@ -618,7 +630,9 @@ class DiscordBot(commands.Bot):
                                     f.write(file_content)
 
                                 downloaded_files.append({
+                                    "id": attachment.id,
                                     "filename": attachment.filename,
+                                    "local_filename": local_path.name,
                                     "local_path": str(local_path),
                                     "size": len(file_content)
                                 })
@@ -731,16 +745,26 @@ class DiscordBot(commands.Bot):
                 async with aiohttp.ClientSession() as session:
                     for attachment in message.attachments:
                         try:
-                            # 处理文件名冲突
-                            local_path = save_dir / attachment.filename
-                            counter = 1
-                            original_stem = Path(attachment.filename).stem
-                            original_suffix = Path(attachment.filename).suffix
+                            # 检查映射表中是否已有该附件的本地文件名
+                            mapped_filename = self.file_mapping.get_local_filename(attachment.id)
+                            if mapped_filename:
+                                # 使用映射表中的文件名
+                                local_path = save_dir / mapped_filename
+                                print(f"[附件下载] 使用已映射文件名: {mapped_filename}")
+                            else:
+                                # 处理文件名冲突
+                                local_path = save_dir / attachment.filename
+                                counter = 1
+                                original_stem = Path(attachment.filename).stem
+                                original_suffix = Path(attachment.filename).suffix
 
-                            # 检查文件是否存在，如存在则添加后缀
-                            while local_path.exists():
-                                local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
-                                counter += 1
+                                # 检查文件是否存在，如存在则添加后缀
+                                while local_path.exists():
+                                    local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
+                                    counter += 1
+
+                                # 记录映射关系
+                                self.file_mapping.set_local_filename(attachment.id, local_path.name)
 
                             # 下载文件
                             async with session.get(attachment.url) as resp:
@@ -750,7 +774,9 @@ class DiscordBot(commands.Bot):
                                         f.write(file_content)
 
                                     downloaded_files.append({
+                                        "id": attachment.id,
                                         "filename": attachment.filename,
+                                        "local_filename": local_path.name,
                                         "local_path": str(local_path),
                                         "size": len(file_content)
                                     })
@@ -766,7 +792,9 @@ class DiscordBot(commands.Bot):
                     attachment_infos = []
                     for f in downloaded_files:
                         attachment_infos.append(AttachmentInfo(
-                            filename=f['filename'],
+                            id=f['id'],
+                            filename=f['local_filename'],  # 使用本地文件名
+                            local_filename=f['local_filename'],
                             size=f['size'],
                             url=f"file://{f['local_path']}",  # 使用本地文件路径
                             description=None
@@ -915,10 +943,27 @@ class DiscordBot(commands.Bot):
             # 构建附件信息对象列表
             attachment_infos = []
             for attachment in original_message.attachments:
+                # 查询映射表获取本地文件名
+                local_filename = self.file_mapping.get_local_filename(attachment.id)
+
+                # 如果文件已下载，使用本地文件名和本地路径
+                if local_filename:
+                    from pathlib import Path
+                    save_dir = Path(self.config.default_download_directory)
+                    local_path = save_dir / local_filename
+                    display_filename = local_filename
+                    file_url = f"file://{local_path}"
+                else:
+                    # 文件未下载，使用 Discord 信息
+                    display_filename = attachment.filename
+                    file_url = attachment.url
+
                 attachment_infos.append(AttachmentInfo(
-                    filename=attachment.filename,
+                    id=attachment.id,
+                    filename=display_filename,  # 优先使用本地文件名
+                    local_filename=local_filename,
                     size=attachment.size,
-                    url=attachment.url,
+                    url=file_url,  # 优先使用本地路径
                     description=attachment.description
                 ))
 
@@ -2250,14 +2295,24 @@ class DiscordBot(commands.Bot):
                         downloaded_files = []
                         async with aiohttp.ClientSession() as session:
                             for attachment in message.attachments:
-                                # 处理文件名冲突
-                                local_path = save_dir / attachment.filename
-                                counter = 1
-                                while local_path.exists():
-                                    stem = Path(attachment.filename).stem
-                                    suffix = Path(attachment.filename).suffix
-                                    local_path = save_dir / f"{stem}_{counter}{suffix}"
-                                    counter += 1
+                                # 检查映射表中是否已有该附件的本地文件名
+                                mapped_filename = self.file_mapping.get_local_filename(attachment.id)
+                                if mapped_filename:
+                                    # 使用映射表中的文件名
+                                    local_path = save_dir / mapped_filename
+                                    print(f"  [文件下载] 使用已映射文件名: {mapped_filename}")
+                                else:
+                                    # 处理文件名冲突
+                                    local_path = save_dir / attachment.filename
+                                    counter = 1
+                                    while local_path.exists():
+                                        stem = Path(attachment.filename).stem
+                                        suffix = Path(attachment.filename).suffix
+                                        local_path = save_dir / f"{stem}_{counter}{suffix}"
+                                        counter += 1
+
+                                    # 记录映射关系
+                                    self.file_mapping.set_local_filename(attachment.id, local_path.name)
 
                                 # 下载文件
                                 async with session.get(attachment.url) as resp:
@@ -2267,7 +2322,9 @@ class DiscordBot(commands.Bot):
                                             f.write(await resp.read())
 
                                         downloaded_files.append({
+                                            "id": attachment.id,
                                             "filename": attachment.filename,
+                                            "local_filename": local_path.name,
                                             "local_path": str(local_path),
                                             "size": attachment.size
                                         })
