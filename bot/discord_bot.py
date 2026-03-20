@@ -190,6 +190,27 @@ class DiscordBot(commands.Bot):
             else:
                 print("✓ 没有发现 PENDING 状态的消息")
 
+            # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知）
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started'")
+            ai_started_count = cursor.fetchone()[0]
+
+            if ai_started_count > 0:
+                print(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
+
+                cursor.execute("""
+                    UPDATE messages
+                    SET status = 'completed',
+                        updated_at = CURRENT_TIMESTAMP,
+                        error = 'Bot 重启：AI 响应被标记为已完成（避免重复发送工具调用通知）'
+                    WHERE status = 'ai_started'
+                """)
+
+                affected = cursor.rowcount
+                conn.commit()
+                print(f"✅ 已标记 {affected} 条 AI_STARTED 消息为已完成")
+            else:
+                print("✓ 没有发现 AI_STARTED 状态的消息")
+
             conn.close()
 
         except Exception as e:
