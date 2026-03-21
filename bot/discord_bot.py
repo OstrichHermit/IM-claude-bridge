@@ -3177,15 +3177,174 @@ class DiscordBot(commands.Bot):
                                         color=discord.Color.blue()
                                     )
 
-                                    # 简化的参数显示（只显示第一个参数或prompt）
-                                    if 'prompt' in tool_input:
-                                        embed.description = tool_input['prompt']
-                                    elif tool_input:
-                                        first_key = list(tool_input.keys())[0]
-                                        first_value = str(tool_input[first_key])
-                                        if len(first_value) > 50:
-                                            first_value = first_value[:47] + "..."
-                                        embed.description = f"{first_key}: {first_value}"
+                                    # 智能显示参数（为每个工具定制显示内容）
+                                    display_value = None
+
+                                    if tool_name == 'Read':
+                                        # Read: 显示文件路径
+                                        display_value = tool_input.get('file_path', '无路径')
+                                    elif tool_name == 'Write':
+                                        # Write: 显示文件路径
+                                        display_value = tool_input.get('file_path', '无路径')
+                                    elif tool_name == 'Edit':
+                                        # Edit: 显示文件路径
+                                        display_value = tool_input.get('file_path', '无路径')
+                                    elif tool_name == 'Glob':
+                                        # Glob: 显示路径和 pattern
+                                        pattern = tool_input.get('pattern', '无 pattern')
+                                        path = tool_input.get('path', '')
+                                        if path:
+                                            display_value = f"{path}: {pattern}"
+                                        else:
+                                            display_value = pattern
+                                    elif tool_name == 'Grep':
+                                        # Grep: 显示 pattern
+                                        display_value = tool_input.get('pattern', '无 pattern')
+                                    elif tool_name == 'Bash':
+                                        # Bash: 显示命令（截断）
+                                        cmd = tool_input.get('command', '')
+                                        if len(cmd) > 100:
+                                            cmd = cmd[:97] + "..."
+                                        display_value = cmd
+                                    elif tool_name == 'WebSearch':
+                                        # WebSearch: 显示 query
+                                        display_value = tool_input.get('query', '无 query')
+                                    elif tool_name == 'Skill':
+                                        # Skill: 显示 skill 名称
+                                        display_value = tool_input.get('skill', '无 skill')
+                                    elif tool_name == 'Agent':
+                                        # Agent: 显示描述和 subagent_type
+                                        desc = tool_input.get('description', '')
+                                        subagent = tool_input.get('subagent_type', 'general-purpose')
+                                        display_value = f"{subagent}: {desc}"
+                                    elif tool_name == 'EnterPlanMode':
+                                        # EnterPlanMode: 无需显示参数
+                                        display_value = "进入计划模式"
+                                    elif tool_name == 'ExitPlanMode':
+                                        # ExitPlanMode: 无需显示参数
+                                        display_value = "退出计划模式"
+                                    elif tool_name == 'AskUserQuestion':
+                                        # AskUserQuestion: 显示每个问题的内容和选项
+                                        questions = tool_input.get('questions', [])
+                                        question_lines = []
+                                        for i, q in enumerate(questions, 1):
+                                            question_text = q.get('question', '无问题')
+                                            question_lines.append(f"Q{i}: {question_text}")
+
+                                            # 显示选项
+                                            options = q.get('options', [])
+                                            if options:
+                                                for opt in options:
+                                                    label = opt.get('label', '无标签')
+                                                    desc = opt.get('description', '')
+                                                    if desc:
+                                                        question_lines.append(f"  - {label}: {desc}")
+                                                    else:
+                                                        question_lines.append(f"  - {label}")
+
+                                        display_value = '\n'.join(question_lines)
+                                    elif tool_name == 'TodoWrite':
+                                        # TodoWrite: 显示所有任务（不截断）
+                                        todos = tool_input.get('todos', [])
+
+                                        if not todos:
+                                            display_value = "无任务"
+                                        else:
+                                            # 统计各状态任务数量
+                                            status_counts = {'pending': 0, 'in_progress': 0, 'completed': 0}
+                                            for todo in todos:
+                                                status = todo.get('status', 'pending')
+                                                if status in status_counts:
+                                                    status_counts[status] += 1
+
+                                            # 构建任务列表（按状态分组：已完成 → 进行中 → 待办中）
+                                            todo_lines = []
+
+                                            # 1. 显示已完成任务
+                                            completed_tasks = [t for t in todos if t.get('status') == 'completed']
+                                            if completed_tasks:
+                                                todo_lines.append("✅ 已完成:")
+                                                for todo in completed_tasks:
+                                                    content = todo.get('content', '')
+                                                    todo_lines.append(f"  • {content}")
+                                                todo_lines.append("")
+
+                                            # 2. 显示进行中任务
+                                            in_progress_tasks = [t for t in todos if t.get('status') == 'in_progress']
+                                            if in_progress_tasks:
+                                                todo_lines.append("🔄 进行中:")
+                                                for todo in in_progress_tasks:
+                                                    active_form = todo.get('activeForm', todo.get('content', ''))
+                                                    todo_lines.append(f"  • {active_form}")
+                                                todo_lines.append("")
+
+                                            # 3. 显示待办中任务
+                                            pending_tasks = [t for t in todos if t.get('status') == 'pending']
+                                            if pending_tasks:
+                                                todo_lines.append("📋 待办中:")
+                                                for todo in pending_tasks:
+                                                    content = todo.get('content', '')
+                                                    todo_lines.append(f"  • {content}")
+                                                todo_lines.append("")
+
+                                            # 添加进度统计
+                                            total = len(todos)
+                                            completed = status_counts['completed']
+                                            if completed > 0:
+                                                todo_lines.append(f"进度: {completed}/{total} ({completed*100//total}%)")
+                                            else:
+                                                todo_lines.append(f"总任务: {total} 个")
+
+                                            display_value = '\n'.join(todo_lines)
+                                    elif tool_name == 'CronCreate':
+                                        # CronCreate: 显示 cron 表达式
+                                        display_value = tool_input.get('cron', '无 cron')
+                                    elif tool_name == 'CronDelete':
+                                        # CronDelete: 显示任务 ID
+                                        display_value = tool_input.get('id', '无 id')
+                                    elif tool_name == 'CronList':
+                                        # CronList: 无参数
+                                        display_value = "列出定时任务"
+                                    elif tool_name == 'TaskOutput':
+                                        # TaskOutput: 显示任务 ID
+                                        display_value = tool_input.get('task_id', '无 id')
+                                    elif tool_name == 'TaskStop':
+                                        # TaskStop: 显示任务 ID
+                                        display_value = tool_input.get('task_id', '无 id')
+                                    elif tool_name == 'NotebookEdit':
+                                        # NotebookEdit: 显示 notebook 路径
+                                        display_value = tool_input.get('notebook_path', '无路径')
+                                    elif tool_name == 'ListMcpResourcesTool':
+                                        # ListMcpResourcesTool: 显示服务器名
+                                        display_value = tool_input.get('server', '全部服务器')
+                                    elif tool_name == 'ReadMcpResourceTool':
+                                        # ReadMcpResourceTool: 显示服务器和 URI
+                                        server = tool_input.get('server', '')
+                                        uri = tool_input.get('uri', '')
+                                        display_value = f"{server}: {uri}"
+                                    elif tool_name == 'EnterWorktree':
+                                        # EnterWorktree: 显示名称
+                                        display_value = tool_input.get('name', '默认名称')
+                                    elif tool_name == 'ExitWorktree':
+                                        # ExitWorktree: 显示操作
+                                        action = tool_input.get('action', 'keep')
+                                        display_value = f"操作: {action}"
+                                    elif 'prompt' in tool_input:
+                                        # 有 prompt 字段的工具（完整显示，不截断）
+                                        display_value = tool_input['prompt']
+                                    else:
+                                        # 其他工具：显示第一个参数
+                                        if tool_input:
+                                            first_key = list(tool_input.keys())[0]
+                                            first_value = str(tool_input[first_key])
+                                            if len(first_value) > 50:
+                                                first_value = first_value[:47] + "..."
+                                            display_value = f"{first_key}: {first_value}"
+                                        else:
+                                            display_value = "无参数"
+
+                                    if display_value:
+                                        embed.description = display_value
                                     else:
                                         embed.description = "无参数"
 
