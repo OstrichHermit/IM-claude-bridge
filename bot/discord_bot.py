@@ -2053,8 +2053,16 @@ class DiscordBot(commands.Bot):
                                         # 发送表情包（如果找到）
                                         for sticker_path in stickers:
                                             try:
-                                                with open(sticker_path, 'rb') as f:
-                                                    await channel.send(file=discord.File(f))
+                                                # 直接使用文件路径创建 discord.File
+                                                # discord.File 会自动处理文件打开和关闭
+                                                file = discord.File(sticker_path)
+                                                await streaming_queue.add_message(
+                                                    MessageType.FILES,
+                                                    [file],
+                                                    content_block_index=content_block_index,
+                                                    item_index=current_item_index + sent_count
+                                                )
+                                                sent_count += 1
                                             except Exception as e:
                                                 print(f"[表情包] 发送失败: {sticker_path} - {e}")
 
@@ -2850,6 +2858,82 @@ class DiscordBot(commands.Bot):
 
         return processed_text, sticker_paths, sent_blocks_count
 
+    async def _process_sticker_mentions_for_queue(self, text: str, channel: discord.abc.Messageable):
+        """
+        处理表情包标记 <:文件名.扩展名>（用于队列模式）
+
+        注意：会跳过代码块（```）中的内容，避免误处理示例代码
+
+        Args:
+            text: 要处理的文本
+            channel: Discord 频道对象（未使用，保持接口一致性）
+
+        Returns:
+            tuple: (处理后的文本, 表情包路径列表)
+        """
+        import re
+        from pathlib import Path
+
+        # 表情包目录（从配置读取）
+        sticker_dir = Path(self.config.stickers_path)
+
+        # 检测表情包标记（但不在代码块中）
+        sticker_pattern = re.compile(r'<:([^>]+\.(png|jpg|jpeg|gif))>')
+
+        # 分离代码块和非代码块
+        result_text = text
+        sticker_paths = []
+
+        # 检查是否在代码块中
+        lines = text.split('\n')
+        in_code_block = False
+        processed_lines = []
+
+        for line in lines:
+            # 检测代码块开始/结束
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                processed_lines.append(line)
+                continue
+
+            # 如果在代码块中，直接添加，不处理表情包
+            if in_code_block:
+                processed_lines.append(line)
+                continue
+
+            # 不在代码块中，检测表情包
+            matches = sticker_pattern.findall(line)
+            if matches:
+                # 查找表情包文件
+                for filename, _ in matches:
+                    sticker_path = sticker_dir / filename
+
+                    if sticker_path.exists():
+                        # 精确匹配
+                        sticker_paths.append(sticker_path)
+                    else:
+                        # 模糊匹配（只匹配含义部分）
+                        if '-' in filename:
+                            meaning = filename.split('-')[0]
+                            matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
+                            if matching_files:
+                                sticker_paths.append(matching_files[0])
+                            else:
+                                print(f"[表情包] 文件不存在: {filename}")
+                        else:
+                            print(f"[表情包] 文件不存在: {filename}")
+
+                # 移除表情包标记
+                line = sticker_pattern.sub('', line)
+                processed_lines.append(line)
+            else:
+                processed_lines.append(line)
+
+        # 重新组合文本
+        processed_text = '\n'.join(processed_lines).strip()
+
+        return processed_text, sticker_paths
+
     async def check_tool_uses(self):
         """定期检查工具调用并发送通知"""
         await self.wait_until_ready()
@@ -3027,10 +3111,23 @@ class DiscordBot(commands.Bot):
 
                     try:
                         if item_type == "text":
-                            # 发送文本消息（不拆分，让Discord bot自己处理）
+                            # 发送文本消息
                             text = item_data.get("text", "")
                             if text and text.strip():
-                                await channel.send(text.strip())
+                                # 处理表情包标记 <:文件名.扩展名>
+                                processed_text, stickers = await self._process_sticker_mentions_for_queue(text, channel)
+
+                                # 发送表情包（如果找到）
+                                for sticker_path in stickers:
+                                    try:
+                                        file = discord.File(sticker_path)
+                                        await channel.send(file=file)
+                                    except Exception as e:
+                                        print(f"[表情包] 发送失败: {sticker_path} - {e}")
+
+                                # 发送处理后的文本（如果不为空）
+                                if processed_text and processed_text.strip():
+                                    await channel.send(processed_text.strip())
 
                         elif item_type == "tool_use":
                             # 发送工具调用通知（直接发送，不使用队列）
