@@ -120,11 +120,8 @@ class DiscordBot(commands.Bot):
         # 启动消息发送请求检查任务
         self.message_request_check_task = asyncio.create_task(self.check_message_requests())
 
-        # 🔥 启动流式响应检查任务
-        self.stream_check_task = asyncio.create_task(self.check_streaming_responses())
-
-        # 🔥 启动工具调用通知检查任务
-        self.tool_use_check_task = asyncio.create_task(self.check_tool_uses())
+        # 🔥 启动统一消息序列检查任务（替代旧的流式响应和工具调用检查）
+        self.sequence_check_task = asyncio.create_task(self.check_message_sequences())
 
         # 🔥 启动工具执行结果检查任务
         self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
@@ -1988,7 +1985,7 @@ class DiscordBot(commands.Bot):
                     WHERE status IN ('ai_started', 'processing')
                       AND streaming_response IS NOT NULL
                       AND streaming_response != ''
-                    ORDER BY last_stream_update DESC
+                    ORDER BY created_at ASC
                 """)
                 rows = cursor.fetchall()
                 conn.close()
@@ -2877,7 +2874,7 @@ class DiscordBot(commands.Bot):
                     WHERE status IN ('ai_started', 'processing')
                       AND tool_uses IS NOT NULL
                       AND tool_uses != ''
-                    ORDER BY id DESC
+                    ORDER BY id ASC
                 """)
                 rows = cursor.fetchall()
                 conn.close()
@@ -2933,6 +2930,204 @@ class DiscordBot(commands.Bot):
 
             except Exception as e:
                 print(f"❌ 检查工具调用时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
+
+    async def check_message_sequences(self):
+        """检查并发送消息序列（统一的发送任务）"""
+        await self.wait_until_ready()
+
+        print("🌊 消息序列检查任务已启动")
+
+        from datetime import datetime
+
+        # 追踪每个消息的发送状态
+        message_states = {}
+
+        while not self.is_closed():
+            try:
+                import sqlite3
+
+                # 查询有待发送序列的消息
+                conn = sqlite3.connect(self.config.database_path)
+                cursor = conn.cursor()
+
+                cursor.execute("""
+                    SELECT DISTINCT message_id
+                    FROM message_sequence
+                    WHERE status = 'pending'
+                    ORDER BY message_id ASC
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                conn.close()
+
+                if not row:
+                    # 没有待发送的序列，等待一会儿再检查
+                    await asyncio.sleep(0.5)
+                    continue
+
+                message_id = row[0]
+
+                try:
+                    # 从数据库获取消息信息
+                    conn = sqlite3.connect(self.config.database_path)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT discord_channel_id, discord_user_id, is_dm
+                        FROM messages
+                        WHERE id = ?
+                    """, (message_id,))
+                    row = cursor.fetchone()
+                    conn.close()
+
+                    if not row:
+                        continue
+
+                    channel_id, user_id, is_dm = row
+
+                    # 初始化消息状态
+                    if message_id not in message_states:
+                        message_states[message_id] = {"pending": []}
+
+                    # 获取待发送的序列项（每次只取一条，确保严格按顺序发送）
+                    pending_sequences = self.message_queue.get_pending_message_sequences(message_id, limit=1)
+
+                    if not pending_sequences:
+                        # 没有待发送的序列，检查是否完成
+                        stats = self.message_queue.get_message_sequences_stats(message_id)
+                        if stats["total"] > 0 and stats["pending"] == 0:
+                            # 所有序列都已发送，清理
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            if message_id in message_states:
+                                del message_states[message_id]
+                        continue
+
+                    # 获取频道
+                    if is_dm:
+                        user = self.get_user(user_id)
+                        if not user:
+                            user = await self.fetch_user(user_id)
+                        if not user:
+                            continue
+                        channel = await user.create_dm()
+                    else:
+                        channel = self.get_channel(channel_id)
+                        if not channel:
+                            continue
+
+                    # 发送序列项（只有一条）
+                    seq = pending_sequences[0]
+                    seq_id = seq["id"]
+                    seq_index = seq["sequence_index"]
+                    item_type = seq["item_type"]
+                    item_data = seq["item_data"]
+                    tool_use_index = seq.get("tool_use_index")  # 获取工具调用索引
+
+                    try:
+                        if item_type == "text":
+                            # 发送文本消息（不拆分，让Discord bot自己处理）
+                            text = item_data.get("text", "")
+                            if text and text.strip():
+                                await channel.send(text.strip())
+
+                        elif item_type == "tool_use":
+                            # 发送工具调用通知（直接发送，不使用队列）
+                            tool_name = item_data.get("name", "")
+                            tool_input = item_data.get("input", {})
+                            tool_id = item_data.get("id", "")
+
+                            # 过滤管理命令的工具调用通知（避免噪音）
+                            should_skip = False
+                            if tool_name == "Bash" and tool_input.get("command"):
+                                command = tool_input["command"]
+                                management_keywords = ["restart.bat", "manager.py", "restart", "shutdown", "stop"]
+                                if any(keyword in command.lower() for keyword in management_keywords):
+                                    should_skip = True
+
+                            if not should_skip:
+                                # 构建工具调用Embed
+                                TOOL_EMOJIS = self.config.tool_emoji_mapping
+                                is_mcp = tool_name.startswith('mcp__')
+
+                                if is_mcp:
+                                    parts = tool_name.split('__')
+                                    if len(parts) >= 3:
+                                        mcp_server = parts[1]
+                                        mcp_tool = parts[2]
+                                        display_title = f"MCP {mcp_server}"
+                                        emoji = TOOL_EMOJIS.get(tool_name)
+                                        if emoji is None:
+                                            emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
+
+                                        embed = discord.Embed(
+                                            title=f"🔄 {emoji} {display_title}",
+                                            color=discord.Color.blue()
+                                        )
+                                        embed.description = mcp_tool
+                                    else:
+                                        emoji = TOOL_EMOJIS.get(tool_name, "🔧")
+                                        embed = discord.Embed(
+                                            title=f"🔄 {emoji} {tool_name}",
+                                            color=discord.Color.blue()
+                                        )
+                                        embed.description = "无参数"
+                                else:
+                                    emoji = TOOL_EMOJIS.get(tool_name, "🔧")
+                                    embed = discord.Embed(
+                                        title=f"🔄 {emoji} {tool_name}",
+                                        color=discord.Color.blue()
+                                    )
+
+                                    # 简化的参数显示（只显示第一个参数或prompt）
+                                    if 'prompt' in tool_input:
+                                        embed.description = tool_input['prompt']
+                                    elif tool_input:
+                                        first_key = list(tool_input.keys())[0]
+                                        first_value = str(tool_input[first_key])
+                                        if len(first_value) > 50:
+                                            first_value = first_value[:47] + "..."
+                                        embed.description = f"{first_key}: {first_value}"
+                                    else:
+                                        embed.description = "无参数"
+
+                                # 直接发送Embed（不使用队列）
+                                sent_message = await channel.send(embed=embed)
+
+                                # 保存消息引用（用于后续更新）
+                                if sent_message:
+                                    # 使用正确的tool_use_index（而不是sequence_index）
+                                    ref_tool_use_index = tool_use_index if tool_use_index is not None else seq_index
+                                    self.message_queue.save_tool_use_message_ref(
+                                        message_id,
+                                        ref_tool_use_index,
+                                        sent_message.id,
+                                        channel_id,
+                                        is_dm
+                                    )
+
+                        # 标记为已发送
+                        self.message_queue.mark_sequence_sent(seq_id)
+
+                        # 控制发送速率，避免触发Discord速率限制
+                        await asyncio.sleep(self.config.unified_queue_interval)
+
+                    except Exception as e:
+                        print(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                except Exception as e:
+                    print(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                # 极小延迟，避免无消息时CPU空转
+                await asyncio.sleep(0.01)
+
+            except Exception as e:
+                print(f"❌ 检查消息序列时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)

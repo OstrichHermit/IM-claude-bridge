@@ -376,22 +376,39 @@ class SessionWorker:
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
                                     if message_data.get('content'):
-                                        # 记录 content block 顺序
+                                        # 记录 content block 顺序并生成消息序列
                                         content_blocks = message_data['content']
+
+                                        # 从数据库获取当前最大的sequence_index，避免streaming过程中重复
+                                        sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
+
                                         for block_index, content_item in enumerate(content_blocks):
                                             block_type = content_item.get('type')
 
                                             if block_type == 'text':
                                                 # 记录 text content block
+                                                text = content_item.get('text', '')
                                                 self.message_queue.add_content_block(
                                                     message_id,
                                                     block_index,
                                                     'text',
-                                                    {'text': content_item.get('text', '')}
+                                                    {'text': text}
                                                 )
 
+                                                # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
+                                                text_parts = text.split('\n\n')
+                                                for part in text_parts:
+                                                    if part.strip():  # 跳过空文本
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id,
+                                                            sequence_index,
+                                                            block_index,
+                                                            'text',
+                                                            {'text': part.strip()}
+                                                        )
+                                                        sequence_index += 1
+
                                                 # 收集文本用于流式响应
-                                                text = content_item.get('text', '')
                                                 response_lines.append(text)
 
                                                 partial_response = '\n'.join(response_lines)
@@ -413,8 +430,19 @@ class SessionWorker:
                                                     {'name': tool_name, 'input': tool_input, 'id': tool_id}
                                                 )
 
-                                                # 保存工具调用信息到数据库
+                                                # 保存工具调用信息到数据库（获取tool_use_index）
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
+
+                                                # 生成工具调用消息序列（传入正确的tool_use_index）
+                                                self.message_queue.add_message_sequence(
+                                                    message_id,
+                                                    sequence_index,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
+                                                    tool_use_index=tool_use_index
+                                                )
+                                                sequence_index += 1
 
                             except json.JSONDecodeError:
                                 pass
@@ -462,22 +490,39 @@ class SessionWorker:
                                 elif data.get('type') == 'assistant' and data.get('message'):
                                     message_data = data.get('message', {})
                                     if message_data.get('content'):
-                                        # 记录 content block 顺序
+                                        # 记录 content block 顺序并生成消息序列
                                         content_blocks = message_data['content']
+
+                                        # 从数据库获取当前最大的sequence_index，避免streaming过程中重复
+                                        sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
+
                                         for block_index, content_item in enumerate(content_blocks):
                                             block_type = content_item.get('type')
 
                                             if block_type == 'text':
                                                 # 记录 text content block
+                                                text = content_item.get('text', '')
                                                 self.message_queue.add_content_block(
                                                     message_id,
                                                     block_index,
                                                     'text',
-                                                    {'text': content_item.get('text', '')}
+                                                    {'text': text}
                                                 )
 
+                                                # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
+                                                text_parts = text.split('\n\n')
+                                                for part in text_parts:
+                                                    if part.strip():  # 跳过空文本
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id,
+                                                            sequence_index,
+                                                            block_index,
+                                                            'text',
+                                                            {'text': part.strip()}
+                                                        )
+                                                        sequence_index += 1
+
                                                 # 收集文本用于流式响应
-                                                text = content_item.get('text', '')
                                                 response_lines.append(text)
 
                                                 partial_response = '\n'.join(response_lines)
@@ -499,8 +544,19 @@ class SessionWorker:
                                                     {'name': tool_name, 'input': tool_input, 'id': tool_id}
                                                 )
 
-                                                # 保存工具调用信息到数据库
+                                                # 保存工具调用信息到数据库（获取tool_use_index）
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
+
+                                                # 生成工具调用消息序列（传入正确的tool_use_index）
+                                                self.message_queue.add_message_sequence(
+                                                    message_id,
+                                                    sequence_index,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
+                                                    tool_use_index=tool_use_index
+                                                )
+                                                sequence_index += 1
 
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
