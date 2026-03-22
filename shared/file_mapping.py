@@ -15,11 +15,17 @@ class FileMapping:
         """初始化文件映射表管理器
 
         Args:
-            mapping_file: 映射表文件路径，默认在 discord-claude-bridge/file_mapping.json
+            mapping_file: 映射表文件路径，默认从配置文件读取
         """
         if mapping_file is None:
-            # 默认路径：discord-claude-bridge/file_mapping.json
-            self.mapping_file = Path(__file__).parent.parent / "file_mapping.json"
+            # 从配置文件读取路径
+            try:
+                from .config import Config
+                config = Config()
+                self.mapping_file = Path(config.file_mapping_path)
+            except Exception:
+                # 如果配置加载失败，使用默认路径
+                self.mapping_file = Path(__file__).parent.parent / "file_mapping.json"
         else:
             self.mapping_file = Path(mapping_file)
 
