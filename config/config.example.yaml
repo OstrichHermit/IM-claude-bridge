@@ -2,7 +2,6 @@
 discord:
   token: "YOUR_DISCORD_BOT_TOKEN_HERE"
   # 从 https://discord.com/developers/applications 获取
-  command_prefix: "!"
   # 允许的频道 ID 列表（空列表表示所有频道）
   allowed_channels: []
   # 允许的用户 ID 列表（空列表表示所有用户）
@@ -40,9 +39,6 @@ file_download:
   # 默认下载目录（支持相对路径和绝对路径）
   # 相对路径基于工作区根目录（D:/AgentWorkspace）
   default_directory: "./downloads"
-  # 允许的下载目录列表（空列表 = 允许所有目录）
-  # 安全限制：防止下载到系统目录
-  allowed_directories: []
 
 # 消息队列配置
 queue:

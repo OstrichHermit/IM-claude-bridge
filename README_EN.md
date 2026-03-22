@@ -288,7 +288,6 @@ For detailed configuration, see: [MCP_SETUP.md](MCP_SETUP.md)
 ```yaml
 discord:
   token: "YOUR_DISCORD_BOT_TOKEN"  # Discord Bot Token
-  command_prefix: "@"                  # Command prefix
   allowed_channels: []                # Allowed channels (empty = all)
   allowed_users: []                   # Allowed users (empty = all)
 

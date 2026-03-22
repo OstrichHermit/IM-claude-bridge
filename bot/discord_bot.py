@@ -4,7 +4,7 @@ Discord Bot 主程序
 支持斜杠命令（Slash Commands）
 """
 import discord
-from discord.ext import commands
+from discord import app_commands
 import asyncio
 import sys
 import json
@@ -19,7 +19,7 @@ from shared.file_mapping import FileMapping
 from bot.cron_scheduler import BotCronScheduler
 
 
-class DiscordBot(commands.Bot):
+class DiscordBot(discord.Client):
     """Discord Bot 类"""
 
     def __init__(self, config: Config):
@@ -29,10 +29,11 @@ class DiscordBot(commands.Bot):
         intents.messages = True
 
         super().__init__(
-            command_prefix=config.command_prefix,
-            intents=intents,
-            help_command=None
+            intents=intents
         )
+
+        # 手动创建命令树（discord.Client 需要，commands.Bot 自带）
+        self.tree = app_commands.CommandTree(self)
 
         self.config = config
         self.message_queue = MessageQueue(config.database_path)

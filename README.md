@@ -269,7 +269,6 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 ```yaml
 discord:
   token: "YOUR_DISCORD_BOT_TOKEN"  # Discord Bot Token
-  command_prefix: "@"                  # 命令前缀
   allowed_channels: []                # 允许的频道（空 = 所有）
   allowed_users: []                   # 允许的用户（空 = 所有）
 

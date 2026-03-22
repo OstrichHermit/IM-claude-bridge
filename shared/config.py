@@ -40,11 +40,6 @@ class Config:
         return token
 
     @property
-    def command_prefix(self) -> str:
-        """获取命令前缀"""
-        return self._config.get('discord', {}).get('command_prefix', '@')
-
-    @property
     def allowed_channels(self) -> List[int]:
         """获取允许的频道 ID 列表"""
         return self._config.get('discord', {}).get('allowed_channels', [])
@@ -131,11 +126,6 @@ class Config:
             project_root = Path(__file__).parent.parent
             download_dir = project_root / download_dir
         return str(download_dir)
-
-    @property
-    def allowed_download_directories(self) -> List[str]:
-        """获取允许的下载目录列表（空列表 = 允许所有目录）"""
-        return self._config.get('file_download', {}).get('allowed_directories', [])
 
     @property
     def auto_load_enabled(self) -> bool:
