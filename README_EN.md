@@ -15,7 +15,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - ✅ Continuous conversation support (session management)
 - ✅ Real-time status feedback (received → processing → response)
 - ✅ Message tracking system (avoid duplicate processing)
-- ✅ Response modes: Embed mode (default, card-style) + Direct reply mode (streaming)
+- ✅ Unified message queue mechanism for all responses
 - ✅ Tool use notification (forward tool calls as Embed cards)
 
 **📁 File Transfer**
@@ -179,43 +179,6 @@ Reply to a message with attachments and @Bot, Bot will extract attachment metada
 - Method 1: Downloads file to local
 - Method 3: Only extracts metadata, no download
 
-#### 5.4 Response Modes
-
-The system supports two response modes, configurable via `config.yaml`:
-
-**Embed Mode** (default):
-- Sends confirmation message ("⏳ Message received")
-- Displays response using Discord Embed cards
-- Suitable for long replies, formatted content
-- Single message (auto-split if too long)
-
-**Direct Reply Mode** (requires enabling):
-- No confirmation message sent
-- Claude's response sent directly (streaming output)
-- Each block sent as independent message
-- Shows typing indicator
-- Suitable for real-time conversations, quick responses
-
-**Mode Comparison**:
-
-| Feature | Embed Mode (Default) | Direct Reply Mode |
-|---------|---------------------|-------------------|
-| Confirmation message | ✅ Sent | ❌ Not sent |
-| Response format | Embed card | Plain text message |
-| Message count | 1 (may split) | Multiple (one per block) |
-| Best for | Long replies | Real-time conversations |
-
-**Configure Direct Reply Mode** (in `config.yaml`):
-```yaml
-direct_reply:
-  enabled: false  # Enable direct reply mode (default: disabled)
-  streaming:
-    min_message_interval: 1.5  # Message send interval (seconds), avoid Discord rate limit
-    stop_typing_after_first_block: false  # Stop typing after first message
-    merge_short_blocks: true  # Merge short blocks
-    short_block_max_length: 50  # Max length for short blocks (characters)
-```
-
 ## 🔌 MCP Server Integration
 
 Claude Code can send files to Discord via MCP protocol.
@@ -296,6 +259,8 @@ claude:
   timeout: 300                         # Timeout (seconds)
   max_attempts: 3                      # Max call attempts (including first)
   working_directory: ""               # Working directory (optional)
+  max_concurrent_sessions: 5           # Max concurrent sessions (0 = unlimited)
+  worker_idle_timeout: 300             # Worker idle timeout (seconds, 0 = never cleanup)
 
 file_download:
   default_directory: "D:/AgentWorkspace/downloads"  # Default download directory
@@ -304,14 +269,17 @@ queue:
   database_path: "./shared/messages.db"
   poll_interval: 500                   # Poll interval (milliseconds)
   message_retention_hours: 24          # Message retention time
+  send_interval: 1.5                   # Message send interval (seconds)
 
-direct_reply:
-  enabled: false                       # Enable direct reply mode (default: disabled)
-  streaming:
-    min_message_interval: 1.5          # Message send interval (seconds), avoid Discord rate limit
-    stop_typing_after_first_block: false  # Stop typing after first message
-    merge_short_blocks: true           # Merge short blocks
-    short_block_max_length: 50         # Max length for short blocks (characters)
+message_splitting:
+  enabled: true                        # Enable message splitting by empty lines
+
+typing_indicator:
+  max_retries: 3                       # Max consecutive retries (network fluctuations)
+  retry_delay: 3                       # Retry wait time (seconds)
+
+timeout:
+  pending: 30                          # PENDING state timeout (seconds)
 
 tool_use_notification:
   enabled: true                        # Enable tool use notification (forward as Embed cards)

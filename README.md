@@ -15,7 +15,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - 持续对话支持（会话管理）
 - 实时状态反馈（接收 → 处理 → 响应）
 - 消息追踪系统（避免重复处理）
-- 响应模式：Embed 模式（默认，卡片式响应）+ 直接回复模式（流式输出）
+- 使用消息队列机制统一处理响应
 - 工具调用通知（支持 Embed 卡片形式转发工具调用信息）
 
 **📁 文件传输**
@@ -179,43 +179,6 @@ file_download:
 - 方式一会下载文件到本地
 - 方式三只提取元数据，不下载
 
-### 5.4 响应模式
-
-本系统支持两种响应模式，可通过 `config.yaml` 配置：
-
-**Embed 模式**（默认）：
-- 发送确认消息（"⏳ 消息已接收"）
-- 使用 Discord Embed 卡片展示响应
-- 适合长回复、格式化内容
-- 单条消息（超长时自动分割）
-
-**直接回复模式**（需启用）：
-- 不发送确认消息
-- Claude 的响应直接发送（流式输出）
-- 每个 block 作为独立消息发送
-- 显示 typing indicator（输入状态）
-- 适合实时对话、快速响应
-
-**模式对比**：
-
-| 特性   | Embed 模式（默认） | 直接回复模式         |
-|------|--------------|----------------|
-| 确认消息 | ✅ 发送         | ❌ 不发送          |
-| 响应方式 | Embed 卡片     | 纯文本消息          |
-| 消息数量 | 1条（可能分割）     | 多条（每 block 一条） |
-| 适用场景 | 适合长回复        | 适合实时对话         |
-
-**配置直接回复模式**（在 `config.yaml`）：
-```yaml
-direct_reply:
-  enabled: false  # 是否启用直接回复模式（默认关闭）
-  streaming:
-    min_message_interval: 1.5  # 消息发送间隔（秒），避免 Discord 速率限制
-    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
-    merge_short_blocks: true  # 是否合并短 block
-    short_block_max_length: 50  # 短 block 最大长度（字符）
-```
-
 ## 🔌 MCP 服务器集成
 
 Claude Code 可通过 MCP 协议发送文件到 Discord。
@@ -277,6 +240,8 @@ claude:
   timeout: 300                         # 超时时间（秒）
   max_attempts: 3                      # 最大调用尝试次数（包括第一次）
   working_directory: ""               # 工作目录（可选）
+  max_concurrent_sessions: 5           # 最大并发 session 数（0 = 无限制）
+  worker_idle_timeout: 300             # Worker 空闲超时时间（秒，0 = 永不清理）
 
 file_download:
   default_directory: "D:/AgentWorkspace/downloads"  # 默认下载目录
@@ -285,14 +250,17 @@ queue:
   database_path: "./shared/messages.db"
   poll_interval: 500                   # 轮询间隔（毫秒）
   message_retention_hours: 24          # 消息保留时间
+  send_interval: 1.5                   # 消息发送间隔（秒）
 
-direct_reply:
-  enabled: false                       # 是否启用直接回复模式（默认关闭）
-  streaming:
-    min_message_interval: 1.5          # 消息发送间隔（秒），避免 Discord 速率限制
-    stop_typing_after_first_block: false  # 首条消息后是否停止 typing
-    merge_short_blocks: true           # 是否合并短 block
-    short_block_max_length: 50         # 短 block 最大长度（字符）
+message_splitting:
+  enabled: true                        # 是否启用消息按空行分割功能
+
+typing_indicator:
+  max_retries: 3                       # 最大连续重试次数（网络波动时）
+  retry_delay: 3                       # 重试等待时间（秒）
+
+timeout:
+  pending: 30                          # PENDING 状态超时时间（秒）
 
 tool_use_notification:
   enabled: true                        # 是否启用工具调用通知（以 Embed 卡片形式转发）
