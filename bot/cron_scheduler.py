@@ -117,7 +117,7 @@ class BotCronScheduler:
 
         try:
             # 调用 trigger_scheduled_task.py
-            trigger_script = Path(__file__).parent.parent / "trigger_scheduled_task.py"
+            trigger_script = Path(__file__).parent.parent / "scripts" / "trigger_scheduled_task.py"
 
             # 准备配置内容
             config_content = f"""username={job.get('username') or ''}

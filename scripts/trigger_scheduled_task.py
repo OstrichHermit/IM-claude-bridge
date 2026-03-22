@@ -8,9 +8,9 @@
 import argparse
 from pathlib import Path
 
-# 添加 shared 目录到路径
+# 添加项目根目录到路径
 import sys
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from insert_external_message import insert_external_message
 
