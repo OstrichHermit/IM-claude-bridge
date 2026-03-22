@@ -139,15 +139,14 @@ class SessionWorker:
             session_created = False
             working_dir = self.config.working_directory
         else:
-            # 普通会话（default）：根据模式获取 session
+            # 普通会话（default）：获取 session（固定使用 session 模式）
             session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
                 self.config.working_directory,
                 channel_id=message.discord_channel_id,
                 user_id=message.discord_user_id,
                 is_dm=message.is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
         # 先更新状态为 PROCESSING
