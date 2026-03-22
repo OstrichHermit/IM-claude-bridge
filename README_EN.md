@@ -114,10 +114,7 @@ Just @Bot in Discord:
 @YourBot Please help me analyze this code
 ```
 
-Bot will:
-1. Receive message and show "⏳ Message received"
-2. Forward to local Claude Code for processing (show "🔄 Processing")
-3. Send Claude's reply back to Discord (show "✅ Message #X response successful!")
+The bot will receive messages and display that it is typing, and then stop when the response is complete.
 
 #### 5.2 Slash Commands
 
@@ -272,7 +269,7 @@ queue:
   send_interval: 1.5                   # Message send interval (seconds)
 
 message_splitting:
-  enabled: true                        # Enable message splitting by empty lines
+  enabled: true                        # Enable message splitting by empty lines (Make replies more natural and personified)
 
 typing_indicator:
   max_retries: 3                       # Max consecutive retries (network fluctuations)

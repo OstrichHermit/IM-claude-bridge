@@ -114,10 +114,7 @@ start.bat
 @YourBot 请帮我分析这段代码
 ```
 
-Bot 会：
-1. 接收消息并显示"⏳ 消息已接收"
-2. 转发给本地 Claude Code 处理（显示"🔄 正在处理中"）
-3. 将 Claude 的回复发送回 Discord（显示"✅ 消息 #X 响应成功！"）
+Bot 会接收消息并显示正在输入，并在响应完成后停止。
 
 ### 5.2 斜杠命令
 
@@ -179,7 +176,7 @@ file_download:
 - 方式一会下载文件到本地
 - 方式三只提取元数据，不下载
 
-## 🔌 MCP 服务器集成
+## 🔌 MCP 服务器集成（让回复更自然拟人）
 
 Claude Code 可通过 MCP 协议发送文件到 Discord。
 
@@ -253,7 +250,7 @@ queue:
   send_interval: 1.5                   # 消息发送间隔（秒）
 
 message_splitting:
-  enabled: true                        # 是否启用消息按空行分割功能
+  enabled: true                        # 是否启用消息按空行分割功能（让回复更自然拟人）
 
 typing_indicator:
   max_retries: 3                       # 最大连续重试次数（网络波动时）
