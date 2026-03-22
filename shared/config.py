@@ -113,11 +113,6 @@ class Config:
         return self._config.get('discord', {}).get('startup_notification_user', '')
 
     @property
-    def sync_guild_id(self) -> str:
-        """获取斜杠命令同步的服务器 ID（留空则全局同步）"""
-        return self._config.get('discord', {}).get('sync_guild_id', '')
-
-    @property
     def stickers_path(self) -> str:
         """获取表情包目录路径"""
         stickers_dir = self._config.get('discord', {}).get('stickers_path', './stickers')
@@ -151,44 +146,25 @@ class Config:
     def auto_load_prompt_text(self) -> str:
         """获取首次对话提示词注入的文本"""
         return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
+    
+    # Typing indicator 配置
 
     @property
-    def direct_reply_enabled(self) -> bool:
-        """获取是否启用直接回复模式"""
-        return self._config.get('direct_reply', {}).get('enabled', False)
+    def typing_indicator_max_retries(self) -> int:
+        """获取 typing indicator 最大连续重试次数"""
+        return self._config.get('typing_indicator', {}).get('max_retries', 3)
 
     @property
-    def direct_reply_streaming_min_interval(self) -> float:
-        """获取直接回复模式的消息最小间隔（秒）"""
-        return self._config.get('direct_reply', {}).get('streaming', {}).get('min_message_interval', 1.5)
+    def typing_indicator_retry_delay(self) -> int:
+        """获取 typing indicator 重试等待时间（秒）"""
+        return self._config.get('typing_indicator', {}).get('retry_delay', 5)
+
+    # 超时配置
 
     @property
-    def direct_reply_stop_typing_after_first_block(self) -> bool:
-        """获取是否在第一个 block 发送后停止 typing indicator"""
-        return self._config.get('direct_reply', {}).get('streaming', {}).get('stop_typing_after_first_block', False)
-
-    @property
-    def direct_reply_merge_short_blocks(self) -> bool:
-        """获取是否合并短 block"""
-        return self._config.get('direct_reply', {}).get('streaming', {}).get('merge_short_blocks', True)
-
-    @property
-    def direct_reply_short_block_max_length(self) -> int:
-        """获取短 block 的最大长度"""
-        return self._config.get('direct_reply', {}).get('streaming', {}).get('short_block_max_length', 50)
-
-    @property
-    def session_mode(self) -> str:
-        """获取会话模式（global 或 session）"""
-        mode = self._config.get('claude', {}).get('session_mode', 'global')
-        if mode not in ('global', 'session'):
-            raise ValueError(f"无效的会话模式: {mode}，必须是 'global' 或 'session'")
-        return mode
-
-    @property
-    def pending_timeout(self) -> int:
+    def timeout_pending(self) -> int:
         """获取 PENDING 状态超时时间（秒）"""
-        return self._config.get('direct_reply', {}).get('pending_timeout', 30)
+        return self._config.get('timeout', {}).get('pending', 30)
 
     @property
     def max_concurrent_sessions(self) -> int:
@@ -199,16 +175,6 @@ class Config:
     def worker_idle_timeout(self) -> int:
         """获取 Worker 空闲超时时间（秒，0 = 永不清理）"""
         return self._config.get('claude', {}).get('worker_idle_timeout', 300)
-
-    @property
-    def typing_indicator_max_retries(self) -> int:
-        """获取 typing indicator 最大连续重试次数"""
-        return self._config.get('direct_reply', {}).get('typing_indicator', {}).get('max_retries', 3)
-
-    @property
-    def typing_indicator_retry_delay(self) -> int:
-        """获取 typing indicator 重试等待时间（秒）"""
-        return self._config.get('direct_reply', {}).get('typing_indicator', {}).get('retry_delay', 5)
 
     @property
     def tool_use_notification_enabled(self) -> bool:
@@ -235,12 +201,16 @@ class Config:
             storage_path = project_root / storage_path
         return str(storage_path)
 
-    @property
-    def unified_queue_enabled(self) -> bool:
-        """获取是否启用统一队列模式（所有消息通过队列发送）"""
-        return self._config.get('unified_queue', {}).get('enabled', False)
+    # 消息队列配置
 
     @property
-    def unified_queue_interval(self) -> float:
-        """获取统一队列的消息发送间隔（秒）"""
-        return self._config.get('unified_queue', {}).get('message_interval', 1.5)
+    def queue_send_interval(self) -> float:
+        """获取消息队列的发送间隔（秒）"""
+        return self._config.get('queue', {}).get('send_interval', 1.5)
+
+    # 消息分割配置
+
+    @property
+    def enable_message_splitting(self) -> bool:
+        """获取是否启用消息按空行分割功能"""
+        return self._config.get('message_splitting', {}).get('enabled', True)

@@ -517,64 +517,6 @@ class MessageQueue:
 
         return message_id
 
-    def get_next_pending(self, direction: MessageDirection) -> Optional[Message]:
-        """获取下一个待处理的消息"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, direction, content, status,
-                   discord_channel_id, discord_message_id,
-                   discord_user_id, username,
-                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
-            FROM messages
-            WHERE status = ? AND direction = ?
-            ORDER BY created_at ASC
-            LIMIT 1
-        """, (MessageStatus.PENDING.value, direction.value))
-
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            # 解析附件信息
-            attachments = None
-            if row[13]:
-                try:
-                    attachments_data = json.loads(row[13])
-                    attachments = [
-                        AttachmentInfo(
-                            id=a["id"],
-                            filename=a["filename"],
-                            local_filename=a.get("local_filename"),
-                            size=a["size"],
-                            url=a["url"],
-                            description=a.get("description")
-                        )
-                        for a in attachments_data
-                    ]
-                except (json.JSONDecodeError, KeyError):
-                    pass
-
-            return Message(
-                id=row[0],
-                direction=row[1],
-                content=row[2],
-                status=row[3],
-                discord_channel_id=row[4],
-                discord_message_id=row[5],
-                discord_user_id=row[6],
-                username=row[7],
-                response=row[8],
-                error=row[9],
-                is_dm=bool(row[10]),
-                is_external=bool(row[11]),
-                tag=row[12] or MessageTag.DEFAULT.value,
-                attachments=attachments,
-                created_at=row[14],
-                updated_at=row[15]
-            )
-        return None
 
     def get_pending_messages_by_session(self) -> dict:
         """
@@ -1161,11 +1103,10 @@ class MessageQueue:
         user_id: int = None,
         is_dm: bool = False,
         use_temp_session: bool = False,
-        temp_session_key: str = None,
-        session_mode: str = "global"
+        temp_session_key: str = None
     ) -> tuple[str, str, bool, str]:
         """
-        获取或创建会话的工作目录
+        获取或创建会话的工作目录（固定使用 session 模式）
 
         Args:
             base_working_dir: 基础工作目录
@@ -1174,7 +1115,6 @@ class MessageQueue:
             is_dm: 是否为私聊消息
             use_temp_session: 是否使用临时会话（外部消息）
             temp_session_key: 临时会话 key（use_temp_session=True 时使用）
-            session_mode: 会话模式（"global" 或 "session"）
 
         Returns:
             (session_key, session_id, session_created, working_directory):
@@ -1187,19 +1127,15 @@ class MessageQueue:
 
         # ========== 生成 session_key 和工作目录 ==========
         if use_temp_session and temp_session_key:
-            # 临时会话（外部消息：task/reminder）- 所有模式下都是独立的
+            # 临时会话（外部消息：task/reminder）- 独立 session
             session_key = temp_session_key
             working_dir = str(base_path)  # 使用基础工作目录
-        elif session_mode == "global":
-            # global 模式：所有频道/私聊共享一个全局 session
-            session_key = "global"
-            working_dir = str(base_path)  # 使用基础工作目录
         elif is_dm:
-            # session 模式 - 私聊：每个用户的私聊使用独立 session
+            # 私聊：每个用户的私聊使用独立 session
             session_key = f"dm_{user_id}"
             working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
         else:
-            # session 模式 - 频道：每个频道使用独立 session（该频道所有用户共享）
+            # 频道：每个频道使用独立 session（该频道所有用户共享）
             session_key = f"channel_{channel_id}"
             working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
 

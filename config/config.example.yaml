@@ -10,10 +10,6 @@ discord:
   # 启动通知配置（可选，留空则不发送启动通知）
   startup_notification_channel: ""  # 频道 ID（留空）
   startup_notification_user: ""  # 用户 ID（私聊）
-  # 斜杠命令同步配置（留空 = 全局同步，需要等待几分钟生效）
-  # 填写服务器 ID 可以立即同步命令到该服务器
-  # 获取方法：Discord 开发者模式 → 右键服务器 → 复制 ID
-  sync_guild_id: ""  # 服务器 ID（留空则使用全局同步）
   # 表情包目录配置
   # 用于 <:文件名.扩展名> 格式的表情包自动发送
   # 支持相对路径和绝对路径，相对路径基于项目根目录
@@ -31,10 +27,6 @@ claude:
   # 工作目录（可选，留空则使用当前目录）
   # 对于需要访问特定项目文件的任务很有用
   working_directory: ""
-  # 会话模式：
-  # - global: 所有频道/私聊共享一个全局 session（原有模式）
-  # - session: 每个频道/私聊使用独立 session（新功能）
-  session_mode: "global"
   # 并发配置
   # 最大并发 session 数（0 = 无限制）
   # 每个 session 会启动一个独立的 Worker，并发处理不同频道的消息
@@ -60,6 +52,8 @@ queue:
   poll_interval: 500
   # 消息保留时间（小时，0 = 永久保留）
   message_retention_hours: 24
+  # 消息发送间隔（秒）
+  send_interval: 1.5
 
 # 首次对话提示词注入配置
 auto_load:
@@ -69,45 +63,18 @@ auto_load:
   # 加载记忆的提示文本（会添加到消息前面）
   prompt_text: "加载记忆。"
 
-# 直接回复模式配置
-direct_reply:
-  # 是否启用直接回复模式
-  enabled: false
+# Typing indicator 配置（"正在输入"状态）
+typing_indicator:
+  # 最大连续重试次数（网络波动时）
+  max_retries: 3
+  # 重试等待时间（秒）
+  retry_delay: 5
 
-  # 启用后的行为：
-  # - 不发送 PENDING/PROCESSING/AI_STARTED 等状态提示消息
-  # - 显示 typing indicator（Discord "正在输入"状态）
-  # - 不使用 Embed 卡片，改为纯文本消息
-  # - 不显示消息 ID
-  # - 每个 block 作为新消息发送（而非编辑单条消息）
-
-  # 流式输出配置
-  streaming:
-    # 每条消息的最小间隔（秒），避免触发 Discord 速率限制
-    # Discord 限制：同一频道每 10 秒最多 5 条消息
-    # 推荐值：1.0-2.0 秒
-    min_message_interval: 1.5
-
-    # 是否在第一个 block 发送后停止 typing indicator
-    # false: 保持 typing indicator 直到响应完成
-    # true: 第一个 block 发送后立即停止
-    stop_typing_after_first_block: false
-
-    # 是否合并短 block（减少消息数量）
-    merge_short_blocks: true
-    # 短 block 的最大长度（字符）
-    short_block_max_length: 50
-
+# 消息超时配置
+timeout:
   # PENDING 状态超时时间（秒）
   # 超过此时间未收到 Claude Bridge 响应时，发送超时提示
-  pending_timeout: 30
-
-  # Typing indicator 配置（"正在输入"状态）
-  typing_indicator:
-    # 最大连续重试次数（网络波动时）
-    max_retries: 3
-    # 重试等待时间（秒）
-    retry_delay: 5
+  pending: 30
 
 # 工具调用通知配置
 tool_use_notification:
@@ -186,13 +153,13 @@ tool_use_notification:
     # 优先级高于服务器映射，可以为特定工具定制 emoji
 
     # Discord Bridge 定时任务相关（示例）
-    # mcp__discord-bridge__add_cron: "⏰"
-    # mcp__discord-bridge__delete_cron: "⏰"
-    # mcp__discord-bridge__get_cron_info: "⏰"
-    # mcp__discord-bridge__list_cron: "⏰"
-    # mcp__discord-bridge__toggle_cron: "⏰"
-    # mcp__discord-bridge__update_cron: "⏰"
-    # mcp__discord-bridge__get_current_time: "⏰"
+    mcp__discord-bridge__add_cron: "⏰"
+    mcp__discord-bridge__delete_cron: "⏰"
+    mcp__discord-bridge__get_cron_info: "⏰"
+    mcp__discord-bridge__list_cron: "⏰"
+    mcp__discord-bridge__toggle_cron: "⏰"
+    mcp__discord-bridge__update_cron: "⏰"
+    mcp__discord-bridge__get_current_time: "⏰"
 
 # 定时任务调度器配置
 cron_scheduler:

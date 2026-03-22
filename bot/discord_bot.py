@@ -4,13 +4,11 @@ Discord Bot 主程序
 支持斜杠命令（Slash Commands）
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import asyncio
 import sys
 import json
 from pathlib import Path
-from typing import List
 
 # 添加 shared 目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -46,7 +44,7 @@ class DiscordBot(commands.Bot):
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
         self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
 
-        # 🌉 统一队列管理器（当启用 unified_queue 时使用）
+        # 消息队列管理器
         self.unified_queues = {}  # {channel_id: StreamingMessageQueue}
 
         # ⏰ 定时任务调度器
@@ -55,13 +53,13 @@ class DiscordBot(commands.Bot):
 
     def _get_unified_queue(self, channel: discord.abc.Messageable):
         """
-        获取或创建频道的统一队列
+        获取或创建频道的消息队列
 
         Args:
             channel: Discord 频道对象
 
         Returns:
-            StreamingMessageQueue: 统一队列对象
+            StreamingMessageQueue: 消息队列对象
         """
         from bot.streaming_queue import StreamingMessageQueue
 
@@ -69,7 +67,7 @@ class DiscordBot(commands.Bot):
         if channel_id not in self.unified_queues:
             self.unified_queues[channel_id] = StreamingMessageQueue(
                 channel,
-                self.config.unified_queue_interval
+                self.config.queue_send_interval
             )
         return self.unified_queues[channel_id]
 
@@ -83,30 +81,18 @@ class DiscordBot(commands.Bot):
         # 注册斜杠命令
         await self.add_commands()
 
-        # 同步命令到 Discord
+        # 同步命令到 Discord（全局同步）
         try:
-            print("🔄 正在同步斜杠命令到 Discord...")
-
-            # 检查是否配置了特定服务器 ID
-            if self.config.sync_guild_id:
-                # 同步到特定服务器（立即生效）
-                guild = discord.Object(id=int(self.config.sync_guild_id))
-                synced = await self.tree.sync(guild=guild)
-                print(f"✅ 已同步 {len(synced)} 个斜杠命令到服务器 {self.config.sync_guild_id}")
-                print(f"⚡ 服务器命令立即生效！")
-            else:
-                # 全局同步（需要等待几分钟）
-                synced = await self.tree.sync()
-                print(f"✅ 已同步 {len(synced)} 个斜杠命令（全局）")
-                print(f"⏱️  注意：全局命令可能需要 1-5 分钟才能生效")
-                print(f"💡 提示：在 config.yaml 中配置 sync_guild_id 可以立即生效")
+            print("🔄 正在同步斜杠命令到 Discord（全局）...")
+            synced = await self.tree.sync()
+            print(f"✅ 已同步 {len(synced)} 个斜杠命令")
+            print(f"⏱️  注意：全局命令可能需要 1-5 分钟才能生效")
 
         except Exception as e:
             print(f"⚠️ 命令同步失败: {e}")
             print(f"📋 请确认：")
             print(f"   1. Bot Token 是否正确")
             print(f"   2. 是否已在 Discord Developer Portal 启用 'applications.commands' scope")
-            print(f"   3. 如果配置了 sync_guild_id，确认服务器 ID 是否正确")
 
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
@@ -153,12 +139,12 @@ class DiscordBot(commands.Bot):
                 print(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
 
                 cursor.execute("""
-                    UPDATE messages
-                    SET status = 'completed',
-                        updated_at = CURRENT_TIMESTAMP,
-                        error = 'Bot 重置：消息被标记为已完成'
-                    WHERE status = 'processing'
-                """)
+                               UPDATE messages
+                               SET status = 'completed',
+                                   updated_at = CURRENT_TIMESTAMP,
+                                   error = 'Bot 重置：消息被标记为已完成'
+                               WHERE status = 'processing'
+                               """)
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -174,12 +160,12 @@ class DiscordBot(commands.Bot):
                 print(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
 
                 cursor.execute("""
-                    UPDATE messages
-                    SET status = 'skipped',
-                        updated_at = CURRENT_TIMESTAMP,
-                        error = 'Bot 重启：消息被跳过，避免重复处理'
-                    WHERE status = 'pending'
-                """)
+                               UPDATE messages
+                               SET status = 'skipped',
+                                   updated_at = CURRENT_TIMESTAMP,
+                                   error = 'Bot 重启：消息被跳过，避免重复处理'
+                               WHERE status = 'pending'
+                               """)
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -195,12 +181,12 @@ class DiscordBot(commands.Bot):
                 print(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
 
                 cursor.execute("""
-                    UPDATE messages
-                    SET status = 'completed',
-                        updated_at = CURRENT_TIMESTAMP,
-                        error = 'Bot 重启：AI 响应被标记为已完成（避免重复发送工具调用通知）'
-                    WHERE status = 'ai_started'
-                """)
+                               UPDATE messages
+                               SET status = 'completed',
+                                   updated_at = CURRENT_TIMESTAMP,
+                                   error = 'Bot 重启：AI 响应被标记为已完成（避免重复发送工具调用通知）'
+                               WHERE status = 'ai_started'
+                               """)
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -212,6 +198,86 @@ class DiscordBot(commands.Bot):
 
         except Exception as e:
             print(f"⚠️ 清理卡住消息时出错: {e}")
+
+    async def _send_long_message(self, channel, content: str):
+        """发送长消息，自动分割超过 2000 字符的消息"""
+        if not content or not content.strip():
+            return
+
+        content = content.strip()
+
+        # Discord 消息长度限制（设置为 1000 以提前分割）
+        MAX_LENGTH = 1000
+
+        if len(content) <= MAX_LENGTH:
+            await channel.send(content)
+        else:
+            # 分割长消息
+            parts = []
+            current_part = ""
+
+            # 按行分割，保留代码块结构
+            lines = content.split('\n')
+            in_code_block = False
+            code_block_lang = ""
+
+            for line in lines:
+                # 检测代码块开始/结束
+                if line.strip().startswith('```'):
+                    if not in_code_block:
+                        in_code_block = True
+                        code_block_lang = line.strip()[3:]  # 获取语言标记
+                        current_part += line + '\n'
+                        continue
+                    else:
+                        in_code_block = False
+                        current_part += line + '\n'
+                        # 代码块结束，检查是否需要分割
+                        if len(current_part) >= MAX_LENGTH * 0.9:
+                            parts.append(current_part)
+                            current_part = ""
+                        continue
+
+                current_part += line + '\n'
+
+                # 如果不在代码块中，且当前部分接近限制，就分割
+                if not in_code_block and len(current_part) >= MAX_LENGTH * 0.9:
+                    parts.append(current_part.rstrip())
+                    current_part = ""
+
+                # 在代码块中，强制分割
+                if in_code_block and len(current_part) >= MAX_LENGTH * 0.95:
+                    # 关闭当前代码块
+                    current_part = current_part.rstrip()
+                    if current_part.endswith('```'):
+                        pass
+                    else:
+                        current_part += '\n```'
+                    parts.append(current_part)
+                    # 重新打开代码块
+                    current_part = f'```{code_block_lang}\n'
+
+            # 添加剩余内容
+            if current_part.strip():
+                parts.append(current_part.strip())
+
+            # 发送所有部分
+            for i, part in enumerate(parts, 1):
+                if part:
+                    try:
+                        await channel.send(part[:MAX_LENGTH])
+                        # 如果不是最后一部分，稍微延迟一下
+                        if i < len(parts):
+                            await asyncio.sleep(0.5)
+                    except discord.errors.HTTPException as e:
+                        print(f"❌ 发送消息部分 {i}/{len(parts)} 失败: {e}")
+                        # 尝试再次强制分割
+                        if len(part) > MAX_LENGTH:
+                            for j in range(0, len(part), MAX_LENGTH):
+                                try:
+                                    await channel.send(part[j:j+MAX_LENGTH])
+                                except:
+                                    pass
 
     async def send_startup_notification(self):
         """发送启动通知"""
@@ -230,27 +296,12 @@ class DiscordBot(commands.Bot):
             color=discord.Color.green()
         )
 
-        # 根据会话模式显示不同的信息
-        if self.config.session_mode == "global":
-            # global 模式：显示全局会话信息
-            session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
-                self.config.working_directory,
-                session_mode="global"
-            )
-            session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
-            session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
-            embed.add_field(
-                name="📋 会话模式: Global（全局共享）",
-                value=f"所有频道和私聊共享一个全局会话\n{session_info}",
-                inline=False
-            )
-        else:
-            # session 模式：说明独立会话架构
-            embed.add_field(
-                name="📋 会话模式: Session（独立会话）",
-                value="每个频道和每个用户的私聊都使用独立的 Session ID\n在具体频道或私聊中使用 `/status` 查看该会话信息",
-                inline=False
-            )
+        # 显示会话模式信息（固定使用 Session 模式）
+        embed.add_field(
+            name="📋 会话模式: Session（独立会话）",
+            value="每个频道和每个用户的私聊都使用独立的 Session ID\n在具体频道或私聊中使用 `/status` 查看该会话信息",
+            inline=False
+        )
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
         embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
@@ -320,8 +371,7 @@ class DiscordBot(commands.Bot):
                 user_id=interaction.user.id if is_dm else None,
                 is_dm=is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
             # 删除会话（包括数据库记录和 Claude Code 会话文件）
@@ -334,8 +384,7 @@ class DiscordBot(commands.Bot):
                 user_id=interaction.user.id if is_dm else None,
                 is_dm=is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
             if deleted:
@@ -376,8 +425,7 @@ class DiscordBot(commands.Bot):
                 user_id=interaction.user.id if is_dm else None,
                 is_dm=is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
             embed = discord.Embed(
@@ -577,6 +625,9 @@ class DiscordBot(commands.Bot):
                 embed.add_field(name="说明", value="Claude 响应将在几秒内停止...", inline=False)
                 await interaction.response.send_message(embed=embed)
                 print(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
+
+                # 停止正在输入状态
+                self.stop_typing_indicator(message_to_abort.id)
             else:
                 embed = discord.Embed(
                     title="❌ 中止请求失败",
@@ -834,8 +885,7 @@ class DiscordBot(commands.Bot):
                 user_id=message.author.id if is_dm else None,
                 is_dm=is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
             # 创建消息对象（默认标签）
@@ -860,61 +910,34 @@ class DiscordBot(commands.Bot):
             attach_info = f" (+{len(attachment_infos)}个附件)" if attachment_infos else ""
             print(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
 
-            # 根据配置决定是否发送确认消息
-            if self.config.direct_reply_enabled:
-                # 直接回复模式：不发送确认消息，直接启动 typing indicator
-                from bot.streaming_queue import StreamingMessageQueue
+            # 不发送确认消息，直接启动 typing indicator
+            from bot.streaming_queue import StreamingMessageQueue
 
-                typing_task = asyncio.create_task(
-                    self._maintain_typing_indicator(message.channel)
-                )
+            typing_task = asyncio.create_task(
+                self._maintain_typing_indicator(message.channel)
+            )
 
-                self.pending_messages[message_id] = {
-                    "channel": message.channel,
-                    "user_message": message,
-                    "confirmation_msg": None,  # 无确认消息
-                    "start_time": asyncio.get_event_loop().time(),
-                    "content": content[:50],
-                    "notified_processing": False,
-                    "direct_reply": True,  # 标记为直接回复模式
-                    "typing_task": typing_task,
-                    "typing_active": True,
-                    "streaming_queue": StreamingMessageQueue(
-                        message.channel,
-                        self.config.direct_reply_streaming_min_interval
-                    ),
-                    "last_streaming_content": "",
-                    "sent_blocks": [],
-                    # Content block 顺序追踪
-                    "content_blocks": [],  # 从数据库加载的 content block 顺序
-                    "current_text_block_index": 0,  # 当前文本块索引（在所有 text 类型的 content block 中）
-                    "text_block_item_indices": {},  # {text_block_index: item_count}
-                }
-                print(f"[消息 #{message_id}] 直接回复模式：已启用，不发送确认消息")
-            else:
-                # Embed 模式：发送确认消息（原有逻辑）
-                # 显示"正在输入"状态
-                async with message.channel.typing():
-                    pass
-
-                # 发送确认消息（使用 Embed 卡片）
-                embed = discord.Embed(
-                    title="✅ 消息已接收",
-                    description=f"正在等待 Claude Bridge 接收...\n\n消息 ID: {message_id}",
-                    color=discord.Color.blue()
-                )
-                embed.set_footer(text=f"消息 ID: {message_id}")
-                confirmation_msg = await message.reply(embed=embed)
-
-                self.pending_messages[message_id] = {
-                    "channel": message.channel,
-                    "user_message": message,
-                    "confirmation_msg": confirmation_msg,
-                    "start_time": asyncio.get_event_loop().time(),
-                    "content": content[:50],
-                    "notified_processing": False,
-                    "direct_reply": False,  # 标记为 Embed 模式
-                }
+            self.pending_messages[message_id] = {
+                "channel": message.channel,
+                "user_message": message,
+                "confirmation_msg": None,  # 无确认消息
+                "start_time": asyncio.get_event_loop().time(),
+                "content": content[:50],
+                "notified_processing": False,
+                "typing_task": typing_task,
+                "typing_active": True,
+                "streaming_queue": StreamingMessageQueue(
+                    message.channel,
+                    self.config.queue_send_interval
+                ),
+                "last_streaming_content": "",
+                "sent_blocks": [],
+                # Content block 顺序追踪
+                "content_blocks": [],  # 从数据库加载的 content block 顺序
+                "current_text_block_index": 0,  # 当前文本块索引（在所有 text 类型的 content block 中）
+                "text_block_item_indices": {},  # {text_block_index: item_count}
+            }
+            print(f"[消息 #{message_id}] 已启动 typing indicator")
 
         except Exception as e:
             print(f"❌ 处理消息时出错: {e}")
@@ -1012,8 +1035,7 @@ class DiscordBot(commands.Bot):
                 user_id=message.author.id if is_dm else None,
                 is_dm=is_dm,
                 use_temp_session=False,
-                temp_session_key=None,
-                session_mode=self.config.session_mode
+                temp_session_key=None
             )
 
             # 显示"正在输入"状态
@@ -1038,52 +1060,30 @@ class DiscordBot(commands.Bot):
 
                 print(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的附件引用消息 ({'私聊' if is_dm else '频道'})")
 
-                # 根据配置决定是否发送确认消息
-                if self.config.direct_reply_enabled:
-                    # 直接回复模式：不发送确认消息，直接启动 typing indicator
-                    from bot.streaming_queue import StreamingMessageQueue
+                # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
+                from bot.streaming_queue import StreamingMessageQueue
 
-                    typing_task = asyncio.create_task(
-                        self._maintain_typing_indicator(message.channel)
-                    )
+                typing_task = asyncio.create_task(
+                    self._maintain_typing_indicator(message.channel)
+                )
 
-                    self.pending_messages[message_id] = {
-                        "channel": message.channel,
-                        "user_message": message,
-                        "confirmation_msg": None,  # 无确认消息
-                        "start_time": asyncio.get_event_loop().time(),
-                        "content": content[:50] if content else "(空消息)",
-                        "notified_processing": False,
-                        "direct_reply": True,  # 标记为直接回复模式
-                        "typing_task": typing_task,
-                        "typing_active": True,
-                        "streaming_queue": StreamingMessageQueue(
-                            message.channel,
-                            self.config.direct_reply_streaming_min_interval
-                        ),
-                        "last_streaming_content": "",
-                        "sent_blocks": [],
-                    }
-                    print(f"[消息 #{message_id}] 直接回复模式：已启用，不发送确认消息")
-                else:
-                    # Embed 模式：发送确认消息（使用 Embed 卡片）
-                    embed = discord.Embed(
-                        title="✅ 消息已接收",
-                        description=f"检测到 {len(original_message.attachments)} 个附件\n\n消息 ID: {message_id}",
-                        color=discord.Color.blue()
-                    )
-                    embed.set_footer(text=f"消息 ID: {message_id}")
-                    confirmation_msg = await message.reply(embed=embed)
-
-                    self.pending_messages[message_id] = {
-                        "channel": message.channel,
-                        "user_message": message,
-                        "confirmation_msg": confirmation_msg,
-                        "start_time": asyncio.get_event_loop().time(),
-                        "content": content[:50] if content else "(空消息)",
-                        "notified_processing": False,
-                        "direct_reply": False,  # 标记为 Embed 模式
-                    }
+                self.pending_messages[message_id] = {
+                    "channel": message.channel,
+                    "user_message": message,
+                    "confirmation_msg": None,  # 无确认消息
+                    "start_time": asyncio.get_event_loop().time(),
+                    "content": content[:50] if content else "(空消息)",
+                    "notified_processing": False,
+                    "typing_task": typing_task,
+                    "typing_active": True,
+                    "streaming_queue": StreamingMessageQueue(
+                        message.channel,
+                        self.config.queue_send_interval
+                    ),
+                    "last_streaming_content": "",
+                    "sent_blocks": [],
+                }
+                print(f"[消息 #{message_id}] 已启动 typing indicator")
 
         except Exception as e:
             print(f"❌ 处理附件引用消息时出错: {e}")
@@ -1110,10 +1110,10 @@ class DiscordBot(commands.Bot):
                 conn = sqlite3.connect(self.config.database_path)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT status, downloaded_files, save_directory, error
-                    FROM file_download_requests
-                    WHERE id = ?
-                """, (request_id,))
+                               SELECT status, downloaded_files, save_directory, error
+                               FROM file_download_requests
+                               WHERE id = ?
+                               """, (request_id,))
                 db_result = cursor.fetchone()
                 conn.close()
 
@@ -1194,10 +1194,10 @@ class DiscordBot(commands.Bot):
             conn = sqlite3.connect(self.config.database_path)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT status, downloaded_files, save_directory, error
-                FROM file_download_requests
-                WHERE id = ?
-            """, (request_id,))
+                           SELECT status, downloaded_files, save_directory, error
+                           FROM file_download_requests
+                           WHERE id = ?
+                           """, (request_id,))
             db_result = cursor.fetchone()
             conn.close()
 
@@ -1282,8 +1282,8 @@ class DiscordBot(commands.Bot):
                 # 私聊：检查同一用户的其他消息是否正在处理
                 # 获取 user_id（从数据库查询）
                 cursor.execute("""
-                    SELECT discord_user_id FROM messages WHERE id = ?
-                """, (current_message_id,))
+                               SELECT discord_user_id FROM messages WHERE id = ?
+                               """, (current_message_id,))
                 row = cursor.fetchone()
                 if not row:
                     conn.close()
@@ -1293,20 +1293,20 @@ class DiscordBot(commands.Bot):
 
                 # 查询同一用户的私聊消息是否有正在处理的
                 cursor.execute("""
-                    SELECT COUNT(*) FROM messages
-                    WHERE id != ? AND discord_user_id = ? AND is_dm = 1
+                               SELECT COUNT(*) FROM messages
+                               WHERE id != ? AND discord_user_id = ? AND is_dm = 1
                     AND status IN ('processing', 'ai_started')
-                """, (current_message_id, user_id))
+                               """, (current_message_id, user_id))
             else:
                 # 频道：检查同一频道的其他消息是否正在处理
                 channel_id = channel.id
 
                 # 查询同一频道的消息是否有正在处理的
                 cursor.execute("""
-                    SELECT COUNT(*) FROM messages
-                    WHERE id != ? AND discord_channel_id = ? AND is_dm = 0
+                               SELECT COUNT(*) FROM messages
+                               WHERE id != ? AND discord_channel_id = ? AND is_dm = 0
                     AND status IN ('processing', 'ai_started')
-                """, (current_message_id, channel_id))
+                               """, (current_message_id, channel_id))
 
             count = cursor.fetchone()[0]
             conn.close()
@@ -1332,20 +1332,12 @@ class DiscordBot(commands.Bot):
                 conn = sqlite3.connect(self.config.database_path)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
-                    FROM messages
-                    WHERE status IN (?, ?) AND direction = ? AND is_external = 1
-                    ORDER BY created_at ASC
-                """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value))
+                               SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
+                               FROM messages
+                               WHERE status IN (?, ?) AND direction = ? AND is_external = 1
+                               ORDER BY created_at ASC
+                               """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value))
                 external_messages = cursor.fetchall()
-                conn.close()
-
-                for msg_info in external_messages:
-                    msg_id, user_id, channel_id, username, content, is_dm = msg_info
-                    # 跳过已追踪的消息（防止重复处理）
-                    if msg_id in self.pending_messages:
-                        continue
-
                 conn.close()
 
                 for msg_info in external_messages:
@@ -1364,598 +1356,33 @@ class DiscordBot(commands.Bot):
                                     print(f"⚠️  外部消息 #{msg_id}: 找不到频道 {channel_id}")
                                     continue
 
-                            # 根据配置决定是否发送确认消息
-                            if self.config.direct_reply_enabled:
-                                # 直接回复模式：不发送确认消息，直接启动 typing indicator
-                                from bot.streaming_queue import StreamingMessageQueue
+                            # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
+                            from bot.streaming_queue import StreamingMessageQueue
 
-                                typing_task = asyncio.create_task(
-                                    self._maintain_typing_indicator(channel)
-                                )
+                            typing_task = asyncio.create_task(
+                                self._maintain_typing_indicator(channel)
+                            )
 
-                                self.pending_messages[msg_id] = {
-                                    "channel": channel,
-                                    "user_message": None,
-                                    "confirmation_msg": None,  # 无确认消息
-                                    "initial_message": None,
-                                    "start_time": asyncio.get_event_loop().time(),
-                                    "content": content[:50],
-                                    "notified_processing": False,
-                                    "direct_reply": True,  # 标记为直接回复模式
-                                    "typing_task": typing_task,
-                                    "typing_active": True,
-                                    "streaming_queue": StreamingMessageQueue(
-                                        channel,
-                                        self.config.direct_reply_streaming_min_interval
-                                    ),
-                                    "last_streaming_content": "",
-                                    "sent_blocks": [],
-                                }
-                                print(f"📨 [消息 #{msg_id}] 已加载外部消息: {username} (直接回复模式)")
-                            else:
-                                # Embed 模式：发送确认消息（使用 Embed 卡片）
-                                embed = discord.Embed(
-                                    title="✅ 消息已接收",
-                                    description=f"正在等待 Claude Bridge 接收...\n\n消息 ID: {msg_id}",
-                                    color=discord.Color.blue()
-                                )
-                                embed.set_footer(text=f"消息 ID: {msg_id}")
-                                confirmation_msg = await channel.send(embed=embed)
-
-                                # 🔥 加入 pending_messages 追踪（保存 initial_message 引用）
-                                self.pending_messages[msg_id] = {
-                                    "channel": channel,
-                                    "user_message": None,
-                                    "confirmation_msg": confirmation_msg,
-                                    "initial_message": confirmation_msg,  # 🔥 用于流式编辑
-                                    "start_time": asyncio.get_event_loop().time(),
-                                    "content": content[:50],
-                                    "notified_processing": False,
-                                    "direct_reply": False,  # 标记为 Embed 模式
-                                }
-                                print(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
+                            self.pending_messages[msg_id] = {
+                                "channel": channel,
+                                "user_message": None,
+                                "confirmation_msg": None,  # 无确认消息
+                                "start_time": asyncio.get_event_loop().time(),
+                                "content": content[:50],
+                                "notified_processing": False,
+                                "typing_task": typing_task,
+                                "typing_active": True,
+                                "streaming_queue": StreamingMessageQueue(
+                                    channel,
+                                    self.config.queue_send_interval
+                                ),
+                                "last_streaming_content": "",
+                                "sent_blocks": [],
+                            }
+                            print(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
 
                         except Exception as e:
                             print(f"⚠️  外部消息 #{msg_id} 加载失败: {e}")
-
-                # 检查待处理消息的状态
-                messages_to_remove = []
-                for msg_id, tracking_info in list(self.pending_messages.items()):
-                    elapsed_time = current_time - tracking_info["start_time"]
-
-                    # 查询数据库中消息的最新状态
-                    import sqlite3
-                    conn = sqlite3.connect(self.config.database_path)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT status, response, error FROM messages WHERE id = ?
-                    """, (msg_id,))
-                    result = cursor.fetchone()
-                    conn.close()
-
-                    if not result:
-                        # 消息不存在，从追踪中移除
-                        messages_to_remove.append(msg_id)
-                        continue
-
-                    status, response, error = result
-
-                    # 状态 1: PENDING - 等待 Claude Bridge 接收
-                    if status == MessageStatus.PENDING.value:
-                        # 只有在未进入 AI_STARTED 状态时才检查超时
-                        is_direct_reply = tracking_info.get("direct_reply", False)
-                        if (not tracking_info.get("notified_ai_started") and
-                            not tracking_info.get("notified_pending_timeout") and
-                            elapsed_time > self.config.pending_timeout):
-                            # 超过配置的秒数仍未被接收
-                            try:
-                                if not is_direct_reply:
-                                    # Embed 模式：编辑确认消息为 Embed 卡片
-                                    embed = discord.Embed(
-                                        title="⏱️ 消息等待超时",
-                                        description=f"消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n\n"
-                                                    f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
-                                                    f"建议：检查服务状态，或等待当前消息响应完成。",
-                                        color=discord.Color.orange()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id}")
-                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                else:
-                                    # 直接回复模式：发送超时消息（使用 Embed 卡片）
-                                    embed = discord.Embed(
-                                        title="⏱️ 消息等待超时",
-                                        description=f"消息 #{msg_id} 等待时间过长（{int(elapsed_time)}秒）\n\n"
-                                                    f"Claude Bridge 可能未运行，或当前有尚未响应完成的消息。\n"
-                                                    f"建议：检查服务状态，或等待当前消息响应完成。",
-                                        color=discord.Color.orange()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id}")
-                                    await tracking_info["channel"].send(embed=embed)
-                                    # 停止 typing indicator
-                                    tracking_info["typing_active"] = False
-                                    typing_task = tracking_info.get("typing_task")
-                                    if typing_task and not typing_task.done():
-                                        typing_task.cancel()
-                                tracking_info["notified_pending_timeout"] = True
-                            except Exception as e:
-                                print(f"⚠️ 无法发送超时消息: {e}")
-                            print(f"⚠️ [消息 #{msg_id}] PENDING 超时（{int(elapsed_time)}秒）")
-
-                    # 状态 1.5: QUEUED - 消息已加入处理队列
-                    elif status == MessageStatus.QUEUED.value:
-                        is_direct_reply = tracking_info.get("direct_reply", False)
-                        if not tracking_info.get("notified_queued"):
-                            # 检查是否有同一 session 的其他消息正在处理（避免误报）
-                            session_busy = self._check_session_busy(msg_id, tracking_info)
-
-                            if session_busy:
-                                # Worker 真的忙碌，记录队列状态，但暂不发送提示
-                                # 等待后续确认真的排队了（>2秒）再发送
-                                tracking_info["queue_start_time"] = current_time
-                                print(f"📋 [消息 #{msg_id}] Worker 忙碌，消息已入队，等待确认是否真的排队...")
-                            else:
-                                # Worker 空闲，不发送提示（避免误报）
-                                print(f"✓ [消息 #{msg_id}] Worker 空闲，跳过排队提示")
-
-                            tracking_info["notified_queued"] = True
-
-                    # 状态 2: PROCESSING 且无 response - Claude Bridge已接收，正在调用CLI
-                    elif status == MessageStatus.PROCESSING.value and not response:
-                        is_direct_reply = tracking_info.get("direct_reply", False)
-                        if not tracking_info.get("notified_bridge_received"):
-                            # Claude Bridge成功接收消息
-                            try:
-                                # 🔥 如果之前记录了队列状态，检查是否真的排队了
-                                if tracking_info.get("notified_queued") and tracking_info.get("queue_start_time"):
-                                    # 计算从加入队列到开始处理的时间
-                                    time_since_queued = current_time - tracking_info["queue_start_time"]
-
-                                    # 如果大于2秒，说明真的排队了，发送"排队后已被处理"的消息
-                                    if time_since_queued >= 2.0:
-                                        try:
-                                            if not is_direct_reply:
-                                                # Embed 模式：编辑确认消息为 Embed 卡片
-                                                embed = discord.Embed(
-                                                    title="📋 消息已加入队列",
-                                                    description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                                    color=discord.Color.blue()
-                                                )
-                                                embed.set_footer(text=f"消息 ID: {msg_id}")
-                                                await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                                print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (Embed模式)")
-                                            else:
-                                                # 直接回复模式：发送 Embed 卡片
-                                                embed = discord.Embed(
-                                                    title="📋 消息已加入队列",
-                                                    description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                                    color=discord.Color.blue()
-                                                )
-                                                embed.set_footer(text=f"消息 ID: {msg_id}")
-                                                queue_msg = await tracking_info["channel"].send(embed=embed)
-                                                print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (直接回复模式)")
-                                        except Exception as e:
-                                            print(f"⚠️ 无法发送队列消息: {e}")
-                                    else:
-                                        # 小于2秒，说明是误报，不发送队列提示
-                                        print(f"✓ [消息 #{msg_id}] 消息只等待了 {time_since_queued:.1f} 秒，跳过排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
-
-                                if not is_direct_reply:
-                                    # Embed 模式：编辑确认消息为 Embed 卡片
-                                    embed = discord.Embed(
-                                        title="⏳ 消息处理中",
-                                        description=f"消息 #{msg_id}\n\nClaude Bridge 已接收消息，正在调用 Claude Code CLI...",
-                                        color=discord.Color.blue()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id}")
-                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                # 直接回复模式：不发送任何消息（typing indicator 依然显示）
-                                tracking_info["notified_bridge_received"] = True
-                                print(f"📥 [消息 #{msg_id}] Claude Bridge 已接收消息 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
-                            except Exception as e:
-                                print(f"⚠️ 无法发送处理中消息: {e}")
-
-                    # 状态 2.5: AI_STARTED - AI 开始工作！
-                    elif status == MessageStatus.AI_STARTED.value:
-                        if not tracking_info.get("notified_ai_started"):
-                            # 检查是否为直接回复模式
-                            is_direct_reply = tracking_info.get("direct_reply", False)
-
-                            # 🔥 如果之前记录了队列状态（但还没显示提示），检查是否真的排队了
-                            if tracking_info.get("notified_queued") and tracking_info.get("queue_start_time") and not tracking_info.get("queue_notification_sent"):
-                                # 计算从加入队列到开始处理的时间
-                                time_since_queued = current_time - tracking_info["queue_start_time"]
-
-                                # 如果大于2秒，说明真的排队了，发送"排队后已被处理"的消息
-                                if time_since_queued >= 2.0:
-                                    try:
-                                        if not is_direct_reply:
-                                            # Embed 模式：编辑确认消息为 Embed 卡片
-                                            embed = discord.Embed(
-                                                title="📋 消息已加入队列",
-                                                description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                                color=discord.Color.blue()
-                                            )
-                                            embed.set_footer(text=f"消息 ID: {msg_id}")
-                                            await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                            print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (Embed模式)")
-                                        else:
-                                            # 直接回复模式：发送 Embed 卡片
-                                            embed = discord.Embed(
-                                                title="📋 消息已加入队列",
-                                                description=f"消息 #{msg_id} 已加入处理队列，正在等待处理...",
-                                                color=discord.Color.blue()
-                                            )
-                                            embed.set_footer(text=f"消息 ID: {msg_id}")
-                                            queue_msg = await tracking_info["channel"].send(embed=embed)
-                                            print(f"📋 [消息 #{msg_id}] 消息真的排队了 {time_since_queued:.1f} 秒，已显示排队提示 (直接回复模式)")
-                                        # 标记已发送队列提示
-                                        tracking_info["queue_notification_sent"] = True
-                                    except Exception as e:
-                                        print(f"⚠️ 无法发送队列消息: {e}")
-                                else:
-                                    # 小于2秒，说明是误报，不发送队列提示
-                                    print(f"✓ [消息 #{msg_id}] 消息只等待了 {time_since_queued:.1f} 秒，跳过排队提示 ({'直接回复模式' if is_direct_reply else 'Embed模式'})")
-
-                            if not is_direct_reply:
-                                # Embed 模式：发送 Embed 卡片（原有逻辑）
-                                try:
-                                    # 🔥 立即发送一个初始 Embed
-                                    embed = discord.Embed(
-                                        title="🤖 Claude Code 处理中",
-                                        description=f"消息 #{msg_id} 已接收，AI 正在思考，请稍候……",
-                                        color=discord.Color.gold()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id}")
-
-                                    # 发送初始 Embed
-                                    initial_embed_msg = await tracking_info["channel"].send(embed=embed)
-
-                                    # 🔥 保存 Embed 引用，供后续流式编辑使用
-                                    tracking_info["discord_message"] = initial_embed_msg
-
-                                    # 编辑旧的确认消息为 Embed 卡片
-                                    embed_update = discord.Embed(
-                                        title="🤖 AI 正在处理",
-                                        description=f"消息 #{msg_id} 已接收，AI 正在工作，请稍候……",
-                                        color=discord.Color.gold()
-                                    )
-                                    embed_update.set_footer(text=f"消息 ID: {msg_id}")
-                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed_update)
-
-                                    tracking_info["notified_ai_started"] = True
-                                    print(f"🤖 [消息 #{msg_id}] AI 开始工作，已发送初始 Embed (Embed模式)")
-                                except Exception as e:
-                                    print(f"⚠️ 无法发送 Embed: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-                            else:
-                                # 直接回复模式：不发送任何消息，只标记状态
-                                # typing indicator 依旧由 _maintain_typing_indicator 维持
-                                tracking_info["notified_ai_started"] = True
-                                print(f"🤖 [消息 #{msg_id}] AI 开始工作 (直接回复模式)")
-
-                    # 状态 3: PROCESSING 且有 response - AI 响应完成，发送响应
-                    elif status == MessageStatus.PROCESSING.value and response:
-                        # 检查是否有流式响应
-                        import sqlite3
-                        conn = sqlite3.connect(self.config.database_path)
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            SELECT streaming_response FROM messages WHERE id = ?
-                        """, (msg_id,))
-                        streaming_result = cursor.fetchone()
-                        conn.close()
-
-                        # 如果有流式响应，说明已经通过流式输出了
-                        if streaming_result and streaming_result[0]:
-                            is_direct_reply = tracking_info.get("direct_reply", False)
-
-                            if not is_direct_reply:
-                                # Embed 模式：编辑 Embed 为最终状态（原有逻辑）
-                                print(f"✅ [消息 #{msg_id}] 响应已完成 (Embed模式)")
-
-                                # 🔥 更新状态为已完成
-                                self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
-
-                                # 🔥 编辑 Embed 为成功状态（支持多 Embed 显示完整内容）
-                                try:
-                                    discord_msg = tracking_info.get('discord_message')
-                                    if discord_msg:
-                                        # 获取最终的流式响应内容
-                                        final_response = streaming_result[0]
-
-                                        # Discord Embed 限制：
-                                        # - Description: 最多 4096 字符
-                                        # - Embed 总大小: 最多 6000 字符
-                                        max_desc_length = 3800
-
-                                        # 计算可用于实际内容的空间（减去消息 ID 前缀）
-                                        header_text = f"**消息 ID: {msg_id}**\n\n"
-                                        available_space = max_desc_length - len(header_text)
-
-                                        if len(final_response) <= available_space:
-                                            # 短响应：直接编辑 Embed
-                                            display_text = final_response
-                                            footer_text = f"消息 ID: {msg_id} • 响应已完成 ({len(final_response)} 字符)"
-
-                                            embed = discord.Embed(
-                                                title="✨ Claude Code 的回复",
-                                                description=header_text + display_text,
-                                                color=discord.Color.green()
-                                            )
-                                            embed.set_footer(text=footer_text)
-                                            await discord_msg.edit(embed=embed)
-                                        else:
-                                            # 长响应：删除旧 Embed，发送多个新 Embed 显示完整内容
-                                            await discord_msg.delete()
-
-                                            # Discord Embed 限制（保守值）
-                                            # Description 最多 4096，总大小最多 6000
-                                            max_desc_first = 3780  # 第一个 Embed：需要为 header 留空间
-                                            max_desc_other = 4000  # 后续 Embed：不需要 header，可以放更多
-
-                                            # 计算需要多少个 Embed
-                                            total_length = len(final_response)
-                                            parts = []
-                                            current_pos = 0
-
-                                            part_num = 1
-                                            while current_pos < total_length:
-                                                remaining = total_length - current_pos
-
-                                                # 根据是否为第一个 Embed，使用不同的限制
-                                                if part_num == 1:
-                                                    chunk_size = min(max_desc_first, remaining)
-                                                    chunk = final_response[current_pos:current_pos + chunk_size]
-                                                    desc = header_text + chunk
-                                                else:
-                                                    chunk_size = min(max_desc_other, remaining)
-                                                    chunk = final_response[current_pos:current_pos + chunk_size]
-                                                    desc = chunk
-
-                                                parts.append((desc, chunk_size))
-                                                current_pos += chunk_size
-                                                part_num += 1
-
-                                            # 发送所有 Embed
-                                            for i, (part_desc, chunk_size) in enumerate(parts, 1):
-                                                if i == 1:
-                                                    # 第一个 Embed
-                                                    embed = discord.Embed(
-                                                        title="✨ Claude Code 的回复",
-                                                        description=part_desc,
-                                                        color=discord.Color.green()
-                                                    )
-                                                    embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分 • 共 {total_length} 字符")
-                                                    await discord_msg.channel.send(embed=embed)
-                                                else:
-                                                    # 后续 Embed
-                                                    embed = discord.Embed(
-                                                        title=f"✨ Claude Code 的回复 (续 {i}/{len(parts)})",
-                                                        description=part_desc,
-                                                        color=discord.Color.green()
-                                                    )
-                                                    embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分")
-                                                    await discord_msg.channel.send(embed=embed)
-
-                                            print(f"[消息 #{msg_id}] 已发送 {len(parts)} 个 Embed (共 {total_length} 字符)")
-
-                                    # 🔥 同时更新确认消息为完成状态
-                                    confirmation_msg = tracking_info.get('confirmation_msg')
-                                    if confirmation_msg:
-                                        await confirmation_msg.edit(
-                                            content=f"✅ 消息 #{msg_id} 响应已完成！"
-                                        )
-                                except Exception as e:
-                                    print(f"❌ 发送响应时出错: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-                            else:
-                                # 直接回复模式：等待所有 block 发送完成
-                                print(f"✅ [消息 #{msg_id}] 响应已完成 (直接回复模式)")
-
-                                streaming_queue = tracking_info.get("streaming_queue")
-                                if streaming_queue:
-                                    # 等待队列为空（所有消息已发送）
-                                    while not streaming_queue.is_empty():
-                                        await asyncio.sleep(0.1)
-
-                                # 停止 typing indicator
-                                tracking_info["typing_active"] = False
-                                typing_task = tracking_info.get("typing_task")
-                                if typing_task and not typing_task.done():
-                                    typing_task.cancel()
-
-                                # 🔥 更新状态为已完成
-                                self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
-
-                                print(f"✅ [消息 #{msg_id}] 直接回复模式：所有 block 已发送")
-
-                            messages_to_remove.append(msg_id)
-                            continue
-
-                        # AI_STARTED 状态已经提前触发了"Claude Code 处理中"提示
-                        # 这里直接发送响应即可
-                        try:
-                            # 获取完整消息信息
-                            conn = sqlite3.connect(self.config.database_path)
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                SELECT discord_channel_id, discord_message_id, username,
-                                       content, is_dm, discord_user_id
-                                FROM messages WHERE id = ?
-                            """, (msg_id,))
-                            msg_info = cursor.fetchone()
-                            conn.close()
-
-                            if msg_info:
-                                channel_id, original_msg_id, username, content, is_dm, user_id = msg_info
-
-                                # 区分私聊和频道消息
-                                if is_dm:
-                                    user = self.get_user(user_id)
-                                    if not user:
-                                        try:
-                                            user = await self.fetch_user(user_id)
-                                        except discord.NotFound:
-                                            print(f"⚠️  找不到用户 {user_id}")
-                                            messages_to_remove.append(msg_id)
-                                            continue
-                                        except discord.HTTPException as e:
-                                            print(f"⚠️  获取用户 {user_id} 失败: {e}")
-                                            messages_to_remove.append(msg_id)
-                                            continue
-                                    channel = await user.create_dm()
-                                else:
-                                    channel = self.get_channel(channel_id)
-                                    if not channel:
-                                        print(f"⚠️  找不到频道 {channel_id}")
-                                        messages_to_remove.append(msg_id)
-                                        continue
-
-                                # Discord Embed 限制：
-                                # - Description: 最多 4096 字符
-                                # - Embed 总大小: 最多 6000 字符（包括 title、description、footer）
-                                max_desc_length = 3800
-
-                                # 计算可用于实际内容的空间（减去消息 ID 前缀）
-                                header_text = f"**消息 ID: {msg_id}**\n\n"
-                                available_space = max_desc_length - len(header_text)
-
-                                if len(response) <= available_space:
-                                    # 短响应：直接发送完整内容
-                                    display_text = response
-                                    footer_text = f"消息 ID: {msg_id} • 响应已完成 ({len(response)} 字符)"
-
-                                    # 创建 Embed
-                                    embed = discord.Embed(
-                                        title="✨ Claude Code 的回复",
-                                        description=header_text + display_text,
-                                        color=discord.Color.green()
-                                    )
-                                    embed.set_footer(text=footer_text)
-                                    await channel.send(embed=embed)
-                                else:
-                                    # 长响应：发送多个 Embed 显示完整内容
-                                    total_length = len(response)
-
-                                    # Discord Embed 限制（保守值）
-                                    max_desc_first = 3780  # 第一个 Embed：需要为 header 留空间
-                                    max_desc_other = 4000  # 后续 Embed：不需要 header，可以放更多
-
-                                    parts = []
-                                    current_pos = 0
-
-                                    part_num = 1
-                                    while current_pos < total_length:
-                                        remaining = total_length - current_pos
-
-                                        # 根据是否为第一个 Embed，使用不同的限制
-                                        if part_num == 1:
-                                            chunk_size = min(max_desc_first, remaining)
-                                            chunk = response[current_pos:current_pos + chunk_size]
-                                            desc = header_text + chunk
-                                        else:
-                                            chunk_size = min(max_desc_other, remaining)
-                                            chunk = response[current_pos:current_pos + chunk_size]
-                                            desc = chunk
-
-                                        parts.append((desc, chunk_size))
-                                        current_pos += chunk_size
-                                        part_num += 1
-
-                                    # 发送所有 Embed
-                                    for i, (part_desc, chunk_size) in enumerate(parts, 1):
-                                        if i == 1:
-                                            # 第一个 Embed
-                                            embed = discord.Embed(
-                                                title="✨ Claude Code 的回复",
-                                                description=part_desc,
-                                                color=discord.Color.green()
-                                            )
-                                            embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分 • 共 {total_length} 字符")
-                                            await channel.send(embed=embed)
-                                        else:
-                                            # 后续 Embed
-                                            embed = discord.Embed(
-                                                title=f"✨ Claude Code 的回复 (续 {i}/{len(parts)})",
-                                                description=part_desc,
-                                                color=discord.Color.green()
-                                            )
-                                            embed.set_footer(text=f"消息 ID: {msg_id} • 第 {i}/{len(parts)} 部分")
-                                            await channel.send(embed=embed)
-
-                                    print(f"[消息 #{msg_id}] 已发送 {len(parts)} 个 Embed (共 {total_length} 字符)")
-
-                                # 更新状态为已完成
-                                self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
-                                print(f"[消息 #{msg_id}] 已发送响应到 Discord")
-
-                                # 发送响应成功提示（使用 Embed 卡片）
-                                try:
-                                    embed = discord.Embed(
-                                        title="✅ 响应成功",
-                                        description=f"消息 #{msg_id} 已成功处理并回复！",
-                                        color=discord.Color.green()
-                                    )
-                                    embed.set_footer(text=f"消息 ID: {msg_id}")
-                                    await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                                except Exception as e:
-                                    print(f"⚠️ 无法编辑确认消息: {e}")
-
-                                messages_to_remove.append(msg_id)
-
-                        except Exception as e:
-                            print(f"❌ 发送响应时出错: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            self.message_queue.update_status(msg_id, MessageStatus.FAILED, error=str(e))
-                            messages_to_remove.append(msg_id)
-
-                    # 状态 4: FAILED - 处理失败
-                    elif status == MessageStatus.FAILED.value:
-                        is_direct_reply = tracking_info.get("direct_reply", False)
-
-                        if not is_direct_reply:
-                            # Embed 模式：编辑确认消息为 Embed 卡片
-                            try:
-                                error_msg = error or "未知错误"
-                                embed = discord.Embed(
-                                    title="❌ 消息处理失败",
-                                    description=f"消息 #{msg_id}\n\n错误: {error_msg}",
-                                    color=discord.Color.red()
-                                )
-                                embed.set_footer(text=f"消息 ID: {msg_id}")
-                                await tracking_info["confirmation_msg"].edit(content="", embed=embed)
-                            except Exception as e:
-                                print(f"⚠️ 无法编辑确认消息: {e}")
-                        else:
-                            # 直接回复模式：发送错误消息（使用 Embed 卡片）
-                            try:
-                                error_msg = error or "未知错误"
-                                embed = discord.Embed(
-                                    title="❌ 消息处理失败",
-                                    description=f"错误: {error_msg}",
-                                    color=discord.Color.red()
-                                )
-                                embed.set_footer(text=f"消息 ID: {msg_id}")
-                                await tracking_info["channel"].send(embed=embed)
-
-                                # 停止 typing indicator
-                                tracking_info["typing_active"] = False
-                                typing_task = tracking_info.get("typing_task")
-                                if typing_task and not typing_task.done():
-                                    typing_task.cancel()
-                            except Exception as e:
-                                print(f"⚠️ 无法发送错误消息: {e}")
-
-                        messages_to_remove.append(msg_id)
-                        print(f"❌ [消息 #{msg_id}] 处理失败: {error}")
-
-                # 清理已处理的消息
-                for msg_id in messages_to_remove:
-                    if msg_id in self.pending_messages:
-                        del self.pending_messages[msg_id]
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.poll_interval / 1000)
@@ -1980,13 +1407,13 @@ class DiscordBot(commands.Bot):
                 conn = sqlite3.connect(self.config.database_path)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT id, discord_channel_id, streaming_response
-                    FROM messages
-                    WHERE status IN ('ai_started', 'processing')
-                      AND streaming_response IS NOT NULL
-                      AND streaming_response != ''
-                    ORDER BY created_at ASC
-                """)
+                               SELECT id, discord_channel_id, streaming_response
+                               FROM messages
+                               WHERE status IN ('ai_started', 'processing')
+                                 AND streaming_response IS NOT NULL
+                                 AND streaming_response != ''
+                               ORDER BY created_at ASC
+                               """)
                 rows = cursor.fetchall()
                 conn.close()
 
@@ -1994,173 +1421,114 @@ class DiscordBot(commands.Bot):
                     # 如果消息在 pending_messages 中，处理它
                     if msg_id in self.pending_messages:
                         pending = self.pending_messages[msg_id]
-                        is_direct_reply = pending.get("direct_reply", False)
 
-                        if is_direct_reply:
-                            # 直接回复模式：检测并发送新的 block
-                            last_content = pending.get("last_streaming_content", "")
-                            new_blocks = self._detect_new_blocks(last_content, streaming_response)
+                        # 检测并发送新的 block
+                        last_content = pending.get("last_streaming_content", "")
+                        new_blocks = self._detect_new_blocks(last_content, streaming_response)
 
-                            if new_blocks:
-                                # 合并短 block（可选）
-                                if self.config.direct_reply_merge_short_blocks:
-                                    new_blocks = self._merge_short_blocks(new_blocks)
+                        if new_blocks:
+                            # 将新 block 添加到发送队列
+                            streaming_queue = pending.get("streaming_queue")
+                            if streaming_queue:
+                                # 导入 MessageType
+                                from bot.streaming_queue import MessageType
 
-                                # 将新 block 添加到发送队列
-                                streaming_queue = pending.get("streaming_queue")
-                                if streaming_queue:
-                                    # 导入 MessageType
-                                    from bot.streaming_queue import MessageType
+                                # 获取 content block 顺序（如果还没有加载，先加载）
+                                content_blocks = pending.get("content_blocks", [])
+                                if not content_blocks:
+                                    content_blocks = self.message_queue.get_content_blocks(msg_id)
+                                    pending["content_blocks"] = content_blocks
 
-                                    # 获取 content block 顺序（如果还没有加载，先加载）
-                                    content_blocks = pending.get("content_blocks", [])
-                                    if not content_blocks:
-                                        content_blocks = self.message_queue.get_content_blocks(msg_id)
-                                        pending["content_blocks"] = content_blocks
+                                # 找到当前文本对应的 content block 索引
+                                # 当前文本块索引
+                                current_text_block_index = pending.get("current_text_block_index", 0)
 
-                                    # 找到当前文本对应的 content block 索引
-                                    # 当前文本块索引
-                                    current_text_block_index = pending.get("current_text_block_index", 0)
+                                # 找到对应的 content block 索引
+                                content_block_index = 0  # 默认为第一个 content block
+                                text_block_count = 0
+                                for cb in content_blocks:
+                                    if cb.get("type") == "text":
+                                        if text_block_count == current_text_block_index:
+                                            content_block_index = cb.get("index", 0)
+                                            break
+                                        text_block_count += 1
 
-                                    # 找到对应的 content block 索引
-                                    content_block_index = 0  # 默认为第一个 content block
+                                # 获取当前文本块的 item 索引
+                                text_block_item_indices = pending.get("text_block_item_indices", {})
+                                current_item_index = text_block_item_indices.get(current_text_block_index, 0)
+
+                                # 实际发送的 block 计数（用于 item_index）
+                                sent_count = 0
+
+                                for i, block in enumerate(new_blocks):
+                                    # 处理表情包标记 <:文件名.扩展名>
+                                    channel = pending.get("channel")
+                                    processed_block, stickers, additional_sent = await self._process_sticker_mentions(
+                                        block,
+                                        channel,
+                                        streaming_queue,
+                                        content_block_index,
+                                        current_item_index + sent_count
+                                    )
+
+                                    # 发送表情包（如果找到）
+                                    for sticker_path in stickers:
+                                        try:
+                                            # 直接使用文件路径创建 discord.File
+                                            # discord.File 会自动处理文件打开和关闭
+                                            file = discord.File(sticker_path)
+                                            await streaming_queue.add_message(
+                                                MessageType.FILES,
+                                                [file],
+                                                content_block_index=content_block_index,
+                                                item_index=current_item_index + sent_count
+                                            )
+                                            sent_count += 1
+                                        except Exception as e:
+                                            print(f"[表情包] 发送失败: {sticker_path} - {e}")
+
+                                    # 只有当处理后文本不为空时才发送
+                                    if processed_block and processed_block.strip():
+                                        # 使用实际的 content block 索引
+                                        await streaming_queue.add_message(
+                                            MessageType.TEXT,
+                                            processed_block,
+                                            content_block_index=content_block_index,
+                                            item_index=current_item_index + sent_count + additional_sent
+                                        )
+                                        pending["sent_blocks"].append(block)
+                                        sent_count += 1
+
+                                    # 加上表情包前文本发送的数量
+                                    sent_count += additional_sent
+
+                                # 更新 item 索引（使用实际发送的数量）
+                                text_block_item_indices[current_text_block_index] = current_item_index + sent_count
+                                pending["text_block_item_indices"] = text_block_item_indices
+
+                                # 检查是否需要移动到下一个文本 content block
+                                # 检查 streaming_response 中是否已经包含了下一个 content block 的标记（工具调用）
+                                # 如果包含工具调用标记，说明当前文本 block 已完成
+                                if content_blocks:
+                                    # 找到当前文本 block 在 content_blocks 中的位置
+                                    current_text_block_position = -1
                                     text_block_count = 0
-                                    for cb in content_blocks:
+                                    for i, cb in enumerate(content_blocks):
                                         if cb.get("type") == "text":
                                             if text_block_count == current_text_block_index:
-                                                content_block_index = cb.get("index", 0)
+                                                current_text_block_position = i
                                                 break
                                             text_block_count += 1
 
-                                    # 获取当前文本块的 item 索引
-                                    text_block_item_indices = pending.get("text_block_item_indices", {})
-                                    current_item_index = text_block_item_indices.get(current_text_block_index, 0)
+                                    # 检查下一个 block 是否是 tool_use
+                                    if current_text_block_position >= 0 and current_text_block_position + 1 < len(content_blocks):
+                                        next_block = content_blocks[current_text_block_position + 1]
+                                        if next_block.get("type") == "tool_use":
+                                            # 下一个 block 是工具调用，说明当前文本 block 已完成
+                                            pending["current_text_block_index"] = current_text_block_index + 1
 
-                                    # 实际发送的 block 计数（用于 item_index）
-                                    sent_count = 0
-
-                                    for i, block in enumerate(new_blocks):
-                                        # 处理表情包标记 <:文件名.扩展名>
-                                        channel = pending.get("channel")
-                                        processed_block, stickers, additional_sent = await self._process_sticker_mentions(
-                                            block,
-                                            channel,
-                                            streaming_queue,
-                                            content_block_index,
-                                            current_item_index + sent_count
-                                        )
-
-                                        # 发送表情包（如果找到）
-                                        for sticker_path in stickers:
-                                            try:
-                                                # 直接使用文件路径创建 discord.File
-                                                # discord.File 会自动处理文件打开和关闭
-                                                file = discord.File(sticker_path)
-                                                await streaming_queue.add_message(
-                                                    MessageType.FILES,
-                                                    [file],
-                                                    content_block_index=content_block_index,
-                                                    item_index=current_item_index + sent_count
-                                                )
-                                                sent_count += 1
-                                            except Exception as e:
-                                                print(f"[表情包] 发送失败: {sticker_path} - {e}")
-
-                                        # 只有当处理后文本不为空时才发送
-                                        if processed_block and processed_block.strip():
-                                            # 使用实际的 content block 索引
-                                            await streaming_queue.add_message(
-                                                MessageType.TEXT,
-                                                processed_block,
-                                                content_block_index=content_block_index,
-                                                item_index=current_item_index + sent_count + additional_sent
-                                            )
-                                            pending["sent_blocks"].append(block)
-                                            sent_count += 1
-
-                                        # 加上表情包前文本发送的数量
-                                        sent_count += additional_sent
-
-                                    # 更新 item 索引（使用实际发送的数量）
-                                    text_block_item_indices[current_text_block_index] = current_item_index + sent_count
-                                    pending["text_block_item_indices"] = text_block_item_indices
-
-                                    # 检查是否需要移动到下一个文本 content block
-                                    # 检查 streaming_response 中是否已经包含了下一个 content block 的标记（工具调用）
-                                    # 如果包含工具调用标记，说明当前文本 block 已完成
-                                    if content_blocks:
-                                        # 找到当前文本 block 在 content_blocks 中的位置
-                                        current_text_block_position = -1
-                                        text_block_count = 0
-                                        for i, cb in enumerate(content_blocks):
-                                            if cb.get("type") == "text":
-                                                if text_block_count == current_text_block_index:
-                                                    current_text_block_position = i
-                                                    break
-                                                text_block_count += 1
-
-                                        # 检查下一个 block 是否是 tool_use
-                                        if current_text_block_position >= 0 and current_text_block_position + 1 < len(content_blocks):
-                                            next_block = content_blocks[current_text_block_position + 1]
-                                            if next_block.get("type") == "tool_use":
-                                                # 下一个 block 是工具调用，说明当前文本 block 已完成
-                                                pending["current_text_block_index"] = current_text_block_index + 1
-
-                                # 更新上次的内容
-                                pending["last_streaming_content"] = streaming_response
-
-                                # 如果配置为在第一个 block 后停止 typing indicator
-                                if (self.config.direct_reply_stop_typing_after_first_block and
-                                    pending.get("typing_active")):
-                                    pending["typing_active"] = False
-                                    typing_task = pending.get("typing_task")
-                                    if typing_task and not typing_task.done():
-                                        typing_task.cancel()
-                        else:
-                            # Embed 模式：编辑 Embed 卡片（原有逻辑）
-                            discord_msg = pending.get('discord_message')
-                            if discord_msg:
-                                try:
-                                    # 🔥 实时编辑 Embed（流式更新）- 简化版本，避免 Embed 过大
-                                    if streaming_response:
-                                        # Discord Embed 限制：
-                                        # - Description: 最多 4096 字符
-                                        # - Embed 总大小: 最多 6000 字符（包括 title、description、footer）
-                                        # 流式更新时只显示前 3800 字符，为 footer 和消息 ID 前缀留空间
-                                        max_desc_length = 3800
-
-                                        # 计算可用于实际内容的空间（减去消息 ID 前缀）
-                                        header_text = f"**消息 ID: {msg_id}**\n\n"
-                                        available_space = max_desc_length - len(header_text)
-
-                                        if len(streaming_response) <= available_space:
-                                            # 短响应：直接编辑原 Embed
-                                            display_text = streaming_response
-                                        else:
-                                            # 长响应：截断并添加提示
-                                            display_text = streaming_response[:available_space]
-                                            display_text += f"\n\n...(实时预览已显示 {available_space}/{len(streaming_response)} 字符，完整内容将在 AI 完成后发送)"
-
-                                        # 编辑 Embed
-                                        embed = discord.Embed(
-                                            title="🤖 Claude Code 响应",
-                                            description=header_text + display_text,
-                                            color=discord.Color.blue()
-                                        )
-                                        embed.set_footer(text=f"消息 ID: {msg_id} • 实时更新中... ({len(streaming_response)} 字符)")
-                                        await discord_msg.edit(embed=embed)
-
-                                except discord.NotFound:
-                                    # 消息已删除，从 pending 移除
-                                    print(f"⚠️  消息 #{msg_id} Discord Embed 已删除")
-                                    del self.pending_messages[msg_id]
-                                except Exception as e:
-                                    print(f"❌ 编辑 Embed #{msg_id} 失败: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-
-                # 等待一段时间再检查（0.1 秒，快速响应文件请求）
-                await asyncio.sleep(0.1)
+                            # 更新上次的内容
+                            pending["last_streaming_content"] = streaming_response
 
             except Exception as e:
                 print(f"❌ 检查流式响应时出错: {e}")
@@ -2446,9 +1814,18 @@ class DiscordBot(commands.Bot):
                                 color=discord.Color(message_request.embed_color) if message_request.embed_color else discord.Color.blue()
                             )
                             sent_msg = await target_channel.send(embed=embed)
+                            message_id = str(sent_msg.id)
                         else:
-                            # 发送纯文本
-                            sent_msg = await target_channel.send(content=message_request.content)
+                            # 发送纯文本（支持长消息分割）
+                            await self._send_long_message(target_channel, message_request.content)
+                            message_id = None  # 分割消息不返回单个 message_id
+
+                        # 标记为完成
+                        result = json.dumps({
+                            "success": True,
+                            "message": f"成功发送消息到 {target_info}",
+                            "message_id": message_id
+                        }, ensure_ascii=False)
 
                         # 标记为完成
                         result = json.dumps({
@@ -2508,6 +1885,7 @@ class DiscordBot(commands.Bot):
         """
         维持 typing indicator（仅用于直接回复模式）
         带重试机制，网络波动时会自动恢复
+        使用持续刷新模式，避免 typing indicator 中断闪烁
 
         Args:
             channel: Discord 频道对象
@@ -2519,11 +1897,10 @@ class DiscordBot(commands.Bot):
         try:
             while not self.is_closed():
                 try:
+                    # Discord typing indicator 默认持续 10 秒
+                    # 我们每 8 秒刷新一次，确保有足够余量避免中断
                     async with channel.typing():
-                        # Discord typing indicator 默认持续 10 秒
-                        # 每 9 秒刷新一次，避免中断
-                        for _ in range(9):
-                            await asyncio.sleep(1)
+                        await asyncio.sleep(8)
 
                     # 成功完成一次循环，重置重试计数
                     retry_count = 0
@@ -2548,6 +1925,34 @@ class DiscordBot(commands.Bot):
         except Exception as e:
             print(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
 
+    def stop_typing_indicator(self, message_id):
+        """
+        停止指定消息对应的 typing indicator 任务
+
+        Args:
+            message_id: 消息记录在数据库中的唯一 ID
+        """
+        # 从 pending_messages 字典中找到这根消息记录并取消它的 typing_task
+        if message_id in self.pending_messages:
+            msg_info = self.pending_messages[message_id]
+            task = msg_info.get("typing_task")
+
+            # 检查是否已经在停止状态
+            if not msg_info.get("typing_active", False):
+                # 已经停止，静默返回
+                return
+
+            if task and not task.done():
+                task.cancel()  # 这会触发 _maintain_typing_indicator 中的 CancelledError
+                print(f"🛑 [消息 #{message_id}] 已停止 typing indicator")
+
+            # 更新状态为已停止
+            msg_info["typing_active"] = False
+            msg_info["typing_task"] = None
+        else:
+            # 消息不在缓存中，可能已经被清理，静默返回
+            pass
+
     def _detect_new_blocks(self, previous_content: str, new_content: str) -> list:
         """
         检测新增的 block（内容块）
@@ -2561,6 +1966,14 @@ class DiscordBot(commands.Bot):
         """
         if not new_content:
             return []
+
+        # 如果禁用了消息分割功能，直接返回整个内容
+        if not self.config.enable_message_splitting:
+            if not previous_content:
+                return [new_content]
+            else:
+                new_text = new_content[len(previous_content):]
+                return [new_text] if new_text else []
 
         # 如果是首次内容，检测内部是否有空行分隔
         if not previous_content:
@@ -2667,52 +2080,6 @@ class DiscordBot(commands.Bot):
             blocks.append('\n'.join(current_block))
 
         return blocks
-
-    def _merge_short_blocks(self, blocks: list) -> list:
-        """
-        合并短 block（减少消息数量）
-
-        Args:
-            blocks: 要合并的 block 列表
-
-        Returns:
-            list: 合并后的 block 列表
-        """
-        if not blocks:
-            return []
-
-        max_length = self.config.direct_reply_short_block_max_length
-        merged = []
-        current_merged = []
-        current_length = 0
-
-        for block in blocks:
-            # 如果 block 包含代码块，不合并
-            if '```' in block:
-                # 先添加当前已合并的内容
-                if current_merged:
-                    merged.append('\n\n'.join(current_merged))
-                    current_merged = []
-                    current_length = 0
-                # 添加代码块
-                merged.append(block)
-            elif len(block) < max_length and current_length + len(block) < max_length * 2:
-                # 短 block，合并
-                current_merged.append(block)
-                current_length += len(block)
-            else:
-                # 长 block 或合并后过长
-                if current_merged:
-                    merged.append('\n\n'.join(current_merged))
-                    current_merged = []
-                    current_length = 0
-                merged.append(block)
-
-        # 处理剩余内容
-        if current_merged:
-            merged.append('\n'.join(current_merged))
-
-        return merged
 
     async def _process_sticker_mentions(self, text: str, channel: discord.abc.Messageable, streaming_queue=None, content_block_index=None, base_item_index=0):
         """
@@ -2953,13 +2320,13 @@ class DiscordBot(commands.Bot):
 
                 # 查询有 tool_uses 且状态为 ai_started 或 processing 的消息
                 cursor.execute("""
-                    SELECT id, discord_channel_id, discord_user_id, tool_uses, is_dm
-                    FROM messages
-                    WHERE status IN ('ai_started', 'processing')
-                      AND tool_uses IS NOT NULL
-                      AND tool_uses != ''
-                    ORDER BY id ASC
-                """)
+                               SELECT id, discord_channel_id, discord_user_id, tool_uses, is_dm
+                               FROM messages
+                               WHERE status IN ('ai_started', 'processing')
+                                 AND tool_uses IS NOT NULL
+                                 AND tool_uses != ''
+                               ORDER BY id ASC
+                               """)
                 rows = cursor.fetchall()
                 conn.close()
 
@@ -2999,9 +2366,9 @@ class DiscordBot(commands.Bot):
                 conn = sqlite3.connect(self.config.database_path)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT id FROM messages
-                    WHERE status IN ('completed', 'failed', 'skipped')
-                """)
+                               SELECT id FROM messages
+                               WHERE status IN ('completed', 'failed', 'skipped')
+                               """)
                 completed_ids = [row[0] for row in cursor.fetchall()]
                 conn.close()
 
@@ -3038,17 +2405,32 @@ class DiscordBot(commands.Bot):
                 cursor = conn.cursor()
 
                 cursor.execute("""
-                    SELECT DISTINCT message_id
-                    FROM message_sequence
-                    WHERE status = 'pending'
-                    ORDER BY message_id ASC
-                    LIMIT 1
-                """)
+                               SELECT DISTINCT message_id
+                               FROM message_sequence
+                               WHERE status = 'pending'
+                               ORDER BY message_id ASC
+                                   LIMIT 1
+                               """)
                 row = cursor.fetchone()
                 conn.close()
 
                 if not row:
-                    # 没有待发送的序列，等待一会儿再检查
+                    # 没有待发送的序列，检查 pending_messages 中的消息是否完成
+                    for message_id in list(self.pending_messages.keys()):
+                        stats = self.message_queue.get_message_sequences_stats(message_id)
+
+                        if stats["total"] > 0 and stats["total"] == stats["sent"]:
+                            # 1. 停止正在输入状态
+                            self.stop_typing_indicator(message_id)
+                            # 2. 所有序列都已发送，清理数据库相关序列
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            # 3. 清理内存缓存，防止内存泄漏
+                            if message_id in message_states:
+                                del message_states[message_id]
+                            if message_id in self.pending_messages:
+                                del self.pending_messages[message_id]
+
+                    # 等待一会儿再检查
                     await asyncio.sleep(0.5)
                     continue
 
@@ -3059,10 +2441,10 @@ class DiscordBot(commands.Bot):
                     conn = sqlite3.connect(self.config.database_path)
                     cursor = conn.cursor()
                     cursor.execute("""
-                        SELECT discord_channel_id, discord_user_id, is_dm
-                        FROM messages
-                        WHERE id = ?
-                    """, (message_id,))
+                                   SELECT discord_channel_id, discord_user_id, is_dm
+                                   FROM messages
+                                   WHERE id = ?
+                                   """, (message_id,))
                     row = cursor.fetchone()
                     conn.close()
 
@@ -3081,11 +2463,22 @@ class DiscordBot(commands.Bot):
                     if not pending_sequences:
                         # 没有待发送的序列，检查是否完成
                         stats = self.message_queue.get_message_sequences_stats(message_id)
+                        print(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
+
                         if stats["total"] > 0 and stats["pending"] == 0:
-                            # 所有序列都已发送，清理
+                            print(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
+                            # 1. 停止正在输入状态
+                            self.stop_typing_indicator(message_id)
+                            # 2. 所有序列都已发送，清理数据库相关序列
                             self.message_queue.cleanup_message_sequences(message_id)
+                            # 3. 清理内存缓存，防止内存泄漏
                             if message_id in message_states:
                                 del message_states[message_id]
+                            if message_id in self.pending_messages:
+                                del self.pending_messages[message_id]
+                        else:
+                            # 还未完成，等待下一轮
+                            await asyncio.sleep(0.1)
                         continue
 
                     # 获取频道
@@ -3127,7 +2520,7 @@ class DiscordBot(commands.Bot):
 
                                 # 发送处理后的文本（如果不为空）
                                 if processed_text and processed_text.strip():
-                                    await channel.send(processed_text.strip())
+                                    await self._send_long_message(channel, processed_text.strip())
 
                         elif item_type == "tool_use":
                             # 发送工具调用通知（直接发送，不使用队列）
@@ -3367,7 +2760,7 @@ class DiscordBot(commands.Bot):
                         self.message_queue.mark_sequence_sent(seq_id)
 
                         # 控制发送速率，避免触发Discord速率限制
-                        await asyncio.sleep(self.config.unified_queue_interval)
+                        await asyncio.sleep(self.config.queue_send_interval)
 
                     except Exception as e:
                         print(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
@@ -3626,77 +3019,59 @@ class DiscordBot(commands.Bot):
             else:
                 embed.description = "无参数"
 
-        # 发送到 Discord
+        # 发送到 Discord（统一队列模式）
         try:
-            if self.config.unified_queue_enabled:
-                # 统一队列模式：将 embed 加入队列，并等待发送完成
-                from bot.streaming_queue import MessageType
+            from bot.streaming_queue import MessageType
 
-                # 获取 content block 顺序，找到工具调用对应的 content block 索引
-                content_blocks = self.message_queue.get_content_blocks(message_id)
+            # 获取 content block 顺序，找到工具调用对应的 content block 索引
+            content_blocks = self.message_queue.get_content_blocks(message_id)
 
-                # 找到对应的 content block 索引
-                content_block_index = tool_use_index  # 默认使用 tool_use_index
+            # 找到对应的 content block 索引
+            content_block_index = tool_use_index  # 默认使用 tool_use_index
 
-                # 按 tool_use_index 的顺序查找对应的 content block
-                tool_use_count = 0
-                for cb in content_blocks:
-                    if cb.get("type") == "tool_use":
-                        if tool_use_count == tool_use_index:
-                            content_block_index = cb.get("index", tool_use_index)
-                            break
-                        tool_use_count += 1
+            # 按 tool_use_index 的顺序查找对应的 content block
+            tool_use_count = 0
+            for cb in content_blocks:
+                if cb.get("type") == "tool_use":
+                    if tool_use_count == tool_use_index:
+                        content_block_index = cb.get("index", tool_use_index)
+                        break
+                    tool_use_count += 1
 
-                sent_message = None
-                if is_dm:
-                    # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
-                    user = self.get_user(user_id)
-                    if not user:
-                        user = await self.fetch_user(user_id)
-                    if user:
-                        dm_channel = await user.create_dm()
-                        queue = self._get_unified_queue(dm_channel)
-                        # 使用 return_future=True 获取 Future，并设置 content block 索引
-                        future = await queue.add_message(
-                            MessageType.EMBED,
-                            embed,
-                            return_future=True,
-                            content_block_index=content_block_index
-                        )
-                        if future:
-                            # 等待消息发送完成，获取消息对象
-                            sent_message = await future
-                else:
-                    # 频道：直接通过 channel_id 获取
-                    channel = self.get_channel(channel_id)
-                    if channel:
-                        queue = self._get_unified_queue(channel)
-                        # 使用 return_future=True 获取 Future，并设置 content block 索引
-                        future = await queue.add_message(
-                            MessageType.EMBED,
-                            embed,
-                            return_future=True,
-                            content_block_index=content_block_index
-                        )
-                        if future:
-                            # 等待消息发送完成，获取消息对象
-                            sent_message = await future
+            sent_message = None
+            if is_dm:
+                # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
+                user = self.get_user(user_id)
+                if not user:
+                    user = await self.fetch_user(user_id)
+                if user:
+                    dm_channel = await user.create_dm()
+                    queue = self._get_unified_queue(dm_channel)
+                    # 使用 return_future=True 获取 Future，并设置 content block 索引
+                    future = await queue.add_message(
+                        MessageType.EMBED,
+                        embed,
+                        return_future=True,
+                        content_block_index=content_block_index
+                    )
+                    if future:
+                        # 等待消息发送完成，获取消息对象
+                        sent_message = await future
             else:
-                # 原有模式：直接发送
-                sent_message = None
-                if is_dm:
-                    # 私聊：通过 user_id 获取用户并创建/获取 DM 频道
-                    user = self.get_user(user_id)
-                    if not user:
-                        user = await self.fetch_user(user_id)
-                    if user:
-                        dm_channel = await user.create_dm()
-                        sent_message = await dm_channel.send(embed=embed)
-                else:
-                    # 频道：直接通过 channel_id 获取
-                    channel = self.get_channel(channel_id)
-                    if channel:
-                        sent_message = await channel.send(embed=embed)
+                # 频道：直接通过 channel_id 获取
+                channel = self.get_channel(channel_id)
+                if channel:
+                    queue = self._get_unified_queue(channel)
+                    # 使用 return_future=True 获取 Future，并设置 content block 索引
+                    future = await queue.add_message(
+                        MessageType.EMBED,
+                        embed,
+                        return_future=True,
+                        content_block_index=content_block_index
+                    )
+                    if future:
+                        # 等待消息发送完成，获取消息对象
+                        sent_message = await future
 
             # 保存 Discord 消息引用（统一队列模式和原有模式都需要）
             if sent_message:
