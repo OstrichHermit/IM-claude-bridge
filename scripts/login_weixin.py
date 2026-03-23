@@ -24,9 +24,9 @@ from shared.config import Config
 
 
 def display_qrcode_in_terminal(qrcode_image_url: str):
-    """在终端显示二维码（简化版）"""
+    """在终端显示二维码并打开浏览器"""
     print("\n" + "=" * 50)
-    print("📱 请使用微信扫描以下二维码登录：")
+    print("📱 请使用微信扫描二维码登录：")
     print("=" * 50)
 
     # 检查是否是 URL 格式
@@ -38,28 +38,19 @@ def display_qrcode_in_terminal(qrcode_image_url: str):
         try:
             import webbrowser
             webbrowser.open(qrcode_image_url)
-            print("✅ 已在浏览器中打开二维码")
+            print("✅ 已在浏览器中打开二维码页面")
         except:
             print("⚠️  无法自动打开浏览器，请手动复制链接到浏览器")
 
         print("\n⏳ 等待扫码中...\n")
         return
 
-    # Base64 图片格式
+    # Base64 图片格式（不再保存，直接提示）
     # qrcode_image_url 格式：data:image/png;base64,xxx
     if "," in qrcode_image_url:
-        base64_data = qrcode_image_url.split(",", 1)[1]
-    else:
-        base64_data = qrcode_image_url
+        print("\n⚠️  检测到 Base64 图片格式，但不再保存为文件")
+        print("💡 请使用微信扫描浏览器中的二维码")
 
-    # 保存为图片文件
-    import base64
-    qrcode_path = Path(__file__).parent.parent / "qrcode.png"
-    with open(qrcode_path, "wb") as f:
-        f.write(base64.b64decode(base64_data))
-
-    print(f"\n✅ 二维码已保存到: {qrcode_path}")
-    print("💡 请打开图片文件，使用微信扫一扫功能扫描二维码")
     print("\n⏳ 等待扫码中...\n")
 
 
@@ -142,12 +133,6 @@ async def main():
             else:
                 print("\n⚠️  账号已存在，未重复保存")
 
-            # 清理二维码文件
-            qrcode_path = Path(__file__).parent / "qrcode.png"
-            if qrcode_path.exists():
-                qrcode_path.unlink()
-                print("\n🗑️  已清理二维码文件")
-
         else:
             print("\n" + "=" * 50)
             print("❌ 登录失败")
@@ -163,9 +148,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n\n❌ 用户取消登录")
-    finally:
-        # 清理二维码文件
-        qrcode_path = Path(__file__).parent / "qrcode.png"
-        if qrcode_path.exists():
-            qrcode_path.unlink()
-            print("\n🗑️  已清理二维码文件")
