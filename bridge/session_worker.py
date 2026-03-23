@@ -170,14 +170,23 @@ class SessionWorker:
             )
 
             if response:
-                # 更新消息，添加响应
-                self.message_queue.update_status(
-                    message.id,
-                    MessageStatus.PROCESSING,  # 保持 PROCESSING 状态，等待 Discord Bot 发送
-                    response=response
-                )
-
-                print(f"[消息 #{message.id}] 处理成功")
+                # 判断是否为外部消息（task/reminder）
+                if message.is_external:
+                    # 外部消息：直接标记为完成（不需要 Discord Bot 发送）
+                    self.message_queue.update_status(
+                        message.id,
+                        MessageStatus.COMPLETED,
+                        response=response
+                    )
+                    print(f"[消息 #{message.id}] 处理成功（外部消息，已完成）")
+                else:
+                    # 正常消息：保持 PROCESSING 状态，等待 Discord Bot 发送
+                    self.message_queue.update_status(
+                        message.id,
+                        MessageStatus.PROCESSING,  # 保持 PROCESSING 状态，等待 Discord Bot 发送
+                        response=response
+                    )
+                    print(f"[消息 #{message.id}] 处理成功")
                 return True
             else:
                 # 响应为空
