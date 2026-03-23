@@ -37,16 +37,11 @@ class WeixinAccount:
     bot_id: str
     bot_token: str
     base_url: str
-    user_id: str
+    wxid: str  # 原始微信ID（字符串）
+    username: str  # 用户名（如"鸵鸟居士"）
+    user_id: int  # 整数ID
     # CDN base URL（用于文件上传）
     cdn_base_url: str = "https://novac2c.cdn.weixin.qq.com/c2c"
-    # 新增：正向和反向映射字典
-    user_mapping: Dict[str, str] = field(default_factory=dict)
-    reverse_mapping: Dict[str, str] = field(default_factory=dict)
-
-    def __post_init__(self):
-        """数据类初始化后自动调用，生成反向映射"""
-        self.reverse_mapping = {v: k for k, v in self.user_mapping.items()}
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典（用于保存）"""
@@ -54,9 +49,10 @@ class WeixinAccount:
             "bot_id": self.bot_id,
             "bot_token": self.bot_token,
             "base_url": self.base_url,
-            "user_id": self.user_id,
+            "wxid": self.wxid,
             "cdn_base_url": self.cdn_base_url,
-            "user_mapping": self.user_mapping  # 保存时带上映射
+            "username": self.username,
+            "user_id": self.user_id,
         }
 
     @classmethod
@@ -66,9 +62,10 @@ class WeixinAccount:
             bot_id=data["bot_id"],
             bot_token=data["bot_token"],
             base_url=data["base_url"],
-            user_id=data["user_id"],
+            wxid=data["wxid"],
             cdn_base_url=data.get("cdn_base_url", "https://novac2c.cdn.weixin.qq.com/c2c"),
-            user_mapping=data.get("user_mapping", {})  # 读取时提取映射
+            username=data.get("username", ""),
+            user_id=data.get("user_id", 0),
         )
 
 
@@ -166,15 +163,14 @@ class WeixinClient:
 
                 # 更新游标
                 self.get_updates_buf = data.get("get_updates_buf", "")
-    
-                # ===== 这里是你漏掉的拦截逻辑，应该放在这里 =====
+
+                # 用户 ID 映射：将原始 wxid 转换为用户名
                 msgs = data.get("msgs", [])
                 for msg in msgs:
                     raw_id = msg.get("from_user_id")
-                    if raw_id:
-                        # 查表，查不到就保持 raw_id
-                        msg["from_user_id"] = self.account.user_mapping.get(raw_id, raw_id)
-                # ==========================================
+                    if raw_id == self.account.wxid:
+                        # 如果是当前账号的用户，替换为用户名
+                        msg["from_user_id"] = self.account.username
 
                 return data
 
@@ -208,9 +204,12 @@ class WeixinClient:
         # 生成 client_id（用作返回的 message_id）
         client_id = self._generate_client_id()
 
-        # --- 新增：发给微信前，将中文名还原回原始的 wxid ---
-        real_user_id = self.account.reverse_mapping.get(to_user_id, to_user_id)
-        
+        # 如果传入的是用户名，需要转换为原始 wxid
+        if to_user_id == self.account.username:
+            real_user_id = self.account.wxid
+        else:
+            real_user_id = to_user_id
+
         url = f"{self.account.base_url}/ilink/bot/sendmessage"
         payload = {
             "msg": {
@@ -490,14 +489,11 @@ class WeixinClient:
         # 生成 client_id
         client_id = self._generate_client_id()
 
-        # 如果传入的是用户名，需要转换为原始 ID
-        # 如果传入的已经是原始 ID（包含 @），直接使用
-        if '@im.wechat' in to_user_id:
-            # 已经是原始 ID，直接使用
-            real_user_id = to_user_id
+        # 如果传入的是用户名，需要转换为原始 wxid
+        if to_user_id == self.account.username:
+            real_user_id = self.account.wxid
         else:
-            # 是用户名，需要反向查找原始 ID
-            real_user_id = self.account.reverse_mapping.get(to_user_id, to_user_id)
+            real_user_id = to_user_id
 
         # 构建消息项
         item_list = []

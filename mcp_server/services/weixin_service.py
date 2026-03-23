@@ -79,48 +79,56 @@ class WeixinService:
             self._load_user_mapping()
 
     def _load_user_mapping(self):
-        """加载微信账号的用户名映射"""
-        self.user_mapping = {}
+        """从账号配置中加载用户信息"""
+        self.user_mapping = {}  # wxid -> username
+        self.username_to_wxid = {}  # username -> wxid
+        self.userid_to_user = {}  # user_id -> {wxid, username, user_id}
+
         try:
-            import yaml
             import json
 
-            # 检查文件类型
-            if self.config.weixin_accounts_file.endswith('.json'):
-                with open(self.config.weixin_accounts_file, 'r', encoding='utf-8') as f:
-                    accounts_data = json.load(f)
-                    if isinstance(accounts_data, list):
-                        for acc in accounts_data:
-                            if isinstance(acc, dict) and 'user_mapping' in acc:
-                                self.user_mapping.update(acc['user_mapping'])
-            else:  # YAML
-                with open(self.config.weixin_accounts_file, 'r', encoding='utf-8') as f:
-                    accounts_data = yaml.safe_load(f)
-                    if accounts_data and 'accounts' in accounts_data:
-                        for acc in accounts_data['accounts']:
-                            if 'user_mapping' in acc:
-                                self.user_mapping.update(acc['user_mapping'])
+            with open(self.config.weixin_accounts_file, 'r', encoding='utf-8') as f:
+                accounts = json.load(f)
 
-            print(f"✅ 加载了 {len(self.user_mapping)} 个用户名映射")
-            if self.user_mapping:
-                print(f"📋 映射示例: {list(self.user_mapping.items())[:3]}")
+            for acc in accounts:
+                wxid = acc["wxid"]
+                username = acc["username"]
+                user_id = acc["user_id"]
+
+                self.user_mapping[wxid] = username
+                self.username_to_wxid[username] = wxid
+                self.userid_to_user[user_id] = {
+                    "wxid": wxid,
+                    "username": username,
+                    "user_id": user_id
+                }
+
+            print(f"✅ 加载了 {len(accounts)} 个用户信息")
+            if accounts:
+                print(f"📋 用户示例: {[(acc['username'], acc['user_id']) for acc in accounts[:3]]}")
+        except FileNotFoundError:
+            print(f"⚠️  账号文件不存在: {self.config.weixin_accounts_file}")
         except Exception as e:
-            print(f"⚠️  加载用户名映射失败: {e}")
+            print(f"⚠️  加载用户信息失败: {e}")
             import traceback
             traceback.print_exc()
 
     def weixin_id_to_int(self, weixin_id: str) -> int:
-        """将微信用户ID转换为固定的整数ID（不受程序重启影响）
+        """将微信用户ID（wxid）转换为固定的整数ID
 
-        如果 weixin_id 在 user_mapping 中，先替换成用户名
+        从配置中读取预先计算好的 user_id，不再动态转换
         """
-        # 先尝试用映射替换（原始 wxid -> 用户名）
-        mapped_id = self.user_mapping.get(weixin_id, weixin_id)
-        if mapped_id != weixin_id:
-            print(f"🔄 ID映射: {weixin_id} -> {mapped_id}")
-        result = zlib.crc32(mapped_id.encode('utf-8')) % (10 ** 10)
-        print(f"🔢 CRC32: {mapped_id} -> {result}")
-        return result
+        self.ensure_mapping_loaded()
+
+        # 从 username_to_wxid 反向查找 wxid 对应的用户信息
+        for user_id, user_info in self.userid_to_user.items():
+            if user_info["wxid"] == weixin_id:
+                print(f"🔄 ID查找: {weixin_id} -> {user_id}")
+                return user_id
+
+        # 如果找不到，返回 0
+        print(f"⚠️  未找到用户: {weixin_id}")
+        return 0
 
     def send_files(
         self,

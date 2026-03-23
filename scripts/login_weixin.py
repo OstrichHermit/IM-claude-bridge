@@ -122,11 +122,31 @@ async def main():
             print("✅ 登录成功！")
             print("=" * 50)
             print(f"Bot ID: {result.bot_id}")
-            print(f"User ID: {result.user_id}")
+            print(f"wxid: {result.user_id}")
             print(f"Base URL: {result.base_url}")
 
-            # 保存账号
-            account = result.to_account()
+            # 获取用户配置
+            print("\n" + "=" * 50)
+            print("📝 请配置用户信息")
+            print("=" * 50)
+
+            username = input("\n请输入用户名（如：鸵鸟居士）: ").strip()
+            if not username:
+                print("⚠️  用户名不能为空，使用默认值：微信用户")
+                username = "微信用户"
+
+            # 自动计算 user_id
+            import zlib
+            user_id = zlib.crc32(result.user_id.encode('utf-8')) % (10 ** 10)
+            print(f"✅ 自动生成用户ID: {user_id}")
+
+            print(f"\n✅ 用户配置完成：")
+            print(f"   用户名: {username}")
+            print(f"   用户ID: {user_id}")
+
+            # 保存账号（to_account 内部会自动计算 user_id）
+            account = result.to_account(username=username)
+
             if manager.add_account(account):
                 print(f"\n✅ 账号已保存到: {accounts_file}")
                 print("\n💡 现在可以启动微信 Bot 了！")
