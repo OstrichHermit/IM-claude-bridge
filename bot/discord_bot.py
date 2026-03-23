@@ -2428,7 +2428,9 @@ class DiscordBot(discord.Client):
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
                             self.message_queue.cleanup_message_sequences(message_id)
-                            # 3. 清理内存缓存，防止内存泄漏
+                            # 3. 更新消息状态为 COMPLETED（防止重复加载）
+                            self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
+                            # 4. 清理内存缓存，防止内存泄漏
                             if message_id in message_states:
                                 del message_states[message_id]
                             if message_id in self.pending_messages:
@@ -2480,7 +2482,9 @@ class DiscordBot(discord.Client):
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
                             self.message_queue.cleanup_message_sequences(message_id)
-                            # 3. 清理内存缓存，防止内存泄漏
+                            # 3. 更新消息状态为 COMPLETED（防止重复加载）
+                            self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
+                            # 4. 清理内存缓存，防止内存泄漏
                             if message_id in message_states:
                                 del message_states[message_id]
                             if message_id in self.pending_messages:
