@@ -25,16 +25,27 @@ class LoginResult:
     user_id: Optional[str] = None
     error: Optional[str] = None
 
-    def to_account(self) -> Optional['WeixinAccount']:
-        """转换为 WeixinAccount"""
+    def to_account(self, username: str = "") -> Optional['WeixinAccount']:
+        """转换为 WeixinAccount
+
+        Args:
+            username: 用户名（如"鸵鸟居士"）
+        """
         if not self.success:
             return None
         from bot.weixin_client import WeixinAccount
+
+        # 自动生成 user_id
+        import zlib
+        user_id = zlib.crc32(self.user_id.encode('utf-8')) % (10 ** 10)
+
         return WeixinAccount(
             bot_id=self.bot_id,
             bot_token=self.bot_token,
             base_url=self.base_url,
-            user_id=self.user_id
+            wxid=self.user_id,
+            username=username or "微信用户",
+            user_id=user_id
         )
 
 

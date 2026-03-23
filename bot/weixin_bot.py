@@ -34,11 +34,6 @@ class WeixinBot:
         self.polling_tasks = []
         self.send_check_task = None
 
-        # 账号管理
-        self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
-        self._load_accounts()
-        print(f"✅ 微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
-
         # Context Token 缓存（用户 -> 最新 context_token）
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
         self.context_tokens: Dict[str, str] = {}
@@ -46,23 +41,59 @@ class WeixinBot:
         # 整数 ID 到用户名的映射（用于文件发送）
         self.id_to_username: Dict[int, str] = {}
 
-        # 用户名到原始微信 ID 的反向映射（用于 API 调用）
-        self.username_to_raw_id: Dict[str, str] = {}
+        # 整数 ID 到用户信息的映射（用于文件发送）
+        self.userid_to_user: Dict[int, Dict[str, Any]] = {}
 
-        # 从账号配置中加载反向映射
-        for account in self.accounts:
-            # 反转映射：用户名 -> 原始 ID
-            for raw_id, username in account.user_mapping.items():
-                self.username_to_raw_id[username] = raw_id
-            print(f"✅ 加载了 {len(account.user_mapping)} 个用户名映射")
+        # 用户名到原始微信 ID 的反向映射（用于 API 调用）
+        self.username_to_wxid: Dict[str, str] = {}
+
+        # 用户名到整数 ID 的映射（用于消息处理）
+        self.username_to_userid: Dict[str, int] = {}
+
+        # wxid 到用户信息的映射（用于消息处理）
+        self.wxid_to_user: Dict[str, Dict[str, Any]] = {}
 
         # 停止命令确认缓存（用户_id -> 第一次请求的时间戳）
         self.stop_requests: Dict[str, float] = {}
+
+        # 账号管理
+        self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
+        self._load_accounts()
+        print(f"✅ 微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
+
+        # 加载用户信息（从账号配置中）
+        self._load_users()
 
     def _load_accounts(self):
         """加载已保存的账号"""
         self.accounts = self.account_manager.load_accounts()
         logger.info(f"Loaded {len(self.accounts)} accounts")
+
+    def _load_users(self):
+        """从账号配置中加载用户信息"""
+        for account in self.accounts:
+            # wxid -> 用户信息
+            self.wxid_to_user[account.wxid] = {
+                "wxid": account.wxid,
+                "username": account.username,
+                "user_id": account.user_id
+            }
+
+            # user_id -> 用户信息
+            self.userid_to_user[account.user_id] = {
+                "wxid": account.wxid,
+                "username": account.username,
+                "user_id": account.user_id
+            }
+
+            # username -> wxid（反向映射，用于API调用）
+            self.username_to_wxid[account.username] = account.wxid
+
+            # username -> user_id（用于消息处理）
+            self.username_to_userid[account.username] = account.user_id
+
+        print(f"✅ 加载了 {len(self.accounts)} 个用户信息")
+        logger.info(f"Loaded {len(self.accounts)} users")
 
     async def run(self):
         """启动 Bot"""
@@ -233,13 +264,23 @@ class WeixinBot:
                             # 需要将整数 ID 转换回用户名
                             user_id_int = req.user_id
                             print(f"🔍 查找用户 ID: {user_id_int}")
-                            print(f"📋 当前映射: {list(self.id_to_username.keys())[:5]}")
 
-                            target_user = self.id_to_username.get(user_id_int)
+                            # 优先从配置中查找
+                            target_user = None
 
-                            # 如果映射中没有，尝试从消息队列中查找
+                            # 从 userid_to_user 中查找
+                            user_info = self.userid_to_user.get(user_id_int)
+                            if user_info:
+                                target_user = user_info["username"]
+                                print(f"📋 从配置中找到用户名: {target_user}")
+                            else:
+                                # 从运行时映射中查找
+                                target_user = self.id_to_username.get(user_id_int)
+                                if target_user:
+                                    print(f"📋 从运行时映射中找到用户名: {target_user}")
+
+                            # 如果还没找到，尝试从消息队列中查找
                             if not target_user:
-                                # 从消息队列中查找最近的该用户的消息
                                 from shared.message_queue import Message, MessageDirection
                                 import sqlite3
 
@@ -444,13 +485,14 @@ class WeixinBot:
             if context_token:
                 self.context_tokens[from_user_id] = context_token
 
-            # 同时存储 ID 到用户名的映射（用于文件发送）
-            def weixin_id_to_int(weixin_id: str) -> int:
-                return zlib.crc32(weixin_id.encode('utf-8')) % (10 ** 10)
+            # 从配置中获取 user_id（不再动态计算）
+            user_id_int = self.username_to_userid.get(from_user_id)
+            if user_id_int is None:
+                print(f"⚠️  未找到用户 [{from_user_id}] 的 user_id 配置")
+                return
 
-            user_id_int = weixin_id_to_int(from_user_id)
             self.id_to_username[user_id_int] = from_user_id
-            print(f"📋 建立映射: [{from_user_id}] -> CRC32={user_id_int}")
+            print(f"📋 建立映射: [{from_user_id}] -> user_id={user_id_int}")
 
             # 解析消息内容
             content = await self._parse_message_content(msg)
@@ -467,19 +509,16 @@ class WeixinBot:
                 return
 
             # 构造消息队列消息
-            # 使用hash()函数将字符串转换为正整数
-            def weixin_id_to_int(weixin_id: str) -> int:
-                """将用户ID转换为固定的整数ID（不受程序重启影响）"""
-                return zlib.crc32(weixin_id.encode('utf-8')) % (10 ** 10)  # 限制在10位数字内
+            # 从配置中获取 user_id（不再动态计算）
 
             queue_msg = Message(
                 id=None,
                 direction=MessageDirection.TO_CLAUDE.value,
                 content=content,
                 status=MessageStatus.PENDING.value,
-                discord_channel_id=weixin_id_to_int(from_user_id),  # 用发送者 ID 作为频道 ID
+                discord_channel_id=user_id_int,  # 用发送者 ID 作为频道 ID
                 discord_message_id=int(msg.get("message_id", 0)),
-                discord_user_id=weixin_id_to_int(from_user_id),
+                discord_user_id=user_id_int,
                 username=from_user_id,  # 这里直接存 "鸵鸟居士"
                 is_dm=True,  # 微信都是私聊
                 is_external=False,
@@ -594,11 +633,11 @@ class WeixinBot:
 
     async def _cmd_new(self, from_user_id: str, account_bot_id: str):
         """重置当前用户的会话"""
-        # 将用户 ID 转换为整数（与消息队列保持一致）
-        def weixin_id_to_int(weixin_id: str) -> int:
-            return zlib.crc32(weixin_id.encode('utf-8')) % (10 ** 10)
-
-        user_id_int = weixin_id_to_int(from_user_id)
+        # 从配置中获取 user_id
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_to_weixin(self.clients[account_bot_id], f"⚠️  未找到用户 [{from_user_id}] 的配置", from_user_id, "")
+            return
 
         # 获取当前会话
         session_key, old_session_id, _, working_dir = self.message_queue.get_or_create_session(
@@ -643,11 +682,11 @@ class WeixinBot:
 
     async def _cmd_status(self, from_user_id: str, account_bot_id: str):
         """查看当前会话状态"""
-        # 将用户 ID 转换为整数
-        def weixin_id_to_int(weixin_id: str) -> int:
-            return zlib.crc32(weixin_id.encode('utf-8')) % (10 ** 10)
-
-        user_id_int = weixin_id_to_int(from_user_id)
+        # 从配置中获取 user_id
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_to_weixin(self.clients[account_bot_id], f"⚠️  未找到用户 [{from_user_id}] 的配置", from_user_id, "")
+            return
 
         # 获取会话信息
         session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
