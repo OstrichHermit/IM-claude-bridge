@@ -110,8 +110,9 @@ class FileRequest:
     """文件发送请求数据类"""
     id: Optional[int]
     file_paths: List[str]  # 文件路径列表（JSON 数组）
-    user_id: Optional[int]  # Discord 用户 ID
-    channel_id: Optional[int]  # Discord 频道 ID
+    user_id: Optional[int]  # 用户 ID
+    channel_id: Optional[int]  # 频道 ID
+    channel_type: str = ChannelType.DISCORD.value  # 频道类型（discord/weixin）
     status: str = FileRequestStatus.PENDING.value  # 请求状态
     result: Optional[str] = None  # 执行结果（JSON 格式）
     error: Optional[str] = None  # 错误信息
@@ -355,7 +356,7 @@ class MessageQueue:
                 file_paths TEXT NOT NULL,
                 user_id INTEGER,
                 channel_id INTEGER,
-                message TEXT,
+                channel_type TEXT DEFAULT 'discord',
                 status TEXT NOT NULL,
                 result TEXT,
                 error TEXT,
@@ -363,6 +364,16 @@ class MessageQueue:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # 为现有数据库添加 channel_type 字段（如果不存在）
+        try:
+            cursor.execute("""
+                ALTER TABLE file_requests ADD COLUMN channel_type TEXT DEFAULT 'discord'
+            """)
+        except sqlite3.OperationalError:
+            # 字段可能已存在，忽略错误
+            pass
+        conn.commit()
 
         # 创建文件请求索引
         cursor.execute("""
@@ -1448,13 +1459,14 @@ class MessageQueue:
 
         cursor.execute("""
             INSERT INTO file_requests (
-                file_paths, user_id, channel_id,
+                file_paths, user_id, channel_id, channel_type,
                 status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             json.dumps(file_request.file_paths, ensure_ascii=False),
             file_request.user_id,
             file_request.channel_id,
+            file_request.channel_type,
             file_request.status,
             file_request.result,
             file_request.error,
@@ -1474,7 +1486,7 @@ class MessageQueue:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, file_paths, user_id, channel_id,
+            SELECT id, file_paths, user_id, channel_id, channel_type,
                    status, result, error, created_at, updated_at
             FROM file_requests
             WHERE status = ?
@@ -1491,10 +1503,11 @@ class MessageQueue:
                 file_paths=json.loads(row[1]),
                 user_id=row[2],
                 channel_id=row[3],
-                status=row[4],
-                result=row[5],
-                error=row[6],
-                created_at=row[7],
+                channel_type=row[4],
+                status=row[5],
+                result=row[6],
+                error=row[7],
+                created_at=row[8],
                 updated_at=row[8]
             )
         return None

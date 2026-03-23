@@ -1552,6 +1552,17 @@ class DiscordBot(discord.Client):
                 file_request = self.message_queue.get_next_file_request()
 
                 if file_request:
+                    # 使用 channel_type 过滤：只处理 Discord 的文件请求
+                    if file_request.channel_type != "discord":
+                        # print(f"📁 跳过非 Discord 文件请求 #{file_request.id} (type={file_request.channel_type})")
+                        # 标记为已完成，避免重复处理
+                        self.message_queue.update_file_request_status(
+                            file_request.id,
+                            FileRequestStatus.COMPLETED
+                        )
+                        await asyncio.sleep(self.config.poll_interval / 1000)
+                        continue
+
                     print(f"📁 处理文件请求 #{file_request.id}")
                     # 标记为处理中
                     self.message_queue.update_file_request_status(
@@ -2458,11 +2469,6 @@ class DiscordBot(discord.Client):
                         continue
 
                     channel_id, user_id, is_dm, channel_type = row
-
-                    # 再次验证 channel_type（安全检查）
-                    if channel_type != ChannelType.DISCORD.value:
-                        print(f"⏭️  跳过非 Discord 频道的消息 #{message_id}: channel_type={channel_type}")
-                        continue
 
                     # 初始化消息状态
                     if message_id not in message_states:

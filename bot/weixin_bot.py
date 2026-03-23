@@ -43,6 +43,19 @@ class WeixinBot:
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
         self.context_tokens: Dict[str, str] = {}
 
+        # 整数 ID 到用户名的映射（用于文件发送）
+        self.id_to_username: Dict[int, str] = {}
+
+        # 用户名到原始微信 ID 的反向映射（用于 API 调用）
+        self.username_to_raw_id: Dict[str, str] = {}
+
+        # 从账号配置中加载反向映射
+        for account in self.accounts:
+            # 反转映射：用户名 -> 原始 ID
+            for raw_id, username in account.user_mapping.items():
+                self.username_to_raw_id[username] = raw_id
+            print(f"✅ 加载了 {len(account.user_mapping)} 个用户名映射")
+
         # 停止命令确认缓存（用户_id -> 第一次请求的时间戳）
         self.stop_requests: Dict[str, float] = {}
 
@@ -68,10 +81,13 @@ class WeixinBot:
         # 启动发送消息检查任务
         self.send_check_task = asyncio.create_task(self._check_send_messages())
 
+        # 启动文件请求检查任务
+        self.file_check_task = asyncio.create_task(self._check_file_requests())
+
         print(f"✅ 微信 Bot 已启动，{len(self.accounts)} 个账号正在监听")
 
         # 等待所有任务完成
-        await asyncio.gather(*self.polling_tasks, self.send_check_task)
+        await asyncio.gather(*self.polling_tasks, self.send_check_task, self.file_check_task)
 
     async def stop(self):
         """停止 Bot"""
@@ -83,9 +99,11 @@ class WeixinBot:
             task.cancel()
         if self.send_check_task:
             self.send_check_task.cancel()
+        if hasattr(self, 'file_check_task') and self.file_check_task:
+            self.file_check_task.cancel()
 
         # 等待任务取消完成
-        await asyncio.gather(*self.polling_tasks, self.send_check_task, return_exceptions=True)
+        await asyncio.gather(*self.polling_tasks, self.send_check_task, self.file_check_task if hasattr(self, 'file_check_task') else None, return_exceptions=True)
         print("✅ 微信 Bot 已停止")
 
     async def _polling_loop(self, account: WeixinAccount):
@@ -194,6 +212,219 @@ class WeixinBot:
         print(f"✅ 已发送: {len(response_text)} 字符")
         return result
 
+    async def _check_file_requests(self):
+        """检查并发送文件请求到微信"""
+        print("📁 文件请求检查任务已启动")
+
+        while self.running:
+            try:
+                # 获取下一个待处理的文件请求
+                from shared.message_queue import FileRequest, FileRequestStatus
+                req = self.message_queue.get_next_file_request()
+
+                if req:
+                    try:
+                        # 解析文件路径
+                        import json
+                        file_paths = json.loads(req.file_paths)
+
+                        # 确定目标用户
+                        if req.user_id:
+                            # 需要将整数 ID 转换回用户名
+                            user_id_int = req.user_id
+                            print(f"🔍 查找用户 ID: {user_id_int}")
+                            print(f"📋 当前映射: {list(self.id_to_username.keys())[:5]}")
+
+                            target_user = self.id_to_username.get(user_id_int)
+
+                            # 如果映射中没有，尝试从消息队列中查找
+                            if not target_user:
+                                # 从消息队列中查找最近的该用户的消息
+                                from shared.message_queue import Message, MessageDirection
+                                import sqlite3
+
+                                conn = sqlite3.connect(self.message_queue.db_path)
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    """SELECT username FROM messages
+                                       WHERE discord_user_id = ?
+                                       AND direction = ?
+                                       ORDER BY id DESC LIMIT 1""",
+                                    (user_id_int, MessageDirection.TO_CLAUDE.value)
+                                )
+                                recent_messages = cursor.fetchone()
+                                conn.close()
+
+                                if recent_messages:
+                                    target_user = recent_messages[0]
+                                    # 缓存这个映射
+                                    self.id_to_username[user_id_int] = target_user
+                                    print(f"📋 从消息队列中找到用户名: {target_user}")
+                                else:
+                                    print(f"⚠️  无法找到用户 ID {user_id_int} 对应的用户名，跳过文件发送")
+                                    continue
+
+                        elif req.channel_id:
+                            target_user = str(req.channel_id)
+                        else:
+                            raise Exception("未指定目标用户")
+
+                        # 获取 context_token
+                        context_token = self.context_tokens.get(target_user, "")
+                        if not context_token:
+                            print(f"⚠️  用户 {target_user} (ID: {req.user_id}) 没有有效的 context_token，跳过文件发送")
+                            continue
+
+                        # 选择一个账号（轮询）
+                        account_index = hash(target_user) % len(self.accounts)
+                        account = self.accounts[account_index]
+                        client = self.clients.get(account.bot_id)
+
+                        if not client:
+                            raise Exception(f"账号 {account.bot_id} 的客户端未初始化")
+
+                        # 发送每个文件
+                        sent_count = 0
+                        for file_path in file_paths:
+                            try:
+                                await self._send_file_to_weixin(client, target_user, file_path, context_token)
+                                sent_count += 1
+                            except Exception as e:
+                                print(f"❌ 发送文件 {file_path} 失败: {e}")
+
+                        print(f"✅ 文件发送完成: {sent_count}/{len(file_paths)} 个文件")
+
+                        # 标记请求为已完成
+                        self.message_queue.update_file_request_status(
+                            req.id,
+                            FileRequestStatus.COMPLETED
+                        )
+
+                    except Exception as e:
+                        print(f"❌ 处理文件请求失败: {e}")
+                        self.message_queue.update_file_request_status(
+                            req.id,
+                            FileRequestStatus.FAILED,
+                            error=str(e)
+                        )
+
+                # 等待一段时间再检查
+                await asyncio.sleep(self.config.queue_send_interval)
+
+            except Exception as e:
+                print(f"❌ 检查文件请求错误: {e}")
+                await asyncio.sleep(1)
+
+    async def _send_file_to_weixin(self, client: WeixinClient, to_user_id: str, file_path: str, context_token: str):
+        """发送文件到微信
+
+        Args:
+            client: 微信客户端
+            to_user_id: 接收者用户 ID（可能是用户名或原始 ID）
+            file_path: 文件路径
+            context_token: 上下文 token
+        """
+        import mimetypes
+        import hashlib
+        from Crypto.Cipher import AES
+        from Crypto.Util.Padding import pad
+        import os
+
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+
+        # 获取文件信息
+        file_size = os.path.getsize(file_path)
+        file_name = os.path.basename(file_path)
+
+        # 判断 MIME 类型
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        print(f"📤 准备发送文件: {file_name} ({file_size} bytes, {mime_type})")
+
+        # 将用户名转换为原始微信 ID（用于 API 调用）
+        raw_user_id = self.username_to_raw_id.get(to_user_id, to_user_id)
+        if raw_user_id != to_user_id:
+            print(f"🔄 用户名转换: {to_user_id} -> {raw_user_id}")
+
+        # 读取文件并计算 MD5
+        with open(file_path, 'rb') as f:
+            plaintext = f.read()
+        rawfilemd5 = hashlib.md5(plaintext).hexdigest()
+
+        # 生成 AES 密钥和 filekey
+        aeskey = os.urandom(16)
+        filekey = os.urandom(16).hex()
+
+        # 计算加密后大小（AES-128-ECB with PKCS7 padding）
+        cipher = AES.new(aeskey, AES.MODE_ECB)
+        ciphertext = cipher.encrypt(pad(plaintext, AES.block_size))
+        filesize = len(ciphertext)
+
+        # 确定媒体类型
+        if mime_type.startswith("video/"):
+            media_type = 2  # VIDEO
+            message_type = "video"
+        elif mime_type.startswith("image/"):
+            media_type = 1  # IMAGE
+            message_type = "image"
+        else:
+            media_type = 3  # FILE
+            message_type = "file"
+
+        # 获取上传 URL（使用原始微信 ID）
+        upload_resp = await client.get_upload_url(
+            filekey=filekey,
+            media_type=media_type,
+            to_user_id=raw_user_id,
+            rawsize=file_size,
+            rawfilemd5=rawfilemd5,
+            filesize=filesize,
+            aeskey=aeskey.hex(),
+            no_need_thumb=True
+        )
+
+        upload_param = upload_resp.get("upload_param")
+        if not upload_param:
+            raise Exception("获取上传参数失败")
+
+        print(f"📤 获取到上传参数，开始上传到 CDN...")
+
+        # 上传加密后的文件到 CDN
+        download_param = await client.upload_to_cdn(
+            file_path=file_path,
+            upload_param=upload_param,
+            filekey=filekey,
+            aeskey=aeskey,
+            filesize=filesize
+        )
+
+        print(f"✅ CDN 上传成功，获取到下载参数")
+
+        # 构造媒体信息（使用 CDN 返回的下载参数）
+        import base64
+        media_info = {
+            "encrypt_query_param": download_param,  # CDN 返回的下载参数
+            "aes_key": base64.b64encode(aeskey).decode('utf-8'),  # 转换为 base64
+            "filesize_ciphertext": filesize
+        }
+
+        # 发送媒体消息（使用原始微信 ID）
+        print(f"📤 发送 {message_type} 消息...")
+        result = await client.send_media_message(
+            to_user_id=raw_user_id,
+            media_type=message_type,
+            media_info=media_info,
+            context_token=context_token,
+            file_name=file_name,
+            filesize=file_size
+        )
+
+        print(f"✅ 文件发送成功: {file_name}")
+
     async def _handle_message(self, msg: dict, account_id: str):
         """处理单条消息"""
         try:
@@ -212,6 +443,14 @@ class WeixinBot:
             # 更新 context_token 缓存（保存最新的 token）
             if context_token:
                 self.context_tokens[from_user_id] = context_token
+
+            # 同时存储 ID 到用户名的映射（用于文件发送）
+            def weixin_id_to_int(weixin_id: str) -> int:
+                return zlib.crc32(weixin_id.encode('utf-8')) % (10 ** 10)
+
+            user_id_int = weixin_id_to_int(from_user_id)
+            self.id_to_username[user_id_int] = from_user_id
+            print(f"📋 建立映射: [{from_user_id}] -> CRC32={user_id_int}")
 
             # 解析消息内容
             content = await self._parse_message_content(msg)
