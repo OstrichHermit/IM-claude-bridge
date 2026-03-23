@@ -22,6 +22,7 @@ def trigger_scheduled_task(
     channel_id: int = None,
     is_dm: bool = False,
     tag: str = None,
+    channel_type: str = "discord",  # 频道类型（默认 discord）
     file_path: str = None
 ) -> int:
     """
@@ -64,6 +65,7 @@ def trigger_scheduled_task(
         is_dm=is_dm,
         use_message_request=False,  # 固定使用 messages 表
         tag=tag,  # 传递标签
+        channel_type=channel_type,  # 传递频道类型
         db_path=None,             # 固定使用默认数据库路径
         file_path=file_path         # 附加文件路径
     )
@@ -124,6 +126,13 @@ def main():
         help="要附加的文件路径（可从配置文件读取）"
     )
 
+    parser.add_argument(
+        "--channel-type", "-ct",
+        default="discord",
+        choices=["discord", "weixin"],
+        help="频道类型（默认：discord）"
+    )
+
     args = parser.parse_args()
 
     # 从配置文件读取所有参数
@@ -179,6 +188,7 @@ def main():
         channel_id_str = config.get('channel_id', '')
         tag = config.get('tag') or args.tag
         file_path = config.get('file_path') or args.file_path
+        channel_type = config.get('channel_type') or args.channel_type
 
         # 转换 ID 为整数（如果提供）
         user_id = int(user_id_str) if user_id_str.strip() else args.user_id
@@ -192,6 +202,7 @@ def main():
         if channel_id:
             print(f"   频道 ID: {channel_id}")
         print(f"   标签: {tag}")
+        print(f"   频道类型: {channel_type}")
         if file_path:
             print(f"   附加文件: {file_path}")
 
@@ -211,6 +222,7 @@ def main():
         user_id = args.user_id
         channel_id = args.channel_id
         tag = args.tag
+        channel_type = args.channel_type
 
         if not content:
             parser.error("必须提供 content 或 --config-file 参数")
@@ -248,6 +260,7 @@ def main():
             channel_id=target_channel_id,
             is_dm=is_dm_mode,
             tag=tag,  # 传递标签参数
+            channel_type=channel_type,  # 传递频道类型
             file_path=file_path  # 传递文件路径
         )
 

@@ -204,3 +204,30 @@ class Config:
     def enable_message_splitting(self) -> bool:
         """获取是否启用消息按空行分割功能"""
         return self._config.get('message_splitting', {}).get('enabled', True)
+
+    # 微信配置
+
+    @property
+    def weixin_enabled(self) -> bool:
+        """获取是否启用微信 Bot"""
+        return self._config.get('weixin', {}).get('enabled', False)
+
+    @property
+    def weixin_accounts_file(self) -> str:
+        """获取微信账号存储文件路径"""
+        accounts_file = self._config.get('weixin', {}).get('accounts_file', './config/weixin_accounts.json')
+        # 转换为绝对路径
+        if not os.path.isabs(accounts_file):
+            project_root = Path(__file__).parent.parent
+            accounts_file = project_root / accounts_file
+        return str(accounts_file)
+
+    @property
+    def file_mapping_path(self) -> str:
+        """获取文件映射表路径"""
+        mapping_file = self._config.get('file_mapping', {}).get('path', './file_mapping.json')
+        # 转换为绝对路径
+        if not os.path.isabs(mapping_file):
+            project_root = Path(__file__).parent.parent
+            mapping_file = project_root / mapping_file
+        return str(mapping_file)

@@ -45,6 +45,7 @@ async def add_cron(
     user_id: Optional[str] = None,
     channel_id: Optional[str] = None,
     tag: str = "task",
+    channel_type: str = "discord",  # 频道类型（discord/weixin）
     description: str = "",
     repeat: bool = True
 ) -> str:
@@ -61,6 +62,7 @@ async def add_cron(
         user_id: Discord 用户 ID（可选），私聊模式时使用
         channel_id: Discord 频道 ID（可选），频道模式时使用
         tag: 任务标签（可选），默认 "task"，可选值："task"（任务类）、"reminder"（提醒类）
+        channel_type: 频道类型（可选），默认 "discord"，可选值："discord"、"weixin"
         description: 任务描述（可选），用于识别任务
         repeat: 是否重复执行（可选），默认 true，false 表示一次性任务（执行后自动禁用）
 
@@ -68,12 +70,24 @@ async def add_cron(
         JSON 格式的创建结果，包含任务 ID
 
     Examples:
-        # 每天早上 9 点发送报告（循环任务）
+        # 每天早上 9 点发送报告到 Discord（循环任务）
         add_cron(
             cron_expr="0 9 * * *",
             content="发送今日报告",
             username="鸵鸟居士",
             user_id="USER_DISCORD_ID",
+            channel_type="discord",
+            tag="task",
+            description="每日报告"
+        )
+
+        # 每天早上 9 点发送报告到微信（循环任务）
+        add_cron(
+            cron_expr="0 9 * * *",
+            content="发送今日报告",
+            username="鸵鸟居士",
+            user_id="wxid_xxx",
+            channel_type="weixin",
             tag="task",
             description="每日报告"
         )
@@ -84,6 +98,7 @@ async def add_cron(
             content="该开会啦",
             username="鸵鸟居士",
             user_id="USER_DISCORD_ID",
+            channel_type="discord",
             tag="reminder",
             description="会议提醒",
             repeat=False
@@ -95,11 +110,13 @@ async def add_cron(
             content="该喝水了！",
             username="鸵鸟居士",
             user_id="USER_DISCORD_ID",
+            channel_type="discord",
             tag="reminder"
         )
 
     Note:
         - user_id 和 channel_id 必须指定其中一个，并且只能二选一，不能两个都填写
+        - channel_type 指定发送到哪个频道：discord 或 weixin（默认 discord）
         - cron 表达式格式：分 时 日 月 周
         - 支持 cron 标准语法：* 表示任意，*/N 表示每 N，N-M 表示范围
         - 任务会由 Discord Bot 读取并执行，确保 Bot 正在运行
@@ -139,6 +156,7 @@ async def add_cron(
             "user_id": user_id,
             "channel_id": channel_id,
             "tag": tag,
+            "channel_type": channel_type,  # 频道类型
             "description": description or content[:50],
             "enabled": True,
             "repeat": repeat,  # 是否重复执行
@@ -350,10 +368,11 @@ async def update_cron(
     cron_expr: Optional[str] = None,
     content: Optional[str] = None,
     username: Optional[str] = None,
-    user_id: Optional[str] = None,       
-    channel_id: Optional[str] = None,     
-    description: Optional[str] = None,
+    user_id: Optional[str] = None,
+    channel_id: Optional[str] = None,
     tag: Optional[str] = None,
+    channel_type: Optional[str] = None,  # 频道类型
+    description: Optional[str] = None,
     repeat: Optional[bool] = None,
     enabled: Optional[bool] = None
 ) -> str:
@@ -370,6 +389,7 @@ async def update_cron(
         user_id: Discord 用户 ID（可选），私聊模式时使用
         channel_id: Discord 频道 ID（可选），频道模式时使用
         tag: 任务标签（可选），如 "task" 或 "reminder"
+        channel_type: 频道类型（可选），"discord" 或 "weixin"
         description: 任务描述（可选），用于识别任务
         repeat: 是否重复执行（可选），true 重复，false 一次性
         enabled: 是否启用（可选），true 启用，false 禁用
@@ -386,6 +406,13 @@ async def update_cron(
             job_id="a1b2c3d4",
             content="新的提醒内容",
             description="更新后的任务"
+        )
+
+        # 修改为微信任务
+        await update_cron(
+            job_id="a1b2c3d4",
+            channel_type="weixin",
+            user_id="wxid_xxx"
         )
 
         # 修改为一次性任务并禁用
@@ -406,6 +433,7 @@ async def update_cron(
 
     Note:
         - user_id 和 channel_id 必须指定其中一个，并且只能二选一，不能两个都填写
+        - channel_type 指定发送到哪个频道：discord 或 weixin
         - cron 表达式格式：分 时 日 月 周
         - 支持 cron 标准语法：* 表示任意，*/N 表示每 N，N-M 表示范围
         - 任务会由 Discord Bot 读取并执行，确保 Bot 正在运行
@@ -478,7 +506,11 @@ async def update_cron(
         if tag is not None:
             job['tag'] = tag
             changed_fields.append('tag')
-        
+
+        if channel_type is not None:
+            job['channel_type'] = channel_type
+            changed_fields.append('channel_type')
+
         if description is not None:
             job['description'] = description
             changed_fields.append('description')

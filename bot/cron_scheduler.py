@@ -127,6 +127,7 @@ content<<<MARKER_START
 user_id={job.get('user_id') or ''}
 channel_id={job.get('channel_id') or ''}
 tag={job.get('tag') or 'task'}
+channel_type={job.get('channel_type') or 'discord'}
 """
 
             # 执行脚本

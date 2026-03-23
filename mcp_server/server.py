@@ -29,6 +29,10 @@ from mcp_server.tools import (
     _send_file_to_discord,
     _send_multiple_files_to_discord
 )
+from mcp_server.tools import (
+    _send_file_to_weixin,
+    _send_multiple_files_to_weixin
+)
 from mcp_server.tools.scheduler import (
     add_cron as _add_cron_impl,
     list_cron as _list_cron_impl,
@@ -426,6 +430,94 @@ async def get_current_time(timezone: str = "Asia/Taipei") -> str:
     return await _get_current_time_impl(timezone)
 
 
+@mcp.tool
+async def send_file_to_weixin(
+    file_path: str,
+    user_id: Optional[str] = None,
+    channel_id: Optional[str] = None
+) -> str:
+    """
+    发送文件到微信（支持用户私聊或群聊）
+
+    将本地文件发送到指定微信用户的私聊或群聊中。
+    通过消息队列与微信 Bot 通信。
+
+    Args:
+        file_path: 要发送的文件路径（必需）
+        user_id: 微信用户 ID（可选），发送到私聊时使用
+        channel_id: 微信群聊 ID（可选），发送到群聊时使用
+
+    Returns:
+        JSON格式的发送结果，包含成功状态和消息信息
+
+    Examples:
+        # 发送到用户私聊
+        send_file_to_weixin(file_path="chart.png", user_id="wxid_xxx")
+
+        # 发送到群聊
+        send_file_to_weixin(file_path="report.png", channel_id="chatroom_xxx")
+
+    Note:
+        - user_id 和 channel_id 必须指定其中一个
+        - 文件大小限制：微信限制 100MB
+        - 支持格式：图片、PDF、文本、压缩包等所有微信支持的格式
+        - 此工具通过消息队列与微信 Bot 通信，需要 Bot 正在运行
+    """
+    return await _send_file_to_weixin(
+        file_path=file_path,
+        user_id=user_id,
+        channel_id=channel_id
+    )
+
+
+@mcp.tool
+async def send_multiple_files_to_weixin(
+    file_paths: list,
+    user_id: Optional[str] = None,
+    channel_id: Optional[str] = None
+) -> str:
+    """
+    批量发送多个文件到微信（支持用户私聊或群聊）
+
+    将多个本地文件批量发送到指定微信用户的私聊或群聊中。
+    微信限制单次最多发送 9 个文件。
+    通过消息队列与微信 Bot 通信。
+
+    Args:
+        file_paths: 要发送的文件路径列表（必需），最多 9 个文件
+        user_id: 微信用户 ID（可选），发送到私聊时使用
+        channel_id: 微信群聊 ID（可选），发送到群聊时使用
+
+    Returns:
+        JSON格式的发送结果，包含成功状态和消息信息
+
+    Examples:
+        # 批量发送图片到用户私聊
+        send_multiple_files_to_weixin(
+            file_paths=["chart1.png", "chart2.png", "data.pdf"],
+            user_id="wxid_xxx"
+        )
+
+        # 批量发送文件到群聊
+        send_multiple_files_to_weixin(
+            file_paths=["report1.pdf", "report2.pdf"],
+            channel_id="chatroom_xxx"
+        )
+
+    Note:
+        - user_id 和 channel_id 必须指定其中一个
+        - 最多支持 9 个文件（微信限制）
+        - 文件大小限制：微信限制 100MB（每个文件）
+        - 如果某些文件不存在或发送失败，会跳过这些文件继续发送其他文件
+        - 此工具通过消息队列与微信 Bot 通信，需要 Bot 正在运行
+    """
+    return await _send_multiple_files_to_weixin(
+        file_paths=file_paths,
+        user_id=user_id,
+        channel_id=channel_id
+    )
+
+
 # ==================== 启动入口 ====================
 
 def run_server(
@@ -455,20 +547,26 @@ def run_server(
 
     print()
     print("  已注册的工具:")
-    print("    1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
-    print("    2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
-    print("    3. add_cron                     - 添加定时任务")
-    print("    4. list_cron                    - 列出所有定时任务")
-    print("    5. delete_cron                  - 删除定时任务")
-    print("    6. toggle_cron                  - 启用/禁用定时任务")
-    print("    7. get_cron_info                - 获取定时任务详情")
-    print("    8. update_cron                  - 更新定时任务")
-    print("    9. get_current_time             - 获取当前时间（支持多时区）")
+    print("    Discord:")
+    print("      1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
+    print("      2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
+    print("    微信:")
+    print("      3. send_file_to_weixin           - 发送文件到微信（支持私聊/群聊）")
+    print("      4. send_multiple_files_to_weixin  - 批量发送文件到微信（最多9个，支持私聊/群聊）")
+    print("    定时任务:")
+    print("      5. add_cron                     - 添加定时任务")
+    print("      6. list_cron                    - 列出所有定时任务")
+    print("      7. delete_cron                  - 删除定时任务")
+    print("      8. toggle_cron                  - 启用/禁用定时任务")
+    print("      9. get_cron_info                - 获取定时任务详情")
+    print("     10. update_cron                  - 更新定时任务")
+    print("    其他:")
+    print("     11. get_current_time             - 获取当前时间（支持多时区）")
     print()
     print("  架构说明:")
-    print("    - MCP Server 通过消息队列与 Discord Bot 通信")
-    print("    - 无需创建新的 Discord 客户端")
-    print("    - 需要确保 Discord Bot 正在运行")
+    print("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")
+    print("    - 无需创建新的客户端")
+    print("    - 需要确保对应的 Bot 正在运行")
     print("    - 定时任务由 Discord Bot 调度执行")
     print("=" * 60)
     print()

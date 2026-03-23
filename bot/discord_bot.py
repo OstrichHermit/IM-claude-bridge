@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, AttachmentInfo
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.file_mapping import FileMapping
 from bot.cron_scheduler import BotCronScheduler
 
@@ -78,7 +78,7 @@ class DiscordBot(discord.Client):
 
         # 清理上次崩溃时卡住的消息
         await self.cleanup_stuck_messages()
-
+        
         # 注册斜杠命令
         await self.add_commands()
 
@@ -132,8 +132,8 @@ class DiscordBot(discord.Client):
             conn = sqlite3.connect(self.config.database_path)
             cursor = conn.cursor()
 
-            # 1. 清理 PROCESSING 状态的消息
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
+            # 1. 清理 PROCESSING 状态的消息（只清理 Discord 频道的）
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing' AND channel_type = ?", (ChannelType.DISCORD.value,))
             stuck_count = cursor.fetchone()[0]
 
             if stuck_count > 0:
@@ -144,8 +144,8 @@ class DiscordBot(discord.Client):
                                SET status = 'completed',
                                    updated_at = CURRENT_TIMESTAMP,
                                    error = 'Bot 重置：消息被标记为已完成'
-                               WHERE status = 'processing'
-                               """)
+                               WHERE status = 'processing' AND channel_type = ?
+                               """, (ChannelType.DISCORD.value,))
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -153,8 +153,8 @@ class DiscordBot(discord.Client):
             else:
                 print("✓ 没有发现 PROCESSING 状态的消息")
 
-            # 2. 清理 PENDING 状态的消息（避免重启后重复处理）
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending'")
+            # 2. 清理 PENDING 状态的消息（避免重启后重复处理，只清理 Discord 频道的）
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending' AND channel_type = ?", (ChannelType.DISCORD.value,))
             pending_count = cursor.fetchone()[0]
 
             if pending_count > 0:
@@ -165,8 +165,8 @@ class DiscordBot(discord.Client):
                                SET status = 'skipped',
                                    updated_at = CURRENT_TIMESTAMP,
                                    error = 'Bot 重启：消息被跳过，避免重复处理'
-                               WHERE status = 'pending'
-                               """)
+                               WHERE status = 'pending' AND channel_type = ?
+                               """, (ChannelType.DISCORD.value,))
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -174,8 +174,8 @@ class DiscordBot(discord.Client):
             else:
                 print("✓ 没有发现 PENDING 状态的消息")
 
-            # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知）
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started'")
+            # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知，只清理 Discord 频道的）
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started' AND channel_type = ?", (ChannelType.DISCORD.value,))
             ai_started_count = cursor.fetchone()[0]
 
             if ai_started_count > 0:
@@ -186,8 +186,8 @@ class DiscordBot(discord.Client):
                                SET status = 'completed',
                                    updated_at = CURRENT_TIMESTAMP,
                                    error = 'Bot 重启：AI 响应被标记为已完成（避免重复发送工具调用通知）'
-                               WHERE status = 'ai_started'
-                               """)
+                               WHERE status = 'ai_started' AND channel_type = ?
+                               """, (ChannelType.DISCORD.value,))
 
                 affected = cursor.rowcount
                 conn.commit()
@@ -601,8 +601,8 @@ class DiscordBot(discord.Client):
                     await interaction.response.send_message("❌ 您没有权限执行此操作", ephemeral=True)
                     return
 
-            # 查找正在处理的消息
-            processing_messages = self.message_queue.get_processing_messages()
+            # 查找正在处理的消息（只获取 Discord 频道的消息）
+            processing_messages = self.message_queue.get_processing_messages(channel_type=ChannelType.DISCORD.value)
 
             if not processing_messages:
                 embed = discord.Embed(
@@ -901,6 +901,7 @@ class DiscordBot(discord.Client):
                 username=message.author.display_name,
                 is_dm=is_dm,
                 tag=MessageTag.DEFAULT.value,
+                channel_type=ChannelType.DISCORD.value,  # Discord 频道
                 attachments=attachment_infos  # 传入附件信息
             )
 
@@ -1053,6 +1054,7 @@ class DiscordBot(discord.Client):
                     username=message.author.display_name,
                     is_dm=is_dm,
                     tag=MessageTag.DEFAULT.value,
+                    channel_type=ChannelType.DISCORD.value,  # Discord 频道
                     attachments=attachment_infos  # 附件信息作为独立参数
                 )
 
@@ -1292,22 +1294,22 @@ class DiscordBot(discord.Client):
 
                 user_id = row[0]
 
-                # 查询同一用户的私聊消息是否有正在处理的
+                # 查询同一用户的私聊消息是否有正在处理的（只检查 Discord 频道）
                 cursor.execute("""
                                SELECT COUNT(*) FROM messages
                                WHERE id != ? AND discord_user_id = ? AND is_dm = 1
-                    AND status IN ('processing', 'ai_started')
-                               """, (current_message_id, user_id))
+                    AND status IN ('processing', 'ai_started') AND channel_type = ?
+                               """, (current_message_id, user_id, ChannelType.DISCORD.value))
             else:
                 # 频道：检查同一频道的其他消息是否正在处理
                 channel_id = channel.id
 
-                # 查询同一频道的消息是否有正在处理的
+                # 查询同一频道的消息是否有正在处理的（只检查 Discord 频道）
                 cursor.execute("""
                                SELECT COUNT(*) FROM messages
                                WHERE id != ? AND discord_channel_id = ? AND is_dm = 0
-                    AND status IN ('processing', 'ai_started')
-                               """, (current_message_id, channel_id))
+                    AND status IN ('processing', 'ai_started') AND channel_type = ?
+                               """, (current_message_id, channel_id, ChannelType.DISCORD.value))
 
             count = cursor.fetchone()[0]
             conn.close()
@@ -1328,16 +1330,16 @@ class DiscordBot(discord.Client):
                 current_time = asyncio.get_event_loop().time()
 
                 # 扫描外部插入的消息（is_external=True）
-                # 查询 pending 和 processing 状态，并过滤已追踪的消息
+                # 查询 pending 和 processing 状态，并过滤已追踪的消息（只获取 Discord 频道）
                 import sqlite3
                 conn = sqlite3.connect(self.config.database_path)
                 cursor = conn.cursor()
                 cursor.execute("""
                                SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
                                FROM messages
-                               WHERE status IN (?, ?) AND direction = ? AND is_external = 1
+                               WHERE status IN (?, ?) AND direction = ? AND is_external = 1 AND channel_type = ?
                                ORDER BY created_at ASC
-                               """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value))
+                               """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value, ChannelType.DISCORD.value))
                 external_messages = cursor.fetchall()
                 conn.close()
 
@@ -2368,8 +2370,8 @@ class DiscordBot(discord.Client):
                 cursor = conn.cursor()
                 cursor.execute("""
                                SELECT id FROM messages
-                               WHERE status IN ('completed', 'failed', 'skipped')
-                               """)
+                               WHERE status IN ('completed', 'failed', 'skipped') AND channel_type = ?
+                               """, (ChannelType.DISCORD.value,))
                 completed_ids = [row[0] for row in cursor.fetchall()]
                 conn.close()
 
@@ -2406,12 +2408,13 @@ class DiscordBot(discord.Client):
                 cursor = conn.cursor()
 
                 cursor.execute("""
-                               SELECT DISTINCT message_id
-                               FROM message_sequence
-                               WHERE status = 'pending'
-                               ORDER BY message_id ASC
-                                   LIMIT 1
-                               """)
+                               SELECT DISTINCT ms.message_id
+                               FROM message_sequence ms
+                               INNER JOIN messages m ON ms.message_id = m.id
+                               WHERE ms.status = 'pending' AND m.channel_type = ?
+                               ORDER BY ms.message_id ASC
+                               LIMIT 1
+                               """, (ChannelType.DISCORD.value,))
                 row = cursor.fetchone()
                 conn.close()
 
@@ -2442,7 +2445,7 @@ class DiscordBot(discord.Client):
                     conn = sqlite3.connect(self.config.database_path)
                     cursor = conn.cursor()
                     cursor.execute("""
-                                   SELECT discord_channel_id, discord_user_id, is_dm
+                                   SELECT discord_channel_id, discord_user_id, is_dm, channel_type
                                    FROM messages
                                    WHERE id = ?
                                    """, (message_id,))
@@ -2452,7 +2455,12 @@ class DiscordBot(discord.Client):
                     if not row:
                         continue
 
-                    channel_id, user_id, is_dm = row
+                    channel_id, user_id, is_dm, channel_type = row
+
+                    # 再次验证 channel_type（安全检查）
+                    if channel_type != ChannelType.DISCORD.value:
+                        print(f"⏭️  跳过非 Discord 频道的消息 #{message_id}: channel_type={channel_type}")
+                        continue
 
                     # 初始化消息状态
                     if message_id not in message_states:
@@ -2486,7 +2494,11 @@ class DiscordBot(discord.Client):
                     if is_dm:
                         user = self.get_user(user_id)
                         if not user:
-                            user = await self.fetch_user(user_id)
+                            try:
+                                user = await self.fetch_user(user_id)
+                            except Exception as e:
+                                print(f"⚠️  获取用户失败: {user_id}, 错误: {e}")
+                                continue
                         if not user:
                             continue
                         channel = await user.create_dm()
@@ -2754,7 +2766,8 @@ class DiscordBot(discord.Client):
                                         ref_tool_use_index,
                                         sent_message.id,
                                         channel_id,
-                                        is_dm
+                                        is_dm,
+                                        channel_type='discord'
                                     )
 
                         # 标记为已发送
@@ -3081,7 +3094,8 @@ class DiscordBot(discord.Client):
                     tool_use_index,
                     sent_message.id,
                     channel_id,
-                    is_dm
+                    is_dm,
+                    channel_type='discord'
                 )
             else:
                 print(f"⚠️ [Bot] 发送卡片失败: 消息 #{message_id}, 工具 #{tool_use_index}, sent_message 为 None")
@@ -3157,8 +3171,8 @@ class DiscordBot(discord.Client):
 
         while not self.is_closed():
             try:
-                # 获取待处理的工具执行结果
-                pending_results = self.message_queue.get_pending_tool_use_results()
+                # 获取待处理的工具执行结果（只处理 discord 频道的）
+                pending_results = self.message_queue.get_pending_tool_use_results(channel_type='discord')
 
                 for result in pending_results:
                     message_id = result['message_id']

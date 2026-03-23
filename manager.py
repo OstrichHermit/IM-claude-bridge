@@ -92,6 +92,10 @@ class Manager:
         """检查 Discord Bot 是否运行"""
         return self.find_process_by_commandline("discord_bot.py") is not None
 
+    def is_weixin_bot_running(self):
+        """检查微信 Bot 是否运行"""
+        return self.find_process_by_commandline("weixin_bot.py") is not None
+
     def is_bridge_running(self):
         """检查 Claude Bridge 是否运行"""
         return self.find_process_by_commandline("claude_bridge.py") is not None
@@ -156,7 +160,8 @@ class Manager:
         # 停止进程
         processes = [
             ("Claude Bridge", "claude_bridge.py"),
-            ("Discord Bot", "discord_bot.py")
+            ("Discord Bot", "discord_bot.py"),
+            ("微信 Bot", "weixin_bot.py")
         ]
 
         for name, pattern in processes:
@@ -215,6 +220,7 @@ class Manager:
 
         # 初始检查并报告状态
         bot_running = self.is_bot_running()
+        weixin_bot_running = self.is_weixin_bot_running()
         bridge_running = self.is_bridge_running()
 
         if bot_running and bridge_running:
@@ -222,6 +228,8 @@ class Manager:
         else:
             if not bot_running:
                 self.log("⚠️  初始检查: Discord Bot 未运行")
+            if not weixin_bot_running:
+                self.log("⚠️  初始检查: 微信 Bot 未运行")
             if not bridge_running:
                 self.log("⚠️  初始检查: Claude Bridge 未运行")
 
@@ -243,6 +251,11 @@ class Manager:
                         self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
+
+                    # 检查微信 Bot（可选）
+                    weixin_bot_running = self.is_weixin_bot_running()
+                    if not weixin_bot_running:
+                        self.log("⚠️  微信 Bot 未运行（非必需服务）")
 
                     # 重启未成功，获取当前重试次数
                     retry_count = self.get_retry_count()

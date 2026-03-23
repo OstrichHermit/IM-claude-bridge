@@ -61,6 +61,12 @@ class MessageTag(Enum):
     REMINDER = "reminder"          # 提醒消息
 
 
+class ChannelType(Enum):
+    """频道类型枚举"""
+    DISCORD = "discord"          # Discord 频道
+    WEIXIN = "weixin"            # 微信频道
+
+
 @dataclass
 class AttachmentInfo:
     """附件信息数据类"""
@@ -88,6 +94,8 @@ class Message:
     is_dm: bool = False  # 是否为私聊消息
     is_external: bool = False  # 是否为外部插入的消息（非真实 Discord 消息）
     tag: str = MessageTag.DEFAULT.value  # 消息标签
+    channel_type: str = ChannelType.DISCORD.value  # 频道类型（discord/weixin）
+    context_token: Optional[str] = None  # 微信消息上下文 token（用于回复）
     attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -205,6 +213,18 @@ class MessageQueue:
         except sqlite3.OperationalError:
             pass  # 字段已存在
 
+        # 兼容性处理：为旧数据库添加 context_token 字段（微信消息上下文）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN context_token TEXT")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
+        # 兼容性处理：为旧数据库添加 channel_type 字段（频道类型）
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN channel_type TEXT DEFAULT 'discord'")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
+
         # 兼容性处理：为旧数据库添加 streaming_response 字段（流式响应）
         try:
             cursor.execute("ALTER TABLE messages ADD COLUMN streaming_response TEXT")
@@ -244,10 +264,17 @@ class MessageQueue:
                 discord_message_id INTEGER NOT NULL,
                 channel_id INTEGER NOT NULL,
                 is_dm BOOLEAN DEFAULT 0,
+                channel_type TEXT DEFAULT 'discord',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(message_id, tool_use_index)
             )
         """)
+
+        # 兼容性处理：为旧数据库的 tool_use_messages 表添加 channel_type 字段
+        try:
+            cursor.execute("ALTER TABLE tool_use_messages ADD COLUMN channel_type TEXT DEFAULT 'discord'")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
 
         # 创建索引以提高查询性能
         cursor.execute("""
@@ -491,8 +518,8 @@ class MessageQueue:
                 direction, content, status,
                 discord_channel_id, discord_message_id,
                 discord_user_id, username,
-                response, error, is_dm, is_external, tag, attachments, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message.direction,
             message.content,
@@ -506,6 +533,8 @@ class MessageQueue:
             1 if message.is_dm else 0,
             1 if message.is_external else 0,
             message.tag,
+            message.channel_type,
+            message.context_token,
             attachments_json,
             message.created_at,
             message.updated_at
@@ -535,7 +564,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
+                   response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
             FROM messages
             WHERE status = ? AND direction = ?
             ORDER BY created_at ASC
@@ -549,9 +578,9 @@ class MessageQueue:
         for row in rows:
             # 解析消息对象
             attachments = None
-            if row[13]:
+            if row[15]:  # attachments 索引变化了
                 try:
-                    attachments_data = json.loads(row[13])
+                    attachments_data = json.loads(row[15])
                     attachments = [
                         AttachmentInfo(
                             id=a["id"],
@@ -580,9 +609,11 @@ class MessageQueue:
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
                 tag=row[12] or MessageTag.DEFAULT.value,
+                channel_type=row[13] or ChannelType.DISCORD.value,
+                context_token=row[14],
                 attachments=attachments,
-                created_at=row[14],
-                updated_at=row[15]
+                created_at=row[16],
+                updated_at=row[17]
             )
 
             # 计算 session_key
@@ -803,7 +834,7 @@ class MessageQueue:
 
         return []
 
-    def save_tool_use_message_ref(self, message_id: int, tool_use_index: int, discord_message_id: int, channel_id: int, is_dm: bool):
+    def save_tool_use_message_ref(self, message_id: int, tool_use_index: int, discord_message_id: int, channel_id: int, is_dm: bool, channel_type: str = 'discord'):
         """保存工具调用卡片的 Discord 消息引用
 
         Args:
@@ -812,6 +843,7 @@ class MessageQueue:
             discord_message_id: Discord 消息 ID
             channel_id: Discord 频道/私聊 ID
             is_dm: 是否为私聊
+            channel_type: 频道类型（'discord' 或 'weixin'）
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -819,9 +851,9 @@ class MessageQueue:
         now = datetime.now().isoformat()
         cursor.execute("""
             INSERT OR REPLACE INTO tool_use_messages
-            (message_id, tool_use_index, discord_message_id, channel_id, is_dm, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (message_id, tool_use_index, discord_message_id, channel_id, 1 if is_dm else 0, now))
+            (message_id, tool_use_index, discord_message_id, channel_id, is_dm, channel_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (message_id, tool_use_index, discord_message_id, channel_id, 1 if is_dm else 0, channel_type, now))
 
         conn.commit()
         conn.close()
@@ -834,13 +866,13 @@ class MessageQueue:
             tool_use_index: 工具调用索引
 
         Returns:
-            包含 discord_message_id, channel_id, is_dm 的字典，如果不存在则返回 None
+            包含 discord_message_id, channel_id, is_dm, channel_type 的字典，如果不存在则返回 None
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT discord_message_id, channel_id, is_dm
+            SELECT discord_message_id, channel_id, is_dm, channel_type
             FROM tool_use_messages
             WHERE message_id = ? AND tool_use_index = ?
         """, (message_id, tool_use_index))
@@ -852,7 +884,8 @@ class MessageQueue:
             return {
                 "discord_message_id": row[0],
                 "channel_id": row[1],
-                "is_dm": bool(row[2])
+                "is_dm": bool(row[2]),
+                "channel_type": row[3] or 'discord'
             }
 
         return None
@@ -878,8 +911,11 @@ class MessageQueue:
         conn.commit()
         conn.close()
 
-    def get_pending_tool_use_results(self) -> List[dict]:
+    def get_pending_tool_use_results(self, channel_type: str = None) -> List[dict]:
         """获取待处理的工具执行结果
+
+        Args:
+            channel_type: 可选，按频道类型过滤（'discord' 或 'weixin'）
 
         Returns:
             待处理的工具执行结果列表
@@ -887,12 +923,22 @@ class MessageQueue:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT message_id, tool_use_index, success
-            FROM tool_use_results
-            WHERE processed = 0
-            ORDER BY created_at ASC
-        """)
+        if channel_type:
+            # JOIN tool_use_messages 来过滤频道类型
+            cursor.execute("""
+                SELECT r.message_id, r.tool_use_index, r.success
+                FROM tool_use_results r
+                INNER JOIN tool_use_messages m ON r.message_id = m.message_id AND r.tool_use_index = m.tool_use_index
+                WHERE r.processed = 0 AND m.channel_type = ?
+                ORDER BY r.created_at ASC
+            """, (channel_type,))
+        else:
+            cursor.execute("""
+                SELECT message_id, tool_use_index, success
+                FROM tool_use_results
+                WHERE processed = 0
+                ORDER BY created_at ASC
+            """)
 
         rows = cursor.fetchall()
         conn.close()
@@ -959,8 +1005,11 @@ class MessageQueue:
         conn.close()
         return row and row[0] == MessageStatus.ABORTING.value
 
-    def get_processing_messages(self) -> List[Message]:
-        """获取所有正在处理的消息
+    def get_processing_messages(self, channel_type: str = None) -> List[Message]:
+        """获取正在处理的消息
+
+        Args:
+            channel_type: 频道类型过滤（discord/weixin），None 表示获取所有频道
 
         Returns:
             正在处理的消息列表
@@ -969,15 +1018,26 @@ class MessageQueue:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id, direction, content, status,
-                   discord_channel_id, discord_message_id,
-                   discord_user_id, username,
-                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
-            FROM messages
-            WHERE status IN (?, ?)
-            ORDER BY created_at DESC
-        """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value))
+        if channel_type:
+            cursor.execute("""
+                SELECT id, direction, content, status,
+                       discord_channel_id, discord_message_id,
+                       discord_user_id, username,
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                FROM messages
+                WHERE status IN (?, ?) AND channel_type = ?
+                ORDER BY created_at DESC
+            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value, channel_type))
+        else:
+            cursor.execute("""
+                SELECT id, direction, content, status,
+                       discord_channel_id, discord_message_id,
+                       discord_user_id, username,
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                FROM messages
+                WHERE status IN (?, ?)
+                ORDER BY created_at DESC
+            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value))
 
         rows = cursor.fetchall()
         conn.close()
@@ -985,7 +1045,7 @@ class MessageQueue:
         messages = []
         for row in rows:
             # 解析 attachments JSON
-            attachments_json = row[12]
+            attachments_json = row[15]
             attachments = []
             if attachments_json:
                 try:
@@ -996,9 +1056,9 @@ class MessageQueue:
 
             message = Message(
                 id=row[0],
-                direction=MessageDirection(row[1]),
+                direction=row[1],
                 content=row[2],
-                status=MessageStatus(row[3]),
+                status=row[3],
                 discord_channel_id=row[4],
                 discord_message_id=row[5],
                 discord_user_id=row[6],
@@ -1008,7 +1068,11 @@ class MessageQueue:
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
                 tag=row[12] if row[12] else MessageTag.DEFAULT.value,
-                attachments=attachments
+                channel_type=row[13] if row[13] else ChannelType.DISCORD.value,
+                context_token=row[14],
+                attachments=attachments,
+                created_at=row[16],
+                updated_at=row[17]
             )
             messages.append(message)
 
@@ -1023,7 +1087,7 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, is_external, tag, attachments, created_at, updated_at
+                   response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
             FROM messages
             WHERE discord_message_id = ? AND direction = ?
             AND status IN (?, ?)
@@ -1038,9 +1102,9 @@ class MessageQueue:
         if row:
             # 解析附件信息
             attachments = None
-            if row[13]:
+            if row[15]:
                 try:
-                    attachments_data = json.loads(row[13])
+                    attachments_data = json.loads(row[15])
                     attachments = [
                         AttachmentInfo(
                             id=a["id"],
@@ -1068,10 +1132,12 @@ class MessageQueue:
                 error=row[9],
                 is_dm=bool(row[10]),
                 is_external=bool(row[11]),
-                tag=row[12] or MessageTag.DEFAULT.value,
+                tag=row[12] if row[12] else MessageTag.DEFAULT.value,
+                channel_type=row[13] if row[13] else ChannelType.DISCORD.value,
+                context_token=row[14],
                 attachments=attachments,
-                created_at=row[14],
-                updated_at=row[15]
+                created_at=row[16],
+                updated_at=row[17]
             )
         return None
 

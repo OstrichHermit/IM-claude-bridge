@@ -1,8 +1,8 @@
 # Discord Claude Bridge
 
-将 Discord 消息桥接到本地 Claude Code CLI 的双向通信系统。
+将 Discord/微信消息桥接到本地 Claude Code CLI 的双向通信系统。
 
-A two-way communication system that bridges Discord messages to your local Claude Code CLI.
+A two-way communication system that bridges Discord/WeChat messages to your local Claude Code CLI.
 
 [English](README_EN.md) | [简体中文](README.md)
 
@@ -11,7 +11,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 ## ✨ 核心功能
 
 **💬 消息交互**
-- @Bot 调用本地 Claude Code CLI
+- @Bot 调用本地 Claude Code CLI（支持 Discord 和微信）
 - 持续对话支持（会话管理）
 - 实时状态反馈（接收 → 处理 → 响应）
 - 消息追踪系统（避免重复处理）
@@ -23,7 +23,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - 右键菜单下载附件（上下文菜单）
 - 引用附件信息（提取附件元数据发送给 Claude）
 - 从 Discord 下载附件到本地
-- 通过 MCP 发送文件到 Discord
+- 通过 MCP 发送文件到 Discord/微信
 - 批量文件传输支持
 
 **⏰ 定时任务**
@@ -37,6 +37,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 - Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
 - 上下文菜单（右键消息下载附件）
 - 消息队列系统（SQLite 持久化）
+- **并行 Bot 架构**（Discord Bot 和微信 Bot 独立运行）
 
 ## 🚀 快速开始
 
@@ -208,9 +209,13 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 
 ### MCP 工具
 
-**文件传输**：
-1. **发送文件到 Discord** - 支持用户私聊和频道
-2. **批量发送文件** - 一次最多 10 个文件
+**Discord 文件传输**：
+1. **send_file_to_discord** - 发送文件到 Discord（支持私聊/频道）
+2. **send_multiple_files_to_discord** - 批量发送文件到 Discord（最多10个）
+
+**微信文件传输**：
+1. **send_file_to_weixin** - 发送文件到微信（支持私聊/群聊）
+2. **send_multiple_files_to_weixin** - 批量发送文件到微信（最多9个）
 
 **定时任务**：
 1. **add_cron** - 添加定时任务（支持 cron 表达式）
@@ -261,7 +266,37 @@ timeout:
 
 tool_use_notification:
   enabled: true                        # 是否启用工具调用通知（以 Embed 卡片形式转发）
+
+# 微信 Bot 配置（可选）
+weixin:
+  enabled: false                       # 是否启用微信 Bot
+  accounts_file: "./config/weixin_accounts.json"  # 微信账号存储文件路径
 ```
+
+### 微信 Bot 配置（可选）
+
+如果需要使用微信支持，按照以下步骤配置：
+
+#### 1. 微信扫码登录
+
+```bash
+python scripts/login_weixin.py
+```
+
+在终端扫描二维码登录微信。可以多次执行此命令添加多个微信账号。
+
+#### 2. 启用微信 Bot
+
+在 `config.yaml` 中启用微信 Bot：
+
+```yaml
+weixin:
+  enabled: true
+```
+
+#### 3. 启动服务
+
+微信 Bot 会自动随 Discord Bot 一起启动，两者互不影响。
 
 ## 🔧 故障排查
 

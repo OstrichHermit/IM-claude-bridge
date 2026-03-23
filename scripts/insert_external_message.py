@@ -9,7 +9,7 @@ from pathlib import Path
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 
 
 def insert_external_message(
@@ -20,6 +20,7 @@ def insert_external_message(
     is_dm: bool = False,
     use_message_request: bool = False,  # 默认使用 messages（方式2）
     tag: str = MessageTag.DEFAULT.value,  # 消息标签
+    channel_type: str = ChannelType.DISCORD.value,  # 频道类型（默认 Discord）
     db_path: str = None,
     file_path: str = None  # 附加文件路径
 ) -> int:
@@ -43,14 +44,14 @@ def insert_external_message(
     # 默认数据库路径（从配置文件读取）
     if db_path is None:
         import yaml
-        config_path = Path(__file__).parent / "config" / "config.yaml"
+        config_path = Path(__file__).parent.parent / "config" / "config.yaml"
         if config_path.exists():
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
-                db_path = str(Path(__file__).parent / config['queue']['database_path'])
+                db_path = str(Path(__file__).parent.parent / config['queue']['database_path'])
         else:
             # 降级：使用默认路径
-            db_path = str(Path(__file__).parent / "shared" / "messages.db")
+            db_path = str(Path(__file__).parent.parent / "shared" / "messages.db")
 
     # 创建消息队列实例
     queue = MessageQueue(db_path)
@@ -104,7 +105,8 @@ def insert_external_message(
             username=username,
             is_dm=is_dm,
             is_external=True,  # 标记为外部消息
-            tag=tag
+            tag=tag,
+            channel_type=channel_type  # 频道类型
         )
         message_id = queue.add_message(message)
         return message_id
@@ -160,6 +162,13 @@ def main():
     )
 
     parser.add_argument(
+        "--channel-type", "-ct",
+        default=ChannelType.DISCORD.value,
+        choices=[ct.value for ct in ChannelType],
+        help=f"频道类型（默认：{ChannelType.DISCORD.value}）"
+    )
+
+    parser.add_argument(
         "--db-path",
         help="自定义数据库路径（默认：shared/messages.db）"
     )
@@ -181,6 +190,7 @@ def main():
     print(f"   频道: {args.channel_id}")
     print(f"   类型: {'私聊' if args.is_dm else '频道'}")
     print(f"   标签: {args.tag}")
+    print(f"   频道类型: {args.channel_type}")
     print(f"   方式: {'message_requests (直接发送)' if use_mr else 'messages (对话流程)'}")
     print()
 
@@ -193,6 +203,7 @@ def main():
             is_dm=args.is_dm,
             use_message_request=use_mr,
             tag=args.tag,
+            channel_type=args.channel_type,
             db_path=args.db_path,
             file_path=args.file_path
         )
