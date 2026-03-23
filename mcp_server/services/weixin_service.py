@@ -114,17 +114,41 @@ class WeixinService:
             traceback.print_exc()
 
     def weixin_id_to_int(self, weixin_id: str) -> int:
-        """将微信用户ID（wxid）转换为固定的整数ID
+        """将微信用户ID转换为固定的整数ID
 
-        从配置中读取预先计算好的 user_id，不再动态转换
+        支持多种输入格式：
+        - 用户名（如"鸵鸟居士"）
+        - wxid（如"wxid_xxxxxxxxxxxx@im.wechat"）
+        - 整数 user_id 字符串（如"USER_WEIXIN_ID"）
+
+        从配置中读取预先计算好的 user_id
         """
         self.ensure_mapping_loaded()
 
-        # 从 username_to_wxid 反向查找 wxid 对应的用户信息
+        # 1. 如果传入的是用户名，先转换为 wxid
+        if weixin_id in self.username_to_wxid:
+            wxid = self.username_to_wxid[weixin_id]
+            print(f"🔄 用户名转wxid: {weixin_id} -> {wxid}")
+            # 然后查找对应的 user_id
+            for user_id, user_info in self.userid_to_user.items():
+                if user_info["wxid"] == wxid:
+                    print(f"🔄 wxid转整数ID: {wxid} -> {user_id}")
+                    return user_id
+
+        # 2. 如果传入的是 wxid，直接查找对应的 user_id
         for user_id, user_info in self.userid_to_user.items():
             if user_info["wxid"] == weixin_id:
-                print(f"🔄 ID查找: {weixin_id} -> {user_id}")
+                print(f"🔄 wxid转整数ID: {weixin_id} -> {user_id}")
                 return user_id
+
+        # 3. 如果传入的是整数 user_id 字符串，尝试直接转换
+        try:
+            int_id = int(weixin_id)
+            if int_id in self.userid_to_user:
+                print(f"🔄 整数ID: {weixin_id} -> {int_id}")
+                return int_id
+        except ValueError:
+            pass
 
         # 如果找不到，返回 0
         print(f"⚠️  未找到用户: {weixin_id}")
@@ -178,14 +202,16 @@ class WeixinService:
 
         request = FileRequest(
             id=None,
-            file_paths=json.dumps(valid_files),
+            file_paths=valid_files,  # 直接传列表，不要 json.dumps
             user_id=self.weixin_id_to_int(user_id) if user_id else None,
             channel_id=self.weixin_id_to_int(channel_id) if channel_id else None,
             channel_type="weixin",  # 标记为微信文件请求
             status=FileRequestStatus.PENDING.value
         )
 
-        print(f"📋 文件请求: 原始 user_id={user_id}")
+        print(f"🔍 创建文件请求: channel_type={request.channel_type}, type={type(request.channel_type)}")
+
+        print(f"📋 文件请求: 原始 user_id={user_id} (type: {type(user_id)})")
         if user_id:
             mapped_id = self.user_mapping.get(user_id, user_id)
             print(f"📋 映射后: {user_id} -> {mapped_id}")
@@ -193,6 +219,11 @@ class WeixinService:
             print(f"📋 转整数: {mapped_id} -> {int_id}")
         else:
             print(f"📋 user_id 为空，使用 channel_id")
+
+        print(f"📋 FileRequest 创建时:")
+        print(f"   user_id={request.user_id} (type: {type(request.user_id)})")
+        print(f"   channel_type={request.channel_type}")
+        print(f"   status={request.status}")
 
         req_id = self.message_queue.add_file_request(request)
         print(f"✅ 文件发送请求已加入队列 (ID: {req_id})")
