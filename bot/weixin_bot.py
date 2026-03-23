@@ -189,16 +189,28 @@ class WeixinBot:
                         continue
 
                     try:
-                        # 选择一个账号（轮询）
+                        # 根据用户名选择正确的账号
                         if not self.accounts:
                             raise Exception("没有可用的微信账号")
 
-                        account_index = msg.discord_channel_id % len(self.accounts)
-                        account = self.accounts[account_index]
-                        client = self.clients.get(account.bot_id)
+                        # 从用户名获取对应的 wxid
+                        target_wxid = self.username_to_wxid.get(msg.username)
+                        if not target_wxid:
+                            raise Exception(f"未找到用户 [{msg.username}] 对应的账号")
 
+                        # 找到包含该 wxid 的账号
+                        target_account = None
+                        for account in self.accounts:
+                            if account.wxid == target_wxid:
+                                target_account = account
+                                break
+
+                        if not target_account:
+                            raise Exception(f"未找到 wxid [{target_wxid}] 对应的账号")
+
+                        client = self.clients.get(target_account.bot_id)
                         if not client:
-                            raise Exception(f"账号 {account.bot_id} 的客户端未初始化")
+                            raise Exception(f"账号 {target_account.bot_id} 的客户端未初始化")
 
                         # 发送消息
                         await self._send_to_weixin(client, msg)
