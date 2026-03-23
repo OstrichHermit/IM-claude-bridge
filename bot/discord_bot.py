@@ -1554,12 +1554,8 @@ class DiscordBot(discord.Client):
                 if file_request:
                     # 使用 channel_type 过滤：只处理 Discord 的文件请求
                     if file_request.channel_type != "discord":
-                        # print(f"📁 跳过非 Discord 文件请求 #{file_request.id} (type={file_request.channel_type})")
-                        # 标记为已完成，避免重复处理
-                        self.message_queue.update_file_request_status(
-                            file_request.id,
-                            FileRequestStatus.COMPLETED
-                        )
+                        # 跳过非 Discord 的文件请求，让对应的 Bot（微信等）来处理
+                        # 不要标记为已完成，否则对应 Bot 看不到 pending 状态的请求
                         await asyncio.sleep(self.config.poll_interval / 1000)
                         continue
 

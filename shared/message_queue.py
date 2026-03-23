@@ -1481,7 +1481,7 @@ class MessageQueue:
         return request_id
 
     def get_next_file_request(self) -> Optional[FileRequest]:
-        """获取下一个待处理的文件请求"""
+        """获取下一个待处理的文件请求（支持按频道类型过滤）"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -1489,10 +1489,10 @@ class MessageQueue:
             SELECT id, file_paths, user_id, channel_id, channel_type,
                    status, result, error, created_at, updated_at
             FROM file_requests
-            WHERE status = ?
+            WHERE status = ? AND channel_type = ?
             ORDER BY created_at ASC
             LIMIT 1
-        """, (FileRequestStatus.PENDING.value,))
+        """, (FileRequestStatus.PENDING.value, "weixin"))
 
         row = cursor.fetchone()
         conn.close()
