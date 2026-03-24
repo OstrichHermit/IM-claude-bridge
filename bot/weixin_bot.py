@@ -139,6 +139,20 @@ class WeixinBot:
                            """, (ChannelType.WEIXIN.value,))
 
             deleted_tools_count = cursor.rowcount
+
+            # 清理微信频道的旧 PROCESSING 状态消息（超过 1 小时的）
+            # 这些消息是上次会话遗留的，context_token 已经过期
+            cursor.execute("""
+                           UPDATE messages
+                           SET status = 'failed',
+                               error = 'Bot 重启，消息已取消'
+                           WHERE channel_type = ?
+                             AND status = 'processing'
+                             AND datetime(updated_at) <= datetime('now', '-1 hour')
+                           """, (ChannelType.WEIXIN.value,))
+
+            updated_messages_count = cursor.rowcount
+
             conn.commit()
             conn.close()
 
@@ -151,6 +165,11 @@ class WeixinBot:
                 print(f"✅ 已清理 {deleted_tools_count} 条旧的工具调用结果")
             else:
                 print("✓ 没有需要清理的工具调用结果")
+
+            if updated_messages_count > 0:
+                print(f"✅ 已取消 {updated_messages_count} 条旧的处理中消息")
+            else:
+                print("✓ 没有需要取消的旧消息")
         except Exception as e:
             print(f"⚠️  清理旧数据时出错: {e}")
 
