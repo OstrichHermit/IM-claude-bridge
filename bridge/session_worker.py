@@ -411,9 +411,9 @@ class SessionWorker:
                                                     {'text': text}
                                                 )
 
-                                                # 只有启用消息分割时才创建序列
+                                                # 总是创建消息序列（确保 typing indicator 能正确停止）
                                                 if need_split:
-                                                    # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
+                                                    # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
                                                     text_parts = text.split('\n\n')
                                                     for part in text_parts:
                                                         if part.strip():  # 跳过空文本
@@ -425,6 +425,17 @@ class SessionWorker:
                                                                 {'text': part.strip()}
                                                             )
                                                             sequence_index += 1
+                                                else:
+                                                    # 未启用分割：将整个文本作为一个序列项
+                                                    if text.strip():  # 跳过空文本
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id,
+                                                            sequence_index,
+                                                            block_index,
+                                                            'text',
+                                                            {'text': text.strip()}
+                                                        )
+                                                        sequence_index += 1
 
                                                 # 收集文本用于流式响应
                                                 response_lines.append(text)
@@ -451,18 +462,16 @@ class SessionWorker:
                                                 # 保存工具调用信息到数据库（获取tool_use_index）
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
-                                                # 只有启用消息分割时才创建序列（微信频道检查配置）
-                                                if need_split:
-                                                    # 生成工具调用消息序列（传入正确的tool_use_index）
-                                                    self.message_queue.add_message_sequence(
-                                                        message_id,
-                                                        sequence_index,
-                                                        block_index,
-                                                        'tool_use',
-                                                        {'name': tool_name, 'input': tool_input, 'id': tool_id},
-                                                        tool_use_index=tool_use_index
-                                                    )
-                                                    sequence_index += 1
+                                                # 总是创建工具调用消息序列（确保 typing indicator 能正确停止）
+                                                self.message_queue.add_message_sequence(
+                                                    message_id,
+                                                    sequence_index,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
+                                                    tool_use_index=tool_use_index
+                                                )
+                                                sequence_index += 1
 
                             except json.JSONDecodeError:
                                 pass
@@ -535,9 +544,9 @@ class SessionWorker:
                                                     {'text': text}
                                                 )
 
-                                                # 只有启用消息分割时才创建序列
+                                                # 总是创建消息序列（确保 typing indicator 能正确停止）
                                                 if need_split:
-                                                    # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
+                                                    # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
                                                     text_parts = text.split('\n\n')
                                                     for part in text_parts:
                                                         if part.strip():  # 跳过空文本
@@ -549,6 +558,17 @@ class SessionWorker:
                                                                 {'text': part.strip()}
                                                             )
                                                             sequence_index += 1
+                                                else:
+                                                    # 未启用分割：将整个文本作为一个序列项
+                                                    if text.strip():  # 跳过空文本
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id,
+                                                            sequence_index,
+                                                            block_index,
+                                                            'text',
+                                                            {'text': text.strip()}
+                                                        )
+                                                        sequence_index += 1
 
                                                 # 收集文本用于流式响应
                                                 response_lines.append(text)
@@ -575,18 +595,16 @@ class SessionWorker:
                                                 # 保存工具调用信息到数据库（获取tool_use_index）
                                                 tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
 
-                                                # 只有启用消息分割时才创建序列（微信频道检查配置）
-                                                if need_split:
-                                                    # 生成工具调用消息序列（传入正确的tool_use_index）
-                                                    self.message_queue.add_message_sequence(
-                                                        message_id,
-                                                        sequence_index,
-                                                        block_index,
-                                                        'tool_use',
-                                                        {'name': tool_name, 'input': tool_input, 'id': tool_id},
-                                                        tool_use_index=tool_use_index
-                                                    )
-                                                    sequence_index += 1
+                                                # 总是创建工具调用消息序列（确保 typing indicator 能正确停止）
+                                                self.message_queue.add_message_sequence(
+                                                    message_id,
+                                                    sequence_index,
+                                                    block_index,
+                                                    'tool_use',
+                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
+                                                    tool_use_index=tool_use_index
+                                                )
+                                                sequence_index += 1
 
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass

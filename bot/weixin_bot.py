@@ -5,7 +5,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 import logging
 import zlib
 
@@ -32,11 +32,7 @@ class WeixinBot:
         self.accounts: List[WeixinAccount] = []
         self.clients: Dict[str, WeixinClient] = {}
         self.polling_tasks = []
-        self.send_check_task = None
         self.sequence_check_task = None
-
-        # 流式输出追踪（消息ID -> 已发送的 response）
-        self.sent_responses: Dict[int, str] = {}
 
         # Context Token 缓存（用户 -> 最新 context_token）
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
@@ -59,6 +55,12 @@ class WeixinBot:
 
         # 停止命令确认缓存（用户_id -> 第一次请求的时间戳）
         self.stop_requests: Dict[str, float] = {}
+
+        # Typing indicator 追踪（消息ID -> typing_task）
+        self.pending_messages: Dict[int, Dict[str, Any]] = {}
+
+        # Typing ticket 缓存（用户 -> typing_ticket）
+        self.typing_tickets: Dict[str, str] = {}
 
         # 账号管理
         self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
@@ -182,9 +184,6 @@ class WeixinBot:
             task = asyncio.create_task(self._polling_loop(account))
             self.polling_tasks.append(task)
 
-        # 启动发送消息检查任务
-        self.send_check_task = asyncio.create_task(self._check_send_messages())
-
         # 启动文件请求检查任务
         self.file_check_task = asyncio.create_task(self._check_file_requests())
 
@@ -199,7 +198,6 @@ class WeixinBot:
         # 等待所有任务完成
         await asyncio.gather(
             *self.polling_tasks,
-            self.send_check_task,
             self.file_check_task,
             self.sequence_check_task,
             self.tool_result_check_task
@@ -210,11 +208,13 @@ class WeixinBot:
         print("🛑 微信 Bot 正在停止...")
         self.running = False
 
+        # 停止所有 typing indicator
+        for message_id in list(self.pending_messages.keys()):
+            await self.stop_typing_indicator(message_id)
+
         # 取消所有任务
         for task in self.polling_tasks:
             task.cancel()
-        if self.send_check_task:
-            self.send_check_task.cancel()
         if hasattr(self, 'file_check_task') and self.file_check_task:
             self.file_check_task.cancel()
         if hasattr(self, 'sequence_check_task') and self.sequence_check_task:
@@ -225,7 +225,6 @@ class WeixinBot:
         # 等待任务取消完成
         await asyncio.gather(
             *self.polling_tasks,
-            self.send_check_task if hasattr(self, 'send_check_task') else None,
             self.file_check_task if hasattr(self, 'file_check_task') else None,
             self.sequence_check_task if hasattr(self, 'sequence_check_task') else None,
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
@@ -269,88 +268,6 @@ class WeixinBot:
                 except Exception as e:
                     print(f"❌ 账号 {account.bot_id} 轮询错误: {e}")
                     await asyncio.sleep(5)
-
-    async def _check_send_messages(self):
-        """检查并发送消息到微信"""
-        print("📤 消息发送检查任务已启动")
-
-        while self.running:
-            try:
-                # 如果启用了消息分割，跳过这里的发送逻辑
-                # 因为消息会被 check_message_sequences 处理
-                if not self.config.weixin_message_splitting_enabled:
-                    # 批量获取有待发送流式响应的微信消息
-                    messages_info = self.message_queue.get_streaming_messages(channel_type=ChannelType.WEIXIN.value)
-
-                    for info in messages_info:
-                        msg_id = info["id"]
-                        username = info["username"]
-                        streaming_response = info["streaming_response"]
-                        status = info["status"]
-
-                        # 检查是否已完成（状态不是 processing/ai_started）
-                        is_complete = status not in ('processing', 'ai_started')
-
-                        try:
-                            # 根据用户名选择正确的账号
-                            if not self.accounts:
-                                raise Exception("没有可用的微信账号")
-
-                            # 从用户名获取对应的 wxid
-                            target_wxid = self.username_to_wxid.get(username)
-                            if not target_wxid:
-                                raise Exception(f"未找到用户 [{username}] 对应的账号")
-
-                            # 找到包含该 wxid 的账号
-                            target_account = None
-                            for account in self.accounts:
-                                if account.wxid == target_wxid:
-                                    target_account = account
-                                    break
-
-                            if not target_account:
-                                raise Exception(f"未找到 wxid [{target_wxid}] 对应的账号")
-
-                            client = self.clients.get(target_account.bot_id)
-                            if not client:
-                                raise Exception(f"账号 {target_account.bot_id} 的客户端未初始化")
-
-                            # 流式发送新增的响应部分
-                            last_sent = self.sent_responses.get(msg_id, "")
-                            if streaming_response != last_sent:
-                                # 有新增内容，发送新增的部分
-                                new_content = streaming_response[len(last_sent):]
-                                if new_content:
-                                    # 去掉开头的换行符（因为 '\n'.join() 会在前面加换行）
-                                    new_content = new_content.lstrip('\n')
-                                    if new_content:
-                                        # 创建临时对象用于发送
-                                        class TempMsg:
-                                            def __init__(self):
-                                                self.username = username
-                                                self.context_token = None
-                                        await self._send_text_to_weixin(client, TempMsg(), new_content)
-                                        self.sent_responses[msg_id] = streaming_response
-
-                                # 如果响应完成，标记为 COMPLETED
-                                if is_complete:
-                                    self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
-                                    self.sent_responses.pop(msg_id, None)
-
-                        except Exception as e:
-                            print(f"❌ 发送消息失败: {e}")
-                            self.message_queue.update_status(
-                                msg_id,
-                                MessageStatus.FAILED,
-                                error=str(e)
-                            )
-
-                # 等待一段时间再检查
-                await asyncio.sleep(self.config.queue_send_interval)
-
-            except Exception as e:
-                print(f"❌ 检查发送消息错误: {e}")
-                await asyncio.sleep(1)
 
     async def _send_to_weixin(self, client: WeixinClient, msg: Message):
         """发送消息到微信"""
@@ -541,8 +458,25 @@ class WeixinBot:
                 messages = self.message_queue.get_messages_with_pending_sequences('weixin', limit=1)
 
                 if not messages:
-                    # 没有待发送的序列，检查是否有消息完成
-                    # 这里可以添加清理逻辑
+                    # 没有待发送的序列，检查 pending_messages 中的消息是否完成
+                    for message_id in list(self.pending_messages.keys()):
+                        stats = self.message_queue.get_message_sequences_stats(message_id)
+
+                        # 检查 AI 响应是否已完成，且所有序列都已发送（和 Discord bot 完全一样的逻辑）
+                        if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
+                            print(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
+                            # 1. 停止正在输入状态
+                            await self.stop_typing_indicator(message_id)
+                            # 2. 清理数据库相关序列
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            # 3. 更新消息状态为 COMPLETED
+                            self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
+                            # 4. 清理内存缓存
+                            if message_id in message_states:
+                                del message_states[message_id]
+                            if message_id in self.pending_messages:
+                                del self.pending_messages[message_id]
+
                     await asyncio.sleep(0.5)
                     continue
 
@@ -569,15 +503,22 @@ class WeixinBot:
                         stats = self.message_queue.get_message_sequences_stats(message_id)
                         print(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
 
-                        if stats["total"] > 0 and stats["pending"] == 0:
-                            print(f"✅ [消息 #{message_id}] 所有序列已发送")
-                            # 所有序列都已发送，清理数据库相关序列
+                        # 检查 AI 响应是否已完成，且所有序列都已发送
+                        # 使用和 Discord bot 相同的逻辑：pending == 0 且 AI 响应完成
+                        if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
+                            print(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
+                            # 1. 停止正在输入状态
+                            await self.stop_typing_indicator(message_id)
+                            # 2. 清理数据库相关序列
                             self.message_queue.cleanup_message_sequences(message_id)
-                            # 更新消息状态为 COMPLETED
+                            # 3. 更新消息状态为 COMPLETED
                             self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
-                            # 清理内存缓存
+                            # 4. 清理内存缓存
                             if message_id in message_states:
                                 del message_states[message_id]
+                            # 5. 清理 pending_messages
+                            if message_id in self.pending_messages:
+                                del self.pending_messages[message_id]
                         else:
                             # 还未完成，等待下一轮
                             await asyncio.sleep(0.1)
@@ -1134,6 +1075,28 @@ class WeixinBot:
             message_id = self.message_queue.add_message(queue_msg)
             queue_msg.id = message_id
 
+            # 获取 typing ticket（如果还没有的话）
+            if from_user_id not in self.typing_tickets:
+                client = self.clients.get(account_id)
+                if client:
+                    try:
+                        # 获取用户的原始 wxid
+                        wxid = self.username_to_wxid.get(from_user_id, from_user_id)
+                        config_result = await client.get_config(
+                            ilink_user_id=wxid,
+                            context_token=context_token or ""
+                        )
+                        typing_ticket = config_result.get("typing_ticket", "")
+                        if typing_ticket:
+                            self.typing_tickets[from_user_id] = typing_ticket
+                            print(f"✅ 获取到用户 {from_user_id} 的 typing ticket")
+                    except Exception as e:
+                        print(f"⚠️ 获取 typing ticket 失败: {e}")
+
+            # 启动 typing indicator
+            if from_user_id in self.typing_tickets:
+                self.start_typing_indicator(message_id, from_user_id, account_id)
+
         except Exception as e:
             print(f"❌ 处理消息失败: {e}")
 
@@ -1412,6 +1375,9 @@ class WeixinBot:
         success = self.message_queue.request_abort(message_to_abort.id)
 
         if success:
+            # 停止正在输入状态
+            await self.stop_typing_indicator(message_to_abort.id)
+
             msg = (
                 f"🛑 已请求中止\n\n"
                 f"已请求中止消息 #{message_to_abort.id} 的处理\n"
@@ -1444,6 +1410,173 @@ class WeixinBot:
             text=text,
             context_token=context_token
         )
+
+    async def _maintain_typing_indicator(self, client: WeixinClient, ilink_user_id: str, typing_ticket: str, stop_event: asyncio.Event):
+        """
+        维持 typing indicator（正在输入状态）
+
+        使用持续刷新模式，每 8 秒刷新一次（微信 typing ticket 默认持续 10 秒）
+
+        Args:
+            client: 微信客户端
+            ilink_user_id: 用户 ID（原始 wxid）
+            typing_ticket: typing 票据
+            stop_event: 停止事件
+        """
+        retry_count = 0
+        max_retries = 3
+        retry_delay = 5
+
+        try:
+            while self.running and not stop_event.is_set():
+                try:
+                    # 微信 typing indicator 默认持续 10 秒
+                    # 我们每 8 秒刷新一次，确保有足够余量避免中断
+                    await client.send_typing(
+                        ilink_user_id=ilink_user_id,
+                        typing_ticket=typing_ticket,
+                        status=1  # 1 = 正在输入
+                    )
+                    # 使用 wait_for 来响应停止事件，最多等待 8 秒
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=8)
+                        # stop_event 被设置，退出循环
+                        break
+                    except asyncio.TimeoutError:
+                        # 8 秒超时，继续下一轮循环
+                        pass
+
+                    # 成功完成一次循环，重置重试计数
+                    retry_count = 0
+
+                except asyncio.CancelledError:
+                    # 任务被取消，正常退出
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    print(f"⚠️ 维持 typing indicator 时出错 (第{retry_count}次): {e}")
+
+                    if retry_count >= max_retries:
+                        print(f"❌ 维持 typing indicator 失败，已达最大重试次数 ({max_retries})，停止尝试")
+                        break
+
+                    print(f"🔄 {retry_delay}秒后重试...")
+                    # 使用 wait_for 来响应停止事件
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=retry_delay)
+                        break
+                    except asyncio.TimeoutError:
+                        pass
+
+        except asyncio.CancelledError:
+            # 任务被取消，正常退出
+            pass
+        except Exception as e:
+            print(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
+
+    def start_typing_indicator(self, message_id: int, from_user_id: str, account_bot_id: str):
+        """
+        启动指定消息对应的 typing indicator 任务
+
+        Args:
+            message_id: 消息记录在数据库中的唯一 ID
+            from_user_id: 用户名（如"鸵鸟居士"）
+            account_bot_id: 微信账号 bot_id
+        """
+        client = self.clients.get(account_bot_id)
+        if not client:
+            print(f"⚠️ 账号 {account_bot_id} 的客户端未初始化，无法启动 typing indicator")
+            return
+
+        # 获取用户的原始 wxid
+        wxid = self.username_to_wxid.get(from_user_id)
+        if not wxid:
+            print(f"⚠️ 用户 {from_user_id} 的 wxid 未找到，无法启动 typing indicator")
+            return
+
+        # 检查是否已经有 typing ticket
+        typing_ticket = self.typing_tickets.get(from_user_id)
+        if not typing_ticket:
+            print(f"⚠️ 用户 {from_user_id} 的 typing ticket 未找到，无法启动 typing indicator")
+            return
+
+        # 创建停止事件
+        stop_event = asyncio.Event()
+
+        # 创建 typing indicator 任务
+        typing_task = asyncio.create_task(
+            self._maintain_typing_indicator(client, wxid, typing_ticket, stop_event)
+        )
+
+        # 保存到 pending_messages
+        self.pending_messages[message_id] = {
+            "typing_task": typing_task,
+            "typing_stop_event": stop_event,
+            "typing_active": True,
+            "from_user_id": from_user_id,
+            "account_bot_id": account_bot_id
+        }
+
+        print(f"✅ [消息 #{message_id}] 已启动 typing indicator")
+
+    async def stop_typing_indicator(self, message_id: int):
+        """
+        停止指定消息对应的 typing indicator 任务
+
+        Args:
+            message_id: 消息记录在数据库中的唯一 ID
+        """
+        # 从 pending_messages 字典中找到这个消息记录并取消它的 typing_task
+        if message_id in self.pending_messages:
+            msg_info = self.pending_messages[message_id]
+            task = msg_info.get("typing_task")
+            stop_event = msg_info.get("typing_stop_event")
+            from_user_id = msg_info.get("from_user_id")
+            account_bot_id = msg_info.get("account_bot_id")
+
+            # 检查是否已经在停止状态
+            if not msg_info.get("typing_active", False):
+                # 已经停止，静默返回
+                return
+
+            # 首先设置停止事件，这会立即停止 _maintain_typing_indicator 循环
+            if stop_event:
+                stop_event.set()
+                print(f"🛑 [消息 #{message_id}] 已设置停止事件")
+
+            # 然后发送取消状态给微信 API
+            if from_user_id and account_bot_id:
+                client = self.clients.get(account_bot_id)
+                typing_ticket = self.typing_tickets.get(from_user_id)
+                if client and typing_ticket:
+                    try:
+                        wxid = self.username_to_wxid.get(from_user_id)
+                        if wxid:
+                            await client.send_typing(
+                                ilink_user_id=wxid,
+                                typing_ticket=typing_ticket,
+                                status=2  # 2 = 取消输入
+                            )
+                            print(f"🛑 [消息 #{message_id}] 已发送取消输入状态")
+                    except Exception as e:
+                        print(f"⚠️ 发送取消输入状态失败: {e}")
+
+            # 取消任务（如果还在运行）
+            if task and not task.done():
+                task.cancel()  # 这会触发 _maintain_typing_indicator 中的 CancelledError
+                try:
+                    await task  # 等待任务完全停止
+                except asyncio.CancelledError:
+                    pass
+                print(f"🛑 [消息 #{message_id}] 已停止 typing indicator 任务")
+
+            # 更新状态为已停止
+            msg_info["typing_active"] = False
+            msg_info["typing_task"] = None
+        else:
+            # 消息不在缓存中，可能已经被清理，静默返回
+            pass
+
 
 
 async def main():
