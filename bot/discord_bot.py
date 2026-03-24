@@ -1547,18 +1547,11 @@ class DiscordBot(discord.Client):
 
         while not self.is_closed():
             try:
-                # 获取下一个待处理的文件请求
+                # 获取下一个待处理的 Discord 文件请求
                 from shared.message_queue import FileRequestStatus
-                file_request = self.message_queue.get_next_file_request()
+                file_request = self.message_queue.get_next_file_request(channel_type="discord")
 
                 if file_request:
-                    # 使用 channel_type 过滤：只处理 Discord 的文件请求
-                    if file_request.channel_type != "discord":
-                        # 跳过非 Discord 的文件请求，让对应的 Bot（微信等）来处理
-                        # 不要标记为已完成，否则对应 Bot 看不到 pending 状态的请求
-                        await asyncio.sleep(self.config.poll_interval / 1000)
-                        continue
-
                     print(f"📁 处理文件请求 #{file_request.id}")
                     # 标记为处理中
                     self.message_queue.update_file_request_status(
@@ -2408,29 +2401,16 @@ class DiscordBot(discord.Client):
 
         while not self.is_closed():
             try:
-                import sqlite3
+                # 获取有待发送序列的消息
+                messages = self.message_queue.get_messages_with_pending_sequences('discord', limit=1)
 
-                # 查询有待发送序列的消息
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                               SELECT DISTINCT ms.message_id
-                               FROM message_sequence ms
-                               INNER JOIN messages m ON ms.message_id = m.id
-                               WHERE ms.status = 'pending' AND m.channel_type = ?
-                               ORDER BY ms.message_id ASC
-                               LIMIT 1
-                               """, (ChannelType.DISCORD.value,))
-                row = cursor.fetchone()
-                conn.close()
-
-                if not row:
+                if not messages:
                     # 没有待发送的序列，检查 pending_messages 中的消息是否完成
                     for message_id in list(self.pending_messages.keys()):
                         stats = self.message_queue.get_message_sequences_stats(message_id)
 
-                        if stats["total"] > 0 and stats["total"] == stats["sent"]:
+                        # 检查 AI 响应是否已完成，且所有序列都已发送
+                        if stats["total"] > 0 and stats["total"] == stats["sent"] and self.message_queue.is_ai_response_complete(message_id):
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
@@ -2447,24 +2427,14 @@ class DiscordBot(discord.Client):
                     await asyncio.sleep(0.5)
                     continue
 
-                message_id = row[0]
+                message_info = messages[0]
+                message_id = message_info['id']
+                channel_id = message_info['discord_channel_id']
+                user_id = message_info['discord_user_id']
+                is_dm = message_info['is_dm']
+                channel_type = message_info['channel_type']
 
                 try:
-                    # 从数据库获取消息信息
-                    conn = sqlite3.connect(self.config.database_path)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                                   SELECT discord_channel_id, discord_user_id, is_dm, channel_type
-                                   FROM messages
-                                   WHERE id = ?
-                                   """, (message_id,))
-                    row = cursor.fetchone()
-                    conn.close()
-
-                    if not row:
-                        continue
-
-                    channel_id, user_id, is_dm, channel_type = row
 
                     # 初始化消息状态
                     if message_id not in message_states:
@@ -2478,7 +2448,8 @@ class DiscordBot(discord.Client):
                         stats = self.message_queue.get_message_sequences_stats(message_id)
                         print(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
 
-                        if stats["total"] > 0 and stats["pending"] == 0:
+                        # 检查 AI 响应是否已完成，且所有序列都已发送
+                        if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
                             print(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)

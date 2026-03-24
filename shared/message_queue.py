@@ -1016,6 +1016,50 @@ class MessageQueue:
         conn.close()
         return row and row[0] == MessageStatus.ABORTING.value
 
+    def get_message_status(self, message_id: int) -> Optional[MessageStatus]:
+        """获取消息状态
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            消息状态枚举值，如果消息不存在则返回 None
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM messages WHERE id = ?", (message_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            try:
+                return MessageStatus(row[0])
+            except ValueError:
+                return None
+        return None
+
+    def is_ai_response_complete(self, message_id: int) -> bool:
+        """检查 AI 响应是否已完成（即 Claude Bridge 输出"处理成功"）
+
+        当状态为 PROCESSING（AI 响应完成，正在等待/正在发送消息）或 COMPLETED/FAILED/SKIPPED 时返回 True
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            AI 响应是否已完成
+        """
+        status = self.get_message_status(message_id)
+        if status is None:
+            return False
+        # AI 响应完成的状态：PROCESSING（Claude Bridge 已输出"处理成功"）、COMPLETED、FAILED、SKIPPED
+        return status in (
+            MessageStatus.PROCESSING,
+            MessageStatus.COMPLETED,
+            MessageStatus.FAILED,
+            MessageStatus.SKIPPED
+        )
+
     def get_processing_messages(self, channel_type: str = None) -> List[Message]:
         """获取正在处理的消息
 
@@ -1480,19 +1524,33 @@ class MessageQueue:
 
         return request_id
 
-    def get_next_file_request(self) -> Optional[FileRequest]:
-        """获取下一个待处理的文件请求（支持按频道类型过滤）"""
+    def get_next_file_request(self, channel_type: Optional[str] = None) -> Optional[FileRequest]:
+        """获取下一个待处理的文件请求
+
+        Args:
+            channel_type: 可选，频道类型过滤（discord/weixin），None 表示获取所有
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT id, file_paths, user_id, channel_id, channel_type,
-                   status, result, error, created_at, updated_at
-            FROM file_requests
-            WHERE status = ? AND channel_type = ?
-            ORDER BY created_at ASC
-            LIMIT 1
-        """, (FileRequestStatus.PENDING.value, "weixin"))
+        if channel_type:
+            cursor.execute("""
+                SELECT id, file_paths, user_id, channel_id, channel_type,
+                       status, result, error, created_at, updated_at
+                FROM file_requests
+                WHERE status = ? AND channel_type = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, (FileRequestStatus.PENDING.value, channel_type))
+        else:
+            cursor.execute("""
+                SELECT id, file_paths, user_id, channel_id, channel_type,
+                       status, result, error, created_at, updated_at
+                FROM file_requests
+                WHERE status = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, (FileRequestStatus.PENDING.value,))
 
         row = cursor.fetchone()
         conn.close()
@@ -2062,6 +2120,45 @@ class MessageQueue:
             })
 
         return sequences
+
+    def get_messages_with_pending_sequences(self, channel_type: str, limit: int = 1) -> List[dict]:
+        """获取有待发送序列的消息列表
+
+        Args:
+            channel_type: 频道类型（'discord' 或 'weixin'）
+            limit: 最多返回多少条消息，默认 1
+
+        Returns:
+            消息列表，每条消息包含：id, discord_channel_id, discord_user_id, is_dm, channel_type, username, context_token
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT DISTINCT m.id, m.discord_channel_id, m.discord_user_id, m.is_dm, m.channel_type, m.username, m.context_token
+            FROM message_sequence ms
+            INNER JOIN messages m ON ms.message_id = m.id
+            WHERE ms.status = 'pending' AND m.channel_type = ?
+            ORDER BY m.id ASC
+            LIMIT ?
+        """, (channel_type, limit))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        messages = []
+        for row in rows:
+            messages.append({
+                "id": row[0],
+                "discord_channel_id": row[1],
+                "discord_user_id": row[2],
+                "is_dm": bool(row[3]),
+                "channel_type": row[4],
+                "username": row[5],
+                "context_token": row[6]
+            })
+
+        return messages
 
     def mark_sequence_sent(self, sequence_id: int):
         """标记消息序列项为已发送

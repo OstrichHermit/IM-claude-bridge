@@ -343,48 +343,21 @@ class WeixinBot:
 
         while self.running:
             try:
-                import json
-                from shared.message_queue import FileRequest
-                import sqlite3
 
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, file_paths, user_id, channel_id, channel_type,
-                           status, result, error, created_at, updated_at
-                    FROM file_requests
-                    WHERE status = ? AND channel_type = ?
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                """, (FileRequestStatus.PENDING.value, "weixin"))
+                # 获取下一个待处理的微信文件请求
+                file_request = self.message_queue.get_next_file_request(channel_type="weixin")
 
-                row = cursor.fetchone()
-                conn.close()
-
-                if not row:
+                if not file_request:
                     await asyncio.sleep(0.5)
                     continue
 
-                req = FileRequest(
-                    id=row[0],
-                    file_paths=json.loads(row[1]),
-                    user_id=row[2],
-                    channel_id=row[3],
-                    channel_type=row[4],
-                    status=row[5],
-                    result=row[6],
-                    error=row[7],
-                    created_at=row[8],
-                    updated_at=row[9]
-                )
+                file_paths = file_request.file_paths
 
-                file_paths = req.file_paths
-
-                if req.user_id:
-                    user_id_int = req.user_id
+                if file_request.user_id:
+                    user_id_int = file_request.user_id
 
                 try:
-                        if req.user_id:
+                        if file_request.user_id:
                             # 优先从配置中查找
                             target_user = None
 
@@ -418,15 +391,15 @@ class WeixinBot:
                                     self.id_to_username[user_id_int] = target_user
                                 else:
                                     self.message_queue.update_file_request_status(
-                                        req.id,
+                                        file_request.id,
                                         FileRequestStatus.FAILED,
                                         error=f"无法找到用户 ID {user_id_int} 对应的用户名"
                                     )
                                     await asyncio.sleep(self.config.queue_send_interval)
                                     continue
 
-                        elif req.channel_id:
-                            target_user = str(req.channel_id)
+                        elif file_request.channel_id:
+                            target_user = str(file_request.channel_id)
                         else:
                             raise Exception("未指定目标用户")
 
@@ -434,7 +407,7 @@ class WeixinBot:
                         context_token = self.context_tokens.get(target_user, "")
                         if not context_token:
                             self.message_queue.update_file_request_status(
-                                req.id,
+                                file_request.id,
                                 FileRequestStatus.FAILED,
                                 error=f"用户 {target_user} 没有有效的 context_token"
                             )
@@ -479,19 +452,19 @@ class WeixinBot:
 
                         # 只有至少有一个文件成功发送才标记为完成
                         if sent_count > 0:
-                            self.message_queue.update_file_request_status(req.id, FileRequestStatus.COMPLETED)
+                            self.message_queue.update_file_request_status(file_request.id, FileRequestStatus.COMPLETED)
                         else:
                             self.message_queue.update_file_request_status(
-                                req.id,
+                                file_request.id,
                                 FileRequestStatus.FAILED,
                                 error=f"所有 {len(file_paths)} 个文件发送失败"
                             )
-                            print(f"❌ 文件请求 {req.id} 失败: 所有文件发送失败")
+                            print(f"❌ 文件请求 {file_request.id} 失败: 所有文件发送失败")
 
                 except Exception as e:
                         print(f"❌ 处理文件请求失败: {e}")
                         self.message_queue.update_file_request_status(
-                            req.id,
+                            file_request.id,
                             FileRequestStatus.FAILED,
                             error=str(e)
                         )
@@ -514,47 +487,25 @@ class WeixinBot:
 
         while self.running:
             try:
-                import sqlite3
+                # 获取有待发送序列的消息
+                messages = self.message_queue.get_messages_with_pending_sequences('weixin', limit=1)
 
-                # 查询有待发送序列的消息
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                               SELECT DISTINCT ms.message_id
-                               FROM message_sequence ms
-                               INNER JOIN messages m ON ms.message_id = m.id
-                               WHERE ms.status = 'pending' AND m.channel_type = ?
-                               ORDER BY ms.message_id ASC
-                               LIMIT 1
-                               """, (ChannelType.WEIXIN.value,))
-                row = cursor.fetchone()
-                conn.close()
-
-                if not row:
+                if not messages:
                     # 没有待发送的序列，检查是否有消息完成
                     # 这里可以添加清理逻辑
                     await asyncio.sleep(0.5)
                     continue
 
-                message_id = row[0]
+                message_info = messages[0]
+                message_id = message_info['id']
+                channel_id = message_info['discord_channel_id']
+                user_id = message_info['discord_user_id']
+                is_dm = message_info['is_dm']
+                channel_type = message_info['channel_type']
+                username = message_info['username']
+                msg_context_token = message_info['context_token']
 
                 try:
-                    # 从数据库获取消息信息
-                    conn = sqlite3.connect(self.config.database_path)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                                   SELECT discord_channel_id, discord_user_id, is_dm, channel_type, username, context_token
-                                   FROM messages
-                                   WHERE id = ?
-                                   """, (message_id,))
-                    row = cursor.fetchone()
-                    conn.close()
-
-                    if not row:
-                        continue
-
-                    channel_id, user_id, is_dm, channel_type, username, msg_context_token = row
 
                     # 初始化消息状态
                     if message_id not in message_states:
@@ -680,6 +631,18 @@ class WeixinBot:
                             print(f"🔧 [消息 #{message_id}] 工具调用: {tool_name} (等待执行完成)")
                             # 不发送任何消息，等待工具执行完成
 
+                            # 保存工具调用引用（用于后续查询工具执行结果）
+                            # 微信没有真实的消息 ID，使用 0 作为占位符
+                            if tool_use_index is not None:
+                                self.message_queue.save_tool_use_message_ref(
+                                    message_id,
+                                    tool_use_index,
+                                    0,  # 微信没有真实的消息 ID，使用 0 作为占位符
+                                    channel_id,
+                                    is_dm,
+                                    'weixin'
+                                )
+
                         # 标记为已发送
                         self.message_queue.mark_sequence_sent(seq_id)
 
@@ -713,36 +676,16 @@ class WeixinBot:
 
         while self.running:
             try:
-                # 直接查询 tool_use_results 表，不依赖 tool_use_messages 表
-                import sqlite3
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
+                # 获取待处理的工具执行结果（只处理微信频道的）
+                pending_results = self.message_queue.get_pending_tool_use_results(channel_type='weixin')
 
-                # 查询未处理的工具执行结果（只处理微信频道的，且只处理最近 10 分钟内创建的）
-                cursor.execute("""
-                               SELECT r.message_id, r.tool_use_index, r.success
-                               FROM tool_use_results r
-                               INNER JOIN messages m ON r.message_id = m.id
-                               WHERE r.processed = 0
-                                 AND m.channel_type = ?
-                                 AND datetime(r.created_at) > datetime('now', '-10 minutes')
-                               ORDER BY r.created_at ASC
-                               LIMIT 10
-                           """, (ChannelType.WEIXIN.value,))
+                if pending_results:
+                    print(f"🔍 找到 {len(pending_results)} 个待处理的工具执行结果")
 
-                rows = cursor.fetchall()
-                conn.close()
-
-                if rows:
-                    print(f"🔍 找到 {len(rows)} 个待处理的工具执行结果")
-                else:
-                    # 没有待处理的结果，等待一会儿再检查
-                    await asyncio.sleep(1)
-                    continue
-
-                for row in rows:
-                    message_id, tool_use_index, success_int = row
-                    success = bool(success_int)
+                for result in pending_results:
+                    message_id = result['message_id']
+                    tool_use_index = result['tool_use_index']
+                    success = result['success']
 
                     print(f"🔧 处理工具执行结果: 消息#{message_id}, 索引#{tool_use_index}, 成功={success}")
 
