@@ -616,7 +616,7 @@ class WeixinBot:
                                     )
                                     print(f"✅ [消息 #{message_id}] 已发送文本: {text[:30]}...")
                                 except Exception as send_error:
-                                    # 发送失败，可能是 context_token 过期或其他问题
+                                    # 发送失败
                                     print(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
                                     # 标记序列为已发送，避免无限重试
                                     self.message_queue.mark_sequence_sent(seq_id)
