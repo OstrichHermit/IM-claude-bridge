@@ -492,6 +492,34 @@ class WeixinBot:
 
                 try:
 
+                    # 检查是否需要启动 typing indicator（AI started 但点 A 失败的情况）
+                    if message_id not in self.pending_messages:
+                        msg_status = self.message_queue.get_message_status(message_id)
+                        if msg_status == MessageStatus.AI_STARTED:
+                            # AI started 但 typing indicator 还没启动，立即启动
+                            print(f"⚡ [消息 #{message_id}] AI 已开始工作但 typing indicator 未启动，尝试启动...")
+                            # 查找对应的账号
+                            for account in self.accounts:
+                                if account.bot_id in self.clients:
+                                    client = self.clients.get(account.bot_id)
+                                    if client and username in self.typing_tickets:
+                                        wxid = self.username_to_wxid.get(username, username)
+                                        typing_ticket = self.typing_tickets.get(username)
+                                        if typing_ticket:
+                                            stop_event = asyncio.Event()
+                                            typing_task = asyncio.create_task(
+                                                self._maintain_typing_indicator(client, wxid, typing_ticket, stop_event)
+                                            )
+                                            self.pending_messages[message_id] = {
+                                                "typing_task": typing_task,
+                                                "typing_stop_event": stop_event,
+                                                "typing_active": True,
+                                                "from_user_id": username,
+                                                "account_bot_id": account.bot_id
+                                            }
+                                            print(f"✅ [消息 #{message_id}] AI started 时补启动 typing indicator 成功")
+                                            break
+
                     # 初始化消息状态
                     if message_id not in message_states:
                         message_states[message_id] = {"pending": []}
@@ -506,6 +534,14 @@ class WeixinBot:
 
                         # 检查 AI 响应是否已完成，且所有序列都已发送
                         # 使用和 Discord bot 相同的逻辑：pending == 0 且 AI 响应完成
+                        # 但需要额外检查是否还有未处理的工具结果
+                        pending_tool_results = self.message_queue.get_pending_tool_use_results()
+                        pending_for_this_msg = [r for r in pending_tool_results if r["message_id"] == message_id]
+                        if pending_for_this_msg:
+                            print(f"🔍 [消息 #{message_id}] 还有 {len(pending_for_this_msg)} 个工具结果待处理，等待...")
+                            await asyncio.sleep(0.1)
+                            continue
+
                         if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
                             print(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
                             # 1. 停止正在输入状态
@@ -596,6 +632,39 @@ class WeixinBot:
                             # 发送文本消息
                             text = item_data.get("text", "")
                             if text and text.strip():
+                                # 确保 typing_ticket 存在（如果不存在，自动获取）
+                                if username not in self.typing_tickets:
+                                    try:
+                                        wxid = self.username_to_wxid.get(username, username)
+                                        config_result = await client.get_config(
+                                            ilink_user_id=wxid,
+                                            context_token=context_token or ""
+                                        )
+                                        typing_ticket = config_result.get("typing_ticket", "")
+                                        if typing_ticket:
+                                            self.typing_tickets[username] = typing_ticket
+                                            print(f"✅ 自动获取用户 {username} 的 typing_ticket 成功")
+                                    except Exception as e:
+                                        print(f"⚠️ 自动获取 typing_ticket 失败: {e}")
+
+                                # 确保 typing indicator 已启动（AI started 时触发）
+                                if message_id not in self.pending_messages:
+                                    typing_ticket = self.typing_tickets.get(username)
+                                    if typing_ticket:
+                                        wxid = self.username_to_wxid.get(username, username)
+                                        stop_event = asyncio.Event()
+                                        typing_task = asyncio.create_task(
+                                            self._maintain_typing_indicator(client, wxid, typing_ticket, stop_event)
+                                        )
+                                        self.pending_messages[message_id] = {
+                                            "typing_task": typing_task,
+                                            "typing_stop_event": stop_event,
+                                            "typing_active": True,
+                                            "from_user_id": username,
+                                            "account_bot_id": target_account.bot_id
+                                        }
+                                        print(f"✅ [消息 #{message_id}] AI started，启动 typing indicator")
+
                                 # 调试日志
                                 print(f"🔍 [消息 #{message_id}] 准备发送: to_user_id={to_user_id}, context_token长度={len(context_token)}, text长度={len(text.strip())}")
 
@@ -861,6 +930,21 @@ class WeixinBot:
                         if tool_desc and tool_desc != "无参数":
                             notification_text += f"\n{tool_desc}"
 
+                        # 确保 typing_ticket 存在（如果不存在，自动获取）
+                        if username not in self.typing_tickets:
+                            try:
+                                wxid = self.username_to_wxid.get(username, username)
+                                config_result = await client.get_config(
+                                    ilink_user_id=wxid,
+                                    context_token=context_token or ""
+                                )
+                                typing_ticket = config_result.get("typing_ticket", "")
+                                if typing_ticket:
+                                    self.typing_tickets[username] = typing_ticket
+                                    print(f"✅ 自动获取用户 {username} 的 typing_ticket 成功")
+                            except Exception as e:
+                                print(f"⚠️ 自动获取 typing_ticket 失败: {e}")
+
                         print(f"🔍 [消息 #{message_id}] 准备发送工具调用通知:")
                         print(f"   to_user_id={to_user_id}")
                         print(f"   context_token长度={len(context_token)}")
@@ -1094,9 +1178,29 @@ class WeixinBot:
                     except Exception as e:
                         print(f"⚠️ 获取 typing ticket 失败: {e}")
 
-            # 启动 typing indicator
+            # 启动 typing indicator（确保 typing_ticket 存在）
+            if from_user_id not in self.typing_tickets:
+                print(f"⚠️ [消息 #{message_id}] 点 A: 等待获取 typing_ticket...")
+                client = self.clients.get(account_id)
+                if client:
+                    try:
+                        wxid = self.username_to_wxid.get(from_user_id, from_user_id)
+                        config_result = await client.get_config(
+                            ilink_user_id=wxid,
+                            context_token=context_token or ""
+                        )
+                        typing_ticket = config_result.get("typing_ticket", "")
+                        if typing_ticket:
+                            self.typing_tickets[from_user_id] = typing_ticket
+                            print(f"✅ [消息 #{message_id}] 点 A: 自动获取 typing_ticket 成功")
+                    except Exception as e:
+                        print(f"⚠️ [消息 #{message_id}] 点 A: 获取 typing_ticket 失败: {e}")
+
+            # 尝试启动 typing indicator
             if from_user_id in self.typing_tickets:
                 self.start_typing_indicator(message_id, from_user_id, account_id)
+            else:
+                print(f"⚠️ [消息 #{message_id}] 点 A: 未能启动 typing indicator (typing_ticket 不存在)")
 
         except Exception as e:
             print(f"❌ 处理消息失败: {e}")
