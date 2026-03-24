@@ -35,6 +35,9 @@ class WeixinBot:
         self.send_check_task = None
         self.sequence_check_task = None
 
+        # 流式输出追踪（消息ID -> 已发送的 response）
+        self.sent_responses: Dict[int, str] = {}
+
         # Context Token 缓存（用户 -> 最新 context_token）
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
         self.context_tokens: Dict[str, str] = {}
@@ -273,63 +276,74 @@ class WeixinBot:
 
         while self.running:
             try:
-                # 获取正在处理的消息（只获取微信频道的消息）
-                messages = self.message_queue.get_processing_messages(channel_type=ChannelType.WEIXIN.value)
+                # 如果启用了消息分割，跳过这里的发送逻辑
+                # 因为消息会被 check_message_sequences 处理
+                if not self.config.weixin_message_splitting_enabled:
+                    # 批量获取有待发送流式响应的微信消息
+                    messages_info = self.message_queue.get_streaming_messages(channel_type=ChannelType.WEIXIN.value)
 
-                for msg in messages:
-                    # 只发送有回复内容的消息
-                    if not msg.response:
-                        continue
+                    for info in messages_info:
+                        msg_id = info["id"]
+                        username = info["username"]
+                        streaming_response = info["streaming_response"]
+                        status = info["status"]
 
-                    # 如果启用了消息分割，跳过这里的发送逻辑
-                    # 因为消息会被 check_message_sequences 处理
-                    if self.config.weixin_message_splitting_enabled:
-                        # 检查消息是否已经有消息序列记录
-                        sequences = self.message_queue.get_message_sequences_stats(msg.id)
-                        if sequences["total"] > 0:
-                            # 消息有序列记录，跳过由 check_message_sequences 处理
-                            continue
+                        # 检查是否已完成（状态不是 processing/ai_started）
+                        is_complete = status not in ('processing', 'ai_started')
 
-                    try:
-                        # 根据用户名选择正确的账号
-                        if not self.accounts:
-                            raise Exception("没有可用的微信账号")
+                        try:
+                            # 根据用户名选择正确的账号
+                            if not self.accounts:
+                                raise Exception("没有可用的微信账号")
 
-                        # 从用户名获取对应的 wxid
-                        target_wxid = self.username_to_wxid.get(msg.username)
-                        if not target_wxid:
-                            raise Exception(f"未找到用户 [{msg.username}] 对应的账号")
+                            # 从用户名获取对应的 wxid
+                            target_wxid = self.username_to_wxid.get(username)
+                            if not target_wxid:
+                                raise Exception(f"未找到用户 [{username}] 对应的账号")
 
-                        # 找到包含该 wxid 的账号
-                        target_account = None
-                        for account in self.accounts:
-                            if account.wxid == target_wxid:
-                                target_account = account
-                                break
+                            # 找到包含该 wxid 的账号
+                            target_account = None
+                            for account in self.accounts:
+                                if account.wxid == target_wxid:
+                                    target_account = account
+                                    break
 
-                        if not target_account:
-                            raise Exception(f"未找到 wxid [{target_wxid}] 对应的账号")
+                            if not target_account:
+                                raise Exception(f"未找到 wxid [{target_wxid}] 对应的账号")
 
-                        client = self.clients.get(target_account.bot_id)
-                        if not client:
-                            raise Exception(f"账号 {target_account.bot_id} 的客户端未初始化")
+                            client = self.clients.get(target_account.bot_id)
+                            if not client:
+                                raise Exception(f"账号 {target_account.bot_id} 的客户端未初始化")
 
-                        # 发送消息
-                        await self._send_to_weixin(client, msg)
+                            # 流式发送新增的响应部分
+                            last_sent = self.sent_responses.get(msg_id, "")
+                            if streaming_response != last_sent:
+                                # 有新增内容，发送新增的部分
+                                new_content = streaming_response[len(last_sent):]
+                                if new_content:
+                                    # 去掉开头的换行符（因为 '\n'.join() 会在前面加换行）
+                                    new_content = new_content.lstrip('\n')
+                                    if new_content:
+                                        # 创建临时对象用于发送
+                                        class TempMsg:
+                                            def __init__(self):
+                                                self.username = username
+                                                self.context_token = None
+                                        await self._send_text_to_weixin(client, TempMsg(), new_content)
+                                        self.sent_responses[msg_id] = streaming_response
 
-                        # 标记消息为已完成
-                        self.message_queue.update_status(
-                            msg.id,
-                            MessageStatus.COMPLETED
-                        )
+                                # 如果响应完成，标记为 COMPLETED
+                                if is_complete:
+                                    self.message_queue.update_status(msg_id, MessageStatus.COMPLETED)
+                                    self.sent_responses.pop(msg_id, None)
 
-                    except Exception as e:
-                        print(f"❌ 发送消息失败: {e}")
-                        self.message_queue.update_status(
-                            msg.id,
-                            MessageStatus.FAILED,
-                            error=str(e)
-                        )
+                        except Exception as e:
+                            print(f"❌ 发送消息失败: {e}")
+                            self.message_queue.update_status(
+                                msg_id,
+                                MessageStatus.FAILED,
+                                error=str(e)
+                            )
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.queue_send_interval)
@@ -355,6 +369,22 @@ class WeixinBot:
         )
 
         print(f"✅ 已发送: {len(response_text)} 字符")
+        return result
+
+    async def _send_text_to_weixin(self, client: WeixinClient, msg: Message, text: str):
+        """发送文本内容到微信（用于流式输出）"""
+        context_token = self.context_tokens.get(msg.username, msg.context_token or "")
+
+        if not context_token:
+            raise Exception(f"context_token is required but missing for user {msg.username}")
+
+        result = await client.send_message(
+            to_user_id=msg.username,
+            text=text,
+            context_token=context_token
+        )
+
+        print(f"📤 流式发送: {len(text)} 字符")
         return result
 
     async def _check_file_requests(self):

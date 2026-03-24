@@ -97,6 +97,7 @@ class Message:
     channel_type: str = ChannelType.DISCORD.value  # 频道类型（discord/weixin）
     context_token: Optional[str] = None  # 微信消息上下文 token（用于回复）
     attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
+    streaming_response: Optional[str] = None  # 流式响应内容
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -1038,6 +1039,55 @@ class MessageQueue:
                 return None
         return None
 
+    def get_streaming_messages(self, channel_type: str = None, limit: int = 100) -> List[dict]:
+        """批量获取有待发送流式响应的消息
+
+        Args:
+            channel_type: 频道类型过滤（discord/weixin），None 表示所有频道
+            limit: 返回数量限制
+
+        Returns:
+            消息列表，每条消息包含 id, username, streaming_response, response, status
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        if channel_type:
+            cursor.execute("""
+                SELECT id, username, streaming_response, response, status
+                FROM messages
+                WHERE status IN (?, ?)
+                  AND channel_type = ?
+                  AND streaming_response IS NOT NULL
+                  AND streaming_response != ''
+                ORDER BY created_at ASC
+                LIMIT ?
+            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value, channel_type, limit))
+        else:
+            cursor.execute("""
+                SELECT id, username, streaming_response, response, status
+                FROM messages
+                WHERE status IN (?, ?)
+                  AND streaming_response IS NOT NULL
+                  AND streaming_response != ''
+                ORDER BY created_at ASC
+                LIMIT ?
+            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value, limit))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                "id": row[0],
+                "username": row[1],
+                "streaming_response": row[2] or "",
+                "response": row[3] or "",
+                "status": row[4]
+            }
+            for row in rows
+        ]
+
     def is_ai_response_complete(self, message_id: int) -> bool:
         """检查 AI 响应是否已完成（即 Claude Bridge 输出"处理成功"）
 
@@ -1078,7 +1128,7 @@ class MessageQueue:
                 SELECT id, direction, content, status,
                        discord_channel_id, discord_message_id,
                        discord_user_id, username,
-                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, streaming_response, created_at, updated_at
                 FROM messages
                 WHERE status IN (?, ?) AND channel_type = ?
                 ORDER BY created_at DESC
@@ -1088,7 +1138,7 @@ class MessageQueue:
                 SELECT id, direction, content, status,
                        discord_channel_id, discord_message_id,
                        discord_user_id, username,
-                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, streaming_response, created_at, updated_at
                 FROM messages
                 WHERE status IN (?, ?)
                 ORDER BY created_at DESC
@@ -1126,8 +1176,9 @@ class MessageQueue:
                 channel_type=row[13] if row[13] else ChannelType.DISCORD.value,
                 context_token=row[14],
                 attachments=attachments,
-                created_at=row[16],
-                updated_at=row[17]
+                streaming_response=row[16],
+                created_at=row[17],
+                updated_at=row[18]
             )
             messages.append(message)
 

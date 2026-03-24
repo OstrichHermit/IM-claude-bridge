@@ -395,6 +395,12 @@ class SessionWorker:
                                         for block_index, content_item in enumerate(content_blocks):
                                             block_type = content_item.get('type')
 
+                                            # 根据频道类型选择对应的配置开关
+                                            if channel_type == 'weixin':
+                                                need_split = self.config.weixin_message_splitting_enabled
+                                            else:
+                                                need_split = self.config.enable_message_splitting
+
                                             if block_type == 'text':
                                                 # 记录 text content block
                                                 text = content_item.get('text', '')
@@ -406,11 +412,6 @@ class SessionWorker:
                                                 )
 
                                                 # 只有启用消息分割时才创建序列
-                                                # 根据频道类型选择对应的配置开关
-                                                if channel_type == 'weixin':
-                                                    need_split = self.config.weixin_message_splitting_enabled
-                                                else:
-                                                    need_split = self.config.enable_message_splitting
                                                 if need_split:
                                                     # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
                                                     text_parts = text.split('\n\n')
@@ -518,6 +519,12 @@ class SessionWorker:
                                         for block_index, content_item in enumerate(content_blocks):
                                             block_type = content_item.get('type')
 
+                                            # 根据频道类型选择对应的配置开关
+                                            if channel_type == 'weixin':
+                                                need_split = self.config.weixin_message_splitting_enabled
+                                            else:
+                                                need_split = self.config.enable_message_splitting
+
                                             if block_type == 'text':
                                                 # 记录 text content block
                                                 text = content_item.get('text', '')
@@ -529,11 +536,6 @@ class SessionWorker:
                                                 )
 
                                                 # 只有启用消息分割时才创建序列
-                                                # 根据频道类型选择对应的配置开关
-                                                if channel_type == 'weixin':
-                                                    need_split = self.config.weixin_message_splitting_enabled
-                                                else:
-                                                    need_split = self.config.enable_message_splitting
                                                 if need_split:
                                                     # 生成消息序列（按\n\n拆分文本，每个拆分部分作为独立序列项）
                                                     text_parts = text.split('\n\n')
