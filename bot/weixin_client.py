@@ -580,3 +580,100 @@ class WeixinClient:
                 raise Exception(f"API Error {errcode}: {errmsg}")
 
             return {"message_id": client_id}
+
+    async def get_config(self, ilink_user_id: str, context_token: str = "") -> Dict[str, Any]:
+        """获取用户配置（包括 typing_ticket）
+
+        Args:
+            ilink_user_id: 用户 ID
+            context_token: 上下文 token
+
+        Returns:
+            包含 typing_ticket 的响应
+        """
+        if not self.session:
+            raise RuntimeError("Client session not initialized. Use async context manager.")
+
+        url = f"{self.account.base_url}/ilink/bot/getconfig"
+        payload = {
+            "ilink_user_id": ilink_user_id,
+            "context_token": context_token,
+            "base_info": {"channel_version": "1.0.0"}
+        }
+
+        headers = self._build_headers()
+
+        async with self.session.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            if resp.status != 200:
+                error_text = await resp.text()
+                logger.error(f"getConfig HTTP {resp.status}: {error_text}")
+                raise Exception(f"HTTP {resp.status}: {error_text}")
+
+            raw_data = await resp.read()
+            data = json.loads(raw_data.decode('utf-8'))
+
+            ret = data.get("ret")
+            if ret is not None and ret != 0:
+                errcode = data.get("errcode")
+                errmsg = data.get("errmsg", "未知错误")
+                logger.error(f"getConfig error: {errcode} - {errmsg}")
+                raise Exception(f"API Error {errcode}: {errmsg}")
+
+            return data
+
+    async def send_typing(self, ilink_user_id: str, typing_ticket: str, status: int = 1) -> Dict[str, Any]:
+        """发送正在输入状态
+
+        Args:
+            ilink_user_id: 用户 ID
+            typing_ticket: typing 票据（从 getConfig 获取）
+            status: 状态 (1=正在输入, 2=取消输入)
+
+        Returns:
+            API 响应
+        """
+        if not self.session:
+            raise RuntimeError("Client session not initialized. Use async context manager.")
+
+        url = f"{self.account.base_url}/ilink/bot/sendtyping"
+        payload = {
+            "ilink_user_id": ilink_user_id,
+            "typing_ticket": typing_ticket,
+            "status": status,
+            "base_info": {"channel_version": "1.0.0"}
+        }
+
+        headers = self._build_headers()
+
+        try:
+            async with self.session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"sendTyping HTTP {resp.status}: {error_text}")
+                    raise Exception(f"HTTP {resp.status}: {error_text}")
+
+                raw_data = await resp.read()
+                data = json.loads(raw_data.decode('utf-8'))
+
+                ret = data.get("ret")
+                if ret is not None and ret != 0:
+                    errcode = data.get("errcode")
+                    errmsg = data.get("errmsg", "未知错误")
+                    logger.error(f"sendTyping error: {errcode} - {errmsg}")
+                    raise Exception(f"API Error {errcode}: {errmsg}")
+
+                return data
+
+        except aiohttp.ClientError as e:
+            logger.error(f"sendTyping network error: {e}")
+            raise
