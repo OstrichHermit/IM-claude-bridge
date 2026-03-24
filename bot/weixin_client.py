@@ -262,10 +262,16 @@ class WeixinClient:
                 if ret is not None and ret != 0:
                     errcode = data.get("errcode")
                     errmsg = data.get("errmsg") or data.get("msg") or "未知错误"
-                    logger.error(f"sendMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
+
+                    # ret=-2 是 context_token 过期（10条消息限制或24小时超时）
+                    if ret == -2:
+                        logger.warning(f"⚠️  已达到本条消息回复次数上限 (context_token 过期，ret=-2)")
+                    else:
+                        logger.error(f"sendMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
                     logger.error(f"Full API response: {data}")
+
                     raise Exception(f"API Error {errcode}: {errmsg}")
-                
+
                 # 微信 API 的响应是空的（{}），成功则返回生成的 client_id 作为 message_id
                 return {"message_id": client_id}
 
