@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 from shared.message_queue import MessageTag as MessageTagEnum
+from shared.context_token_storage import ContextTokenStorage
 from bot.weixin_client import WeixinClient, WeixinAccount
 from bot.weixin_qr_login import WeixinAccountManager
 
@@ -34,9 +35,9 @@ class WeixinBot:
         self.polling_tasks = []
         self.sequence_check_task = None
 
-        # Context Token 缓存（用户 -> 最新 context_token）
+        # Context Token 持久化存储（用户 -> 最新 context_token）
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
-        self.context_tokens: Dict[str, str] = {}
+        self.context_tokens = ContextTokenStorage(config.weixin_accounts_file)
 
         # 整数 ID 到用户名的映射（用于文件发送）
         self.id_to_username: Dict[int, str] = {}
@@ -272,7 +273,7 @@ class WeixinBot:
     async def _send_to_weixin(self, client: WeixinClient, msg: Message):
         """发送消息到微信"""
         response_text = msg.response or msg.content
-        context_token = self.context_tokens.get(msg.username, msg.context_token or "")
+        context_token = self.context_tokens.get(msg.username) or msg.context_token or ""
 
         if not context_token:
             raise Exception(f"context_token is required but missing for user {msg.username}")
@@ -290,7 +291,7 @@ class WeixinBot:
 
     async def _send_text_to_weixin(self, client: WeixinClient, msg: Message, text: str):
         """发送文本内容到微信（用于流式输出）"""
-        context_token = self.context_tokens.get(msg.username, msg.context_token or "")
+        context_token = self.context_tokens.get(msg.username) or msg.context_token or ""
 
         if not context_token:
             raise Exception(f"context_token is required but missing for user {msg.username}")
@@ -371,7 +372,7 @@ class WeixinBot:
                             raise Exception("未指定目标用户")
 
                         # 获取 context_token
-                        context_token = self.context_tokens.get(target_user, "")
+                        context_token = self.context_tokens.get(target_user) or ""
                         if not context_token:
                             self.message_queue.update_file_request_status(
                                 file_request.id,
@@ -553,7 +554,7 @@ class WeixinBot:
                     else:
                         # 多个账号，无法确定使用哪个
                         # 检查是否有 context_token，如果有则使用第一个有 token 的账号
-                        if username in self.context_tokens:
+                        if self.context_tokens.get(username) is not None:
                             # 有 context_token，使用第一个账号
                             target_account = self.accounts[0]
                             to_user_id = username
@@ -576,7 +577,7 @@ class WeixinBot:
 
                     # 获取 context_token
                     # 优先从缓存获取，如果没有则使用消息保存的 context_token
-                    context_token = self.context_tokens.get(username, msg_context_token or "")
+                    context_token = self.context_tokens.get(username) or msg_context_token or ""
 
                     if not context_token:
                         print(f"⚠️  用户 {username} 没有有效的 context_token")
@@ -735,7 +736,7 @@ class WeixinBot:
                         else:
                             # 多个账号，无法确定使用哪个
                             # 检查是否有 context_token，如果有则使用第一个有 token 的账号
-                            if username in self.context_tokens:
+                            if self.context_tokens.get(username) is not None:
                                 # 有 context_token，使用第一个账号
                                 target_account = self.accounts[0]
                                 to_user_id = username
@@ -762,7 +763,7 @@ class WeixinBot:
 
                         # 获取 context_token
                         # 优先从缓存获取，如果没有则使用消息保存的 context_token
-                        context_token = self.context_tokens.get(username, msg_context_token or "")
+                        context_token = self.context_tokens.get(username) or msg_context_token or ""
 
                         if not context_token:
                             print(f"⚠️  用户 {username} 没有有效的 context_token，跳过工具调用通知")
@@ -1027,9 +1028,9 @@ class WeixinBot:
             if message_type != 1:
                 return
 
-            # 更新 context_token 缓存
+            # 更新 context_token 缓存（自动持久化到磁盘）
             if context_token:
-                self.context_tokens[from_user_id] = context_token
+                self.context_tokens.set(from_user_id, context_token)
 
             # 从配置中获取 user_id
             user_id_int = self.username_to_userid.get(from_user_id)
@@ -1401,7 +1402,7 @@ class WeixinBot:
         if not client:
             raise Exception(f"账号 {account_bot_id} 的客户端未初始化")
 
-        context_token = self.context_tokens.get(to_user_id, "")
+        context_token = self.context_tokens.get(to_user_id) or ""
         if not context_token:
             raise Exception(f"context_token is required but missing for user {to_user_id}")
 

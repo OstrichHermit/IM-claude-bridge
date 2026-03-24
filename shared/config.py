@@ -223,6 +223,16 @@ class Config:
         return str(accounts_file)
 
     @property
+    def weixin_context_tokens_file(self) -> str:
+        """获取微信 context token 持久化文件路径"""
+        tokens_file = self._config.get('weixin', {}).get('context_tokens_file', './shared/context_tokens.json')
+        # 转换为绝对路径
+        if not os.path.isabs(tokens_file):
+            project_root = Path(__file__).parent.parent
+            tokens_file = project_root / tokens_file
+        return str(tokens_file)
+
+    @property
     def weixin_message_splitting_enabled(self) -> bool:
         """获取微信是否启用消息按空行分割功能"""
         return self._config.get('weixin', {}).get('message_splitting', {}).get('enabled', False)
