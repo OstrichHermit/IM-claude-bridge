@@ -223,6 +223,16 @@ class Config:
         return str(accounts_file)
 
     @property
+    def weixin_message_splitting_enabled(self) -> bool:
+        """获取微信是否启用消息按空行分割功能"""
+        return self._config.get('weixin', {}).get('message_splitting', {}).get('enabled', False)
+
+    @property
+    def weixin_tool_use_notification_enabled(self) -> bool:
+        """获取微信是否启用工具调用通知"""
+        return self._config.get('weixin', {}).get('tool_use_notification', {}).get('enabled', False)
+
+    @property
     def file_mapping_path(self) -> str:
         """获取文件映射表路径"""
         mapping_file = self._config.get('file_mapping', {}).get('path', './file_mapping.json')

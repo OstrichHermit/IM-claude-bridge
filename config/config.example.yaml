@@ -163,3 +163,29 @@ cron_scheduler:
   enabled: true
   # 定时任务存储路径（JSON 文件）
   storage_path: "./shared/cron_jobs.json"
+
+# 微信 Bot 配置
+weixin:
+  # 是否启用微信 Bot
+  enabled: false
+
+  # 微信账号存储文件路径（扫码登录后自动保存）
+  accounts_file: "./shared/weixin_accounts.json"
+
+  # 使用方法：
+  # 1. 运行扫码登录工具：python scripts/login_weixin.py
+  # 2. 使用微信扫描二维码并确认登录
+  # 3. 账号信息会自动保存到 accounts_file
+  # 4. 启动微信 Bot（会自动加载已登录的账号）
+
+  # 微信消息分割配置（独立开关，不影响 Discord）
+  message_splitting:
+    # 是否启用消息按空行分割功能
+    # 注意：由于微信 context_token 限制（10条消息），关闭分割可以减少配额消耗
+    enabled: false
+
+  # 微信工具调用通知配置（独立开关，不影响 Discord）
+  tool_use_notification:
+    # 是否启用工具调用通知
+    # 注意：每次工具执行都会发送通知，会消耗 context_token 配额
+    enabled: false

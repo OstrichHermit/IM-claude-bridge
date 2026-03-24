@@ -263,7 +263,7 @@ class WeixinBot:
 
                     # 如果启用了消息分割，跳过这里的发送逻辑
                     # 因为消息会被 check_message_sequences 处理
-                    if self.config.enable_message_splitting:
+                    if self.config.weixin_message_splitting_enabled:
                         # 检查消息是否已经有消息序列记录
                         sequences = self.message_queue.get_message_sequences_stats(msg.id)
                         if sequences["total"] > 0:
@@ -676,6 +676,12 @@ class WeixinBot:
 
         while self.running:
             try:
+                # 检查是否启用微信工具调用通知
+                if not self.config.weixin_tool_use_notification_enabled:
+                    # 禁用时跳过处理，但继续运行循环以便配置更改后能生效
+                    await asyncio.sleep(5)
+                    continue
+
                 # 获取待处理的工具执行结果（只处理微信频道的）
                 pending_results = self.message_queue.get_pending_tool_use_results(channel_type='weixin')
 
