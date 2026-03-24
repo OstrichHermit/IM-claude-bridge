@@ -33,6 +33,7 @@ class WeixinBot:
         self.clients: Dict[str, WeixinClient] = {}
         self.polling_tasks = []
         self.send_check_task = None
+        self.sequence_check_task = None
 
         # Context Token 缓存（用户 -> 最新 context_token）
         # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
