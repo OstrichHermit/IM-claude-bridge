@@ -2463,15 +2463,38 @@ class DiscordBot(discord.Client):
                         if not user:
                             try:
                                 user = await self.fetch_user(user_id)
+                            except discord.NotFound:
+                                # 用户不存在，标记消息为失败并清理
+                                print(f"❌ 消息 #{message_id} 发送失败: 用户不存在 (user_id={user_id})")
+                                self.message_queue.cleanup_message_sequences(message_id)
+                                self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"用户不存在: {user_id}")
+                                continue
                             except Exception as e:
                                 print(f"⚠️  获取用户失败: {user_id}, 错误: {e}")
                                 continue
                         if not user:
                             continue
-                        channel = await user.create_dm()
+                        try:
+                            channel = await user.create_dm()
+                        except discord.NotFound:
+                            # 无法创建 DM（用户不存在），标记消息为失败
+                            print(f"❌ 消息 #{message_id} 发送失败: 无法创建私聊频道 (user_id={user_id})")
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"无法创建私聊频道: {user_id}")
+                            continue
+                        except discord.Forbidden:
+                            # 没有权限创建 DM
+                            print(f"❌ 消息 #{message_id} 发送失败: 没有权限创建私聊频道 (user_id={user_id})")
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"没有权限创建私聊频道: {user_id}")
+                            continue
                     else:
                         channel = self.get_channel(channel_id)
                         if not channel:
+                            # 频道不存在，标记消息为失败并清理
+                            print(f"❌ 消息 #{message_id} 发送失败: 频道不存在 (channel_id={channel_id})")
+                            self.message_queue.cleanup_message_sequences(message_id)
+                            self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"频道不存在: {channel_id}")
                             continue
 
                     # 发送序列项（只有一条）
@@ -2743,6 +2766,20 @@ class DiscordBot(discord.Client):
                         # 控制发送速率，避免触发Discord速率限制
                         await asyncio.sleep(self.config.queue_send_interval)
 
+                    except discord.NotFound as e:
+                        # 频道/用户不存在，标记消息为失败并清理
+                        print(f"❌ 消息 #{message_id} 发送失败: 资源不存在 - {e}")
+                        self.message_queue.cleanup_message_sequences(message_id)
+                        self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"资源不存在: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    except discord.Forbidden as e:
+                        # 没有权限，标记消息为失败并清理
+                        print(f"❌ 消息 #{message_id} 发送失败: 没有权限 - {e}")
+                        self.message_queue.cleanup_message_sequences(message_id)
+                        self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"没有权限: {e}")
+                        import traceback
+                        traceback.print_exc()
                     except Exception as e:
                         print(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
                         import traceback
