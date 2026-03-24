@@ -1,4 +1,4 @@
-# Discord Claude Bridge
+# IM Claude Bridge
 
 A two-way communication system that bridges Discord messages to your local Claude Code CLI.
 
@@ -47,7 +47,7 @@ A two-way communication system that bridges Discord messages to your local Claud
 **Example structure**:
 ```
 D:/AgentWorkspace/                    # Workspace root
-├── discord-claude-bridge/            # Discord bridge project (this repo)
+├── IM-claude-bridge/                 # IM bridge project (this repo)
 ├── my-project-1/                     # Your other projects
 ├── downloads/                        # Default download directory
 └── .claude/                          # Claude Code configuration
@@ -64,8 +64,8 @@ D:/AgentWorkspace/                    # Workspace root
 
 ```bash
 # Clone the project
-git clone https://github.com/OstrichHermit/discord-claude-bridge.git
-cd discord-claude-bridge
+git clone https://github.com/OstrichHermit/IM-claude-bridge.git
+cd IM-claude-bridge
 
 # Install dependencies
 pip install -r requirements.txt
@@ -188,14 +188,14 @@ Claude Code can send files to Discord via MCP protocol.
 ```json
 {
   "mcpServers": {
-    "discord-bridge": {
+    "im-claude-bridge": {
       "command": "python",
       "args": [
-        "D:\\AgentWorkspace\\discord-claude-bridge\\mcp_server\\server.py",
+        "D:\\AgentWorkspace\\IM-claude-bridge\\mcp_server\\server.py",
         "--transport", "stdio"
       ],
       "env": {
-        "PYTHONPATH": "D:\\AgentWorkspace\\discord-claude-bridge"
+        "PYTHONPATH": "D:\\AgentWorkspace\\IM-claude-bridge"
       }
     }
   }

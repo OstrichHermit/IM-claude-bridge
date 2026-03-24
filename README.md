@@ -1,4 +1,4 @@
-# Discord Claude Bridge
+# IM Claude Bridge
 
 将 Discord/微信消息桥接到本地 Claude Code CLI 的双向通信系统。
 
@@ -48,7 +48,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 **示例结构**：
 ```
 D:/AgentWorkspace/                    # 工作区根目录
-├── discord-claude-bridge/            # Discord 桥接项目（本仓库）
+├── IM-claude-bridge/                 # IM 桥接项目（本仓库）
 ├── my-project-1/                     # 你的其他项目
 ├── downloads/                        # 默认文件下载目录
 └── .claude/                          # Claude Code 配置
@@ -65,8 +65,8 @@ D:/AgentWorkspace/                    # 工作区根目录
 
 ```bash
 # 克隆项目
-git clone https://github.com/OstrichHermit/discord-claude-bridge.git
-cd discord-claude-bridge
+git clone https://github.com/OstrichHermit/IM-claude-bridge.git
+cd IM-claude-bridge
 
 # 安装依赖
 pip install -r requirements.txt
@@ -189,14 +189,14 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
 ```json
 {
   "mcpServers": {
-    "discord-bridge":  {
+    "im-claude-bridge":  {
       "type":  "stdio",
       "command":  "cmd",
       "args":  [
         "/c",
         "cd",
         "/d",
-        "D:\\AgentWorkspace\\discord-claude-bridge",
+        "D:\\AgentWorkspace\\IM-claude-bridge",
         "\u0026\u0026",
         "python",
         "-m",
