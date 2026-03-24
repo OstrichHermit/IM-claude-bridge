@@ -1047,14 +1047,14 @@ class MessageQueue:
             limit: 返回数量限制
 
         Returns:
-            消息列表，每条消息包含 id, username, streaming_response, response, status
+            消息列表，每条消息包含 id, username, discord_channel_id, streaming_response, response, status
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         if channel_type:
             cursor.execute("""
-                SELECT id, username, streaming_response, response, status
+                SELECT id, username, discord_channel_id, streaming_response, response, status
                 FROM messages
                 WHERE status IN (?, ?)
                   AND channel_type = ?
@@ -1065,7 +1065,7 @@ class MessageQueue:
             """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value, channel_type, limit))
         else:
             cursor.execute("""
-                SELECT id, username, streaming_response, response, status
+                SELECT id, username, discord_channel_id, streaming_response, response, status
                 FROM messages
                 WHERE status IN (?, ?)
                   AND streaming_response IS NOT NULL
@@ -1081,9 +1081,10 @@ class MessageQueue:
             {
                 "id": row[0],
                 "username": row[1],
-                "streaming_response": row[2] or "",
-                "response": row[3] or "",
-                "status": row[4]
+                "discord_channel_id": row[2],
+                "streaming_response": row[3] or "",
+                "response": row[4] or "",
+                "status": row[5]
             }
             for row in rows
         ]

@@ -1404,23 +1404,13 @@ class DiscordBot(discord.Client):
 
         while not self.is_closed():
             try:
-                import sqlite3
+                # 批量获取有待发送流式响应的 Discord 消息
+                messages = self.message_queue.get_streaming_messages(channel_type="discord")
 
-                # 查询有 streaming_response 的消息（ai_started 和 processing 状态）
-                conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
-                cursor.execute("""
-                               SELECT id, discord_channel_id, streaming_response
-                               FROM messages
-                               WHERE status IN ('ai_started', 'processing')
-                                 AND streaming_response IS NOT NULL
-                                 AND streaming_response != ''
-                               ORDER BY created_at ASC
-                               """)
-                rows = cursor.fetchall()
-                conn.close()
-
-                for msg_id, channel_id, streaming_response in rows:
+                for msg_info in messages:
+                    msg_id = msg_info["id"]
+                    channel_id = msg_info["discord_channel_id"]
+                    streaming_response = msg_info["streaming_response"]
                     # 如果消息在 pending_messages 中，处理它
                     if msg_id in self.pending_messages:
                         pending = self.pending_messages[msg_id]
