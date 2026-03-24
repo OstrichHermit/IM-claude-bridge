@@ -245,11 +245,11 @@ class SessionWorker:
 
         # 构建提示词
         if message_tag == MessageTag.TASK.value:
-            prompt = self._build_task_prompt(prompt, username, user_id, is_dm, channel_id)
+            prompt = self._build_task_prompt(prompt, username, user_id, is_dm, channel_id, channel_type)
         elif message_tag == MessageTag.REMINDER.value:
-            prompt = self._build_reminder_prompt(prompt, username, user_id, is_dm, channel_id)
+            prompt = self._build_reminder_prompt(prompt, username, user_id, is_dm, channel_id, channel_type)
         else:
-            sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments)
+            sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments, channel_type)
 
             if self.config.auto_load_enabled and not session_created:
                 prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
@@ -677,7 +677,7 @@ class SessionWorker:
 
         return None
 
-    def _build_task_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
+    def _build_task_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, channel_type: str = 'discord') -> str:
         """构建任务消息结构"""
         if is_dm:
             return f"""🔔 定时任务已触发！
@@ -705,7 +705,7 @@ class SessionWorker:
 4、直接执行并完成任务；
 5、完成后回复消息。"""
 
-    def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int) -> str:
+    def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, channel_type: str = 'discord') -> str:
         """构建提醒消息结构"""
         if is_dm:
             return f"""🔔 定时提醒已触发！
@@ -727,24 +727,34 @@ class SessionWorker:
 1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求完成会话启动流程；
 2、直接回复需要提醒的内容。"""
 
-    def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int, attachments: list = None) -> str:
+    def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int, attachments: list = None, channel_type: str = 'discord') -> str:
         """构建发送者信息"""
         sender_base = f"{username}（{user_id}）"
+
+        # 根据 channel_type 确定频道名称和前后空格
+        if channel_type == 'discord':
+            channel_prefix = "在 Discord "
+            channel_infix = " Discord "
+            channel_text = "频道"
+        else:  # weixin
+            channel_prefix = "在微信"
+            channel_infix = "微信"
+            channel_text = "群聊"
 
         if attachments:
             filenames_str = '、'.join([a.filename for a in attachments])
 
             if is_dm:
-                sender_info = f"{sender_base}在私聊中引用了文件名为 {filenames_str} 的已下载附件，并说："
+                sender_info = f"{sender_base}{channel_prefix}私聊中引用了文件名为 {filenames_str} 的已下载附件，并说："
             elif channel_id:
-                sender_info = f"{sender_base}在频道（{channel_id}）中引用了文件名为 {filenames_str} 的已下载附件，并说："
+                sender_info = f"{sender_base}{channel_prefix}{channel_text}（{channel_id}）中引用了文件名为 {filenames_str} 的已下载附件，并说："
             else:
                 sender_info = f"{sender_base}引用了文件名为 {filenames_str} 的已下载附件，并说："
         else:
             if is_dm:
-                sender_info = f"{sender_base}在私聊中说："
+                sender_info = f"{sender_base}{channel_prefix}私聊中说："
             elif channel_id:
-                sender_info = f"{sender_base}在频道（{channel_id}）中说："
+                sender_info = f"{sender_base}{channel_prefix}{channel_text}（{channel_id}）中说："
             else:
                 sender_info = f"{sender_base}说："
 
