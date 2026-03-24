@@ -184,9 +184,8 @@ class WeixinBot:
         # 启动文件请求检查任务
         self.file_check_task = asyncio.create_task(self._check_file_requests())
 
-        # 只有启用消息分割时才启动消息序列检查任务
-        if self.config.weixin_message_splitting_enabled:
-            self.sequence_check_task = asyncio.create_task(self.check_message_sequences())
+        # 启动消息序列检查任务
+        self.sequence_check_task = asyncio.create_task(self.check_message_sequences())
 
         # 启动工具执行结果检查任务
         self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
@@ -281,12 +280,14 @@ class WeixinBot:
                     if not msg.response:
                         continue
 
-                    # 检查消息是否已经有未发送的序列记录
-                    # 如果有未发送的序列，说明需要分割发送，由 check_message_sequences 处理
-                    sequences = self.message_queue.get_message_sequences_stats(msg.id)
-                    if sequences["total"] > 0 and sequences["pending"] > 0:
-                        # 有未发送的序列，跳过由 check_message_sequences 处理
-                        continue
+                    # 如果启用了消息分割，跳过这里的发送逻辑
+                    # 因为消息会被 check_message_sequences 处理
+                    if self.config.weixin_message_splitting_enabled:
+                        # 检查消息是否已经有消息序列记录
+                        sequences = self.message_queue.get_message_sequences_stats(msg.id)
+                        if sequences["total"] > 0:
+                            # 消息有序列记录，跳过由 check_message_sequences 处理
+                            continue
 
                     try:
                         # 根据用户名选择正确的账号
