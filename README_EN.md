@@ -1,8 +1,8 @@
 # IM Claude Bridge
 
-A two-way communication system that bridges Discord messages to your local Claude Code CLI.
+A two-way communication system that bridges Discord/WeChat messages to your local Claude Code CLI.
 
-将 Discord 消息桥接到本地 Claude Code CLI 的双向通信系统。
+将 Discord/微信消息桥接到本地 Claude Code CLI 的双向通信系统。
 
 [English](README_EN.md) | [简体中文](README.md)
 
@@ -11,38 +11,41 @@ A two-way communication system that bridges Discord messages to your local Claud
 ## ✨ Features
 
 **💬 Message Interaction**
-- ✅ @Bot to call local Claude Code CLI
-- ✅ Continuous conversation support (session management)
-- ✅ Real-time status feedback (received → processing → response)
-- ✅ Message tracking system (avoid duplicate processing)
-- ✅ Unified message queue mechanism for all responses
-- ✅ Tool use notification (forward tool calls as Embed cards)
+- `@Bot` to call local Claude Code CLI (supports Discord and WeChat)
+- Continuous conversation support (session management)
+- Real-time status feedback (received → processing → response)
+- Message tracking system (avoid duplicate processing)
+- Unified message queue mechanism for all responses (guarantee correct message order)
+- Tool use notification (forward as Embed cards in Discord)
 
 **📁 File Transfer**
-- ✅ Send attachments with messages (auto download and pass attachment info)
-- ✅ Context menu to download attachments (right-click)
-- ✅ Reference attachment metadata (extract attachment info and send to Claude)
-- ✅ Download attachments from Discord to local
-- ✅ Send files to Discord via MCP
-- ✅ Batch file transfer support
+- Support all file types (images, documents, archives, etc.)
+- Send attachments with messages in Discord (auto download and pass attachment info)
+- Download attachments via Discord context menu (right-click)
+- Reference attachment metadata (extract attachment info and send to Claude)
+- Auto download attachments from Discord/WeChat to local configured directory
+- Auto handle filename conflicts (auto rename)
+- Send files to Discord/WeChat via MCP
+- Batch file transfer support
 
 **⏰ Scheduled Tasks**
-- ✅ Create and manage scheduled tasks (supports cron expressions)
-- ✅ Support for DM and channel message pushing
-- ✅ Task enable/disable/update/delete
-- ✅ Execution history query
+- Create and manage scheduled tasks (supports cron expressions)
+- Support for DM and channel message pushing
+- Task enable/disable/update/delete
+- Execution history query
 
 **🎯 Service Management**
-- ✅ Windows daemon process (auto monitor & restart)
-- ✅ Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
-- ✅ Context menus (right-click message to download attachments)
-- ✅ Message queue system (SQLite persistence)
+- Windows daemon process (auto monitor & restart)
+- Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
+- Context menus (right-click message to download attachments)
+- Message queue system (SQLite persistence)
+- **Parallel Bot Architecture** (Discord Bot and WeChat Bot run independently)
 
 ## 🚀 Quick Start
 
 ### 0. Recommended Workspace Structure
 
-**Highly recommended** to place this project in the root directory of your Claude Code workspace for easier management.
+**Highly recommended** to place this project in the root directory of your Claude Code workspace for easier management of multiple projects.
 
 **Example structure**:
 ```
@@ -83,12 +86,12 @@ Visit [Discord Developer Portal](https://discord.com/developers/applications):
 2. OAuth2 → URL Generator:
    - **Scopes**: Check `bot` + `applications.commands`
    - **Bot Permissions**: Check
-     - `Send Messages`
-     - `Read Messages/View Channels`
-     - `Embed Links`
-     - `Attach Files`
-     - `Add Reactions`
-     - `Use Slash Commands`
+     - `Send Messages` (Send messages)
+     - `Read Messages/View Channels` (View messages)
+     - `Embed Links` (Send link cards)
+     - `Attach Files` (Send files)
+     - `Add Reactions` (Add emojis)
+     - `Use Slash Commands` (Use slash commands)
 3. Bot page → **Privileged Gateway Intents** → Enable **Message Content Intent**
 4. Copy the generated URL, open in browser → Select server → Authorize
 
@@ -101,17 +104,23 @@ Visit [Discord Developer Portal](https://discord.com/developers/applications):
 start.bat
 ```
 
-> Manager daemon will automatically start and monitor all services (Bot + Bridge)
+> Manager daemon will automatically start and monitor all services (Discord Bot + Weixin Bot + Bridge)
 
 
 ### 5. Usage
 
 #### 5.1 Basic Chat
 
-Just @Bot in Discord:
+In Discord, `@Bot` and send a message:
 
 ```
 @YourBot Please help me analyze this code
+```
+
+In WeChat, send a message directly:
+
+```
+Please help me analyze this code
 ```
 
 The bot will receive messages and display that it is typing, and then stop when the response is complete.
@@ -124,7 +133,7 @@ The bot will receive messages and display that it is typing, and then stop when 
 - `/restart` - Restart service
 - `/stop` - Stop service
 
-**Context Menus** (Right-click on message):
+**Discord Context Menus** (Right-click on message):
 - **Download Attachments** - Right-click a message with attachments → Apps → Download Attachments
 
 #### 5.3 File Operations
@@ -135,7 +144,7 @@ file_download:
   default_directory: "D:/AgentWorkspace/files/downloads"
 ```
 
-**Method 1: Send Attachments with Messages**
+**Discord Method 1: Send Attachments with Messages**
 
 Simply attach files when @Bot, Bot will automatically download and pass attachment info:
 
@@ -144,13 +153,7 @@ Simply attach files when @Bot, Bot will automatically download and pass attachme
 @YourBot Please help me analyze these files
 ```
 
-**Attachment Processing Features**:
-- ✅ Support all attachment types (images, documents, archives, etc.)
-- ✅ Auto download to configured directory
-- ✅ Auto handle filename conflicts (auto rename)
-- ✅ Extract attachment metadata and send to Claude
-
-**Method 2: Download Attachments (Context Menu)**
+**Discord Method 2: Download Attachments (Context Menu)**
 
 If you sent a message with attachments but forgot to @Bot, you can right-click that message:
 
@@ -158,29 +161,32 @@ If you sent a message with attachments but forgot to @Bot, you can right-click t
 2. Select **Apps** → **Download Attachments**
 3. Bot automatically downloads all attachments to configured directory
 
-**Method 3: Reference Attachment Metadata**
+**WeChat Method: Send File Messages**
 
-Reply to a message with attachments and @Bot, Bot will extract attachment metadata (filename, size, URL) and send to Claude, but **will not download the file**:
+Simply send file messages to the Bot, it will automatically download them.
+
+**Discord/WeChat Universal Method: Reference Attachment Metadata**
+
+Reply to a message with files and `@Bot` (no need for `@` in WeChat), Bot will extract attachment metadata and send to Claude, but **will not download the file**:
 
 ```
 [Reply to a message with an image]
-@YourBot Please help me analyze the metadata of this image
+@YourBot Please help me analyze this image
 ```
 
 **Use cases:**
-- Only need attachment information (filename, size, URL)
-- Don't need to download the file
+- Let Bot view a specific file
 - File already exists locally, just need to reference it
 
-**Difference from Method 1:**
-- Method 1: Downloads file to local
-- Method 3: Only extracts metadata, no download
+**Difference from other methods:**
+- Other methods: Download file to local
+- Universal method: Only extract metadata, no download
 
 ## 🔌 MCP Server Integration
 
 Claude Code can send files to Discord via MCP protocol.
 
-### MCP Server Configuration
+### MCP Server Configuration Method
 
 **Config file location**: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -188,15 +194,19 @@ Claude Code can send files to Discord via MCP protocol.
 ```json
 {
   "mcpServers": {
-    "im-claude-bridge": {
-      "command": "python",
-      "args": [
-        "D:\\AgentWorkspace\\IM-claude-bridge\\mcp_server\\server.py",
-        "--transport", "stdio"
-      ],
-      "env": {
-        "PYTHONPATH": "D:\\AgentWorkspace\\IM-claude-bridge"
-      }
+    "im-claude-bridge":  {
+      "type":  "stdio",
+      "command":  "cmd",
+      "args":  [
+        "/c",
+        "cd",
+        "/d",
+        "D:\\AgentWorkspace\\IM-claude-bridge",
+        "\u0026\u0026",
+        "python",
+        "-m",
+        "mcp_server.server"
+      ]
     }
   }
 }
@@ -204,9 +214,13 @@ Claude Code can send files to Discord via MCP protocol.
 
 ### MCP Tools
 
-**File Transfer**:
-1. **Send file to Discord** - Support user DM and channels
-2. **Batch send files** - Up to 10 files at once
+**Discord File Transfer**:
+1. **send_file_to_discord** - Send file to Discord (supports DM/channels)
+2. **send_multiple_files_to_discord** - Batch send files to Discord (up to 10 files)
+
+**WeChat File Transfer**:
+1. **send_file_to_weixin** - Send file to WeChat (supports DM/groups)
+2. **send_multiple_files_to_weixin** - Batch send files to WeChat (up to 9 files)
 
 **Scheduled Tasks**:
 1. **add_cron** - Add scheduled task (supports cron expressions)
@@ -217,29 +231,6 @@ Claude Code can send files to Discord via MCP protocol.
 6. **update_cron** - Update scheduled task
 7. **get_current_time** - Get current time (supports multiple timezones)
 
-**Usage Examples**:
-```python
-# Add a daily 9 AM scheduled task
-add_cron(
-    cron_expr="0 9 * * *",
-    content="Send daily report",
-    username="鸵鸟居士",
-    user_id="USER_DISCORD_ID",
-    tag="task",
-    description="Daily Report"
-)
-
-# Add an hourly reminder
-add_cron(
-    cron_expr="0 * * * *",
-    content="Time to hydrate!",
-    username="鸵鸟居士",
-    user_id="USER_DISCORD_ID",
-    tag="reminder"
-)
-```
-
-For detailed configuration, see: [MCP_SETUP.md](MCP_SETUP.md)
 
 ## ⚙️ Configuration Options
 
@@ -280,7 +271,37 @@ timeout:
 
 tool_use_notification:
   enabled: true                        # Enable tool use notification (forward as Embed cards)
+
+# WeChat Bot configuration (optional)
+weixin:
+  enabled: false                       # Enable WeChat Bot
+  accounts_file: "./config/weixin_accounts.json"  # WeChat account storage file path
 ```
+
+### WeChat Bot Configuration (Optional)
+
+To use WeChat support, follow these steps:
+
+#### 1. WeChat QR Code Login
+
+```bash
+python scripts/login_weixin.py
+```
+
+Scan the QR code in the terminal to log in to WeChat. You can run this command multiple times to add multiple WeChat accounts.
+
+#### 2. Enable WeChat Bot
+
+Enable WeChat Bot in `config.yaml`:
+
+```yaml
+weixin:
+  enabled: true
+```
+
+#### 3. Start Service
+
+WeChat Bot will automatically start together with Discord Bot, both running independently without affecting each other.
 
 ## 🔧 Troubleshooting
 
