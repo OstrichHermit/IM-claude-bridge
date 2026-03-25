@@ -17,6 +17,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Message tracking system (avoid duplicate processing)
 - Unified message queue mechanism for all responses (guarantee correct message order)
 - Tool use notification (forward as Embed cards in Discord)
+- Discord Image Stickers (auto-detect `<:filename.extension>` format and send images)
 
 **📁 File Transfer**
 - Support all file types (images, documents, archives, etc.)
@@ -136,7 +137,31 @@ The bot will receive messages and display that it is typing, and then stop when 
 **Discord Context Menus** (Right-click on message):
 - **Download Attachments** - Right-click a message with attachments → Apps → Download Attachments
 
-#### 5.3 File Operations
+#### 5.3 Discord Stickers
+
+Bot supports automatic image sticker sending to make conversations more lively and natural.
+
+**Sticker Directory**: `stickers/`
+
+**Send Format**: `<:filename.extension>`
+
+**Examples**:
+```
+<:开心-森贝儿贵宾犬起飞.gif>
+<:疑惑-小巫母鸡蹲.png>
+<:无语.gif>
+```
+
+**How it works**:
+- Claude Code includes `<:filename.extension>` format in replies
+- Bot automatically detects and replaces with corresponding sticker image
+- No tool call notification shown, more natural
+
+**Sticker naming convention**:
+- Format: `meaning-content.extension`
+- Example: `开心-森贝儿贵宾犬起飞.gif` (happy-Sanbei pug taking off.gif)
+
+#### 5.4 File Operations
 
 **Configure default download directory** (in `config.yaml`):
 ```yaml
