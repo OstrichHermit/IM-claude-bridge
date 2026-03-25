@@ -223,7 +223,7 @@ class Manager:
         weixin_bot_running = self.is_weixin_bot_running()
         bridge_running = self.is_bridge_running()
 
-        if bot_running and bridge_running:
+        if bot_running and weixin_bot_running and bridge_running:
             self.log("✅ 初始检查: 所有服务运行正常")
         else:
             if not bot_running:
@@ -246,16 +246,11 @@ class Manager:
                     time.sleep(30)
 
                     # 延迟后再次检查
-                    if self.is_bot_running() and self.is_bridge_running():
+                    if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running():
                         self.log("✅ 重启成功，移除重启标记和重置重试次数")
                         self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
-
-                    # 检查微信 Bot（可选）
-                    weixin_bot_running = self.is_weixin_bot_running()
-                    if not weixin_bot_running:
-                        self.log("⚠️  微信 Bot 未运行（非必需服务）")
 
                     # 重启未成功，获取当前重试次数
                     retry_count = self.get_retry_count()
@@ -288,16 +283,19 @@ class Manager:
 
                 # 正常监控：检查进程状态
                 bot_running = self.is_bot_running()
+                weixin_bot_running = self.is_weixin_bot_running()
                 bridge_running = self.is_bridge_running()
 
-                if bot_running and bridge_running:
+                if bot_running and weixin_bot_running and bridge_running:
                     # 所有进程正常，重置重试次数
                     if self.retry_count_file.exists():
                         self.reset_retry_count()
-                elif not bot_running or not bridge_running:
+                elif not bot_running or not weixin_bot_running or not bridge_running:
                     # 发现进程挂了，创建重启标记并触发重启
                     if not bot_running:
                         self.log("⚠️  Discord Bot 未运行，触发重启...")
+                    if not weixin_bot_running:
+                        self.log("⚠️  微信 Bot 未运行，触发重启...")
                     if not bridge_running:
                         self.log("⚠️  Claude Bridge 未运行，触发重启...")
 
