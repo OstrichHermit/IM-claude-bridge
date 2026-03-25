@@ -731,25 +731,24 @@ class SessionWorker:
         """构建发送者信息"""
         sender_base = f"{username}（{user_id}）"
 
-        # 根据 channel_type 确定频道名称和前后空格
+        # 根据 channel_type 确定频道名称
         if channel_type == 'discord':
             channel_prefix = "在 Discord "
-            channel_infix = " Discord "
             channel_text = "频道"
         else:  # weixin
             channel_prefix = "在微信"
-            channel_infix = "微信"
             channel_text = "群聊"
 
         if attachments:
             filenames_str = '、'.join([a.filename for a in attachments])
-
+            file_path = self.config.default_download_directory
+            attachment_info = f"引用了文件名为 {filenames_str} 的已下载附件，文件位于 {file_path} 中"
             if is_dm:
-                sender_info = f"{sender_base}{channel_prefix}私聊中引用了文件名为 {filenames_str} 的已下载附件，并说："
+                sender_info = f"{sender_base}{channel_prefix}私聊中{attachment_info}，并说："
             elif channel_id:
-                sender_info = f"{sender_base}{channel_prefix}{channel_text}（{channel_id}）中引用了文件名为 {filenames_str} 的已下载附件，并说："
+                sender_info = f"{sender_base}{channel_prefix}{channel_text}（{channel_id}）中{attachment_info}，并说："
             else:
-                sender_info = f"{sender_base}引用了文件名为 {filenames_str} 的已下载附件，并说："
+                sender_info = f"{sender_base}{attachment_info}，并说："
         else:
             if is_dm:
                 sender_info = f"{sender_base}{channel_prefix}私聊中说："

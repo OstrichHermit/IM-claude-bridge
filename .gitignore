@@ -67,3 +67,4 @@ discord_bridge.db
 /stickers
 .manager.retry_count
 shared/weixin_accounts.json
+shared/weixin_file_mapping.json

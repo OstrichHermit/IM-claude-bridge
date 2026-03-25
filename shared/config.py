@@ -243,6 +243,16 @@ class Config:
         return self._config.get('weixin', {}).get('tool_use_notification', {}).get('enabled', False)
 
     @property
+    def weixin_file_mapping_path(self) -> str:
+        """获取微信文件映射表路径（独立于 Discord）"""
+        mapping_file = self._config.get('weixin', {}).get('file_mapping_path', './shared/weixin_file_mapping.json')
+        # 转换为绝对路径
+        if not os.path.isabs(mapping_file):
+            project_root = Path(__file__).parent.parent
+            mapping_file = project_root / mapping_file
+        return str(mapping_file)
+
+    @property
     def file_mapping_path(self) -> str:
         """获取文件映射表路径"""
         mapping_file = self._config.get('file_mapping', {}).get('path', './file_mapping.json')

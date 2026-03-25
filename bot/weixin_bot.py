@@ -3,6 +3,7 @@
 接收微信消息并转发给 Claude Code
 """
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -13,11 +14,12 @@ import zlib
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType
+from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.message_queue import MessageTag as MessageTagEnum
 from shared.context_token_storage import ContextTokenStorage
 from bot.weixin_client import WeixinClient, WeixinAccount
 from bot.weixin_qr_login import WeixinAccountManager
+from bot.weixin_media import WeixinMediaHandler, WeixinFileMapping, MediaType
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,16 @@ class WeixinBot:
 
         # 加载用户信息（从账号配置中）
         self._load_users()
+
+        # 文件下载和处理（使用 config 中的文件下载路径）
+        self.media_handler = WeixinMediaHandler(config.default_download_directory)
+
+        # 文件映射表（使用微信专用的映射表路径，不与 Discord 共享）
+        self.file_mapping = WeixinFileMapping(config.weixin_file_mapping_path)
+
+        print(f"✅ 文件下载模块已初始化")
+        print(f"   - 文件保存目录: {config.default_download_directory}")
+        print(f"   - 文件映射表: {config.weixin_file_mapping_path}")
 
     def _load_accounts(self):
         """加载已保存的账号"""
@@ -1123,13 +1135,17 @@ class WeixinBot:
 
             self.id_to_username[user_id_int] = from_user_id
 
-            # 解析消息内容
-            content = await self._parse_message_content(msg)
+            # 解析消息内容（获取文本和引用的文件）
+            content, ref_files = await self._parse_message_content(msg)
 
+            # 如果没有内容（只有文件消息），不发送给 AI
             if not content:
+                print(f"📨 [{from_user_id}] 只发送了文件，已下载并保存，不发送给 AI")
                 return
 
             print(f"📨 收到来自 [{from_user_id}] 的消息: {content[:30]}...")
+            if ref_files:
+                print(f"📎 引用了 {len(ref_files)} 个文件")
 
             # 检查是否是命令
             content_stripped = content.strip()
@@ -1138,7 +1154,26 @@ class WeixinBot:
                 return
 
             # 构造消息队列消息
-            # 从配置中获取 user_id（不再动态计算）
+            # 将引用的文件信息转换为 AttachmentInfo 对象
+            attachments = None
+            if ref_files:
+                attachments = []
+                for f in ref_files:
+                    # 获取文件大小
+                    file_size = 0
+                    try:
+                        file_size = os.path.getsize(f["file_path"])
+                    except Exception:
+                        pass
+
+                    attachments.append(AttachmentInfo(
+                        id=int(f.get("message_id", 0)),  # 使用 message_id 作为 ID
+                        filename=f["filename"],  # 文件名
+                        size=file_size,  # 文件大小
+                        url=f"file://{f['file_path']}",  # 本地文件路径作为 URL
+                        local_filename=f["filename"],  # 本地文件名
+                        description=None  # 无描述
+                    ))
 
             queue_msg = Message(
                 id=None,
@@ -1153,7 +1188,8 @@ class WeixinBot:
                 is_external=False,
                 tag=MessageTag.DEFAULT.value,
                 channel_type=ChannelType.WEIXIN.value,  # 微信频道
-                context_token=context_token  # 保存 context_token 用于回复
+                context_token=context_token,  # 保存 context_token 用于回复
+                attachments=attachments  # 添加附件信息
             )
 
             # 写入消息队列
@@ -1205,49 +1241,198 @@ class WeixinBot:
         except Exception as e:
             print(f"❌ 处理消息失败: {e}")
 
-    async def _parse_message_content(self, msg: dict) -> str | None:
-        """解析消息内容"""
+    async def _parse_message_content(self, msg: dict) -> tuple[str | None, list[dict]]:
+        """解析消息内容
+
+        Returns:
+            (文本内容, 引用的文件列表)
+        """
         try:
+            print(f"🔍 完整消息结构 keys: {list(msg.keys())}")
             item_list = msg.get("item_list", [])
             if not item_list:
-                return None
+                return None, []
 
             content_parts = []
+            ref_files = []
+
+            message_id = msg.get("message_id", "")
+            msg_create_time_ms = msg.get("create_time_ms")
+            print(f"🔍 消息 message_id={message_id}, create_time_ms={msg_create_time_ms}")
 
             for item in item_list:
                 item_type = item.get("type")
 
                 # 文本消息
-                if item_type == 1:
+                if item_type == MediaType.TEXT:
                     text_item = item.get("text_item", {})
                     text = text_item.get("text", "")
+
+                    # 检查是否有引用消息
+                    ref_msg = item.get("ref_msg")
+                    print(f"🔍 检查 ref_msg: {ref_msg}")
+                    if ref_msg:
+                        _, found_files = self._parse_ref_message_and_lookup(ref_msg, msg.get("from_user_id", ""))
+                        ref_files.extend(found_files)
+
                     content_parts.append(text)
 
-                # 图片消息
-                elif item_type == 2:
-                    image_item = item.get("image_item", {})
-                    # TODO: 下载图片并保存
-                    content_parts.append("[图片]")
+                # 图片消息（只下载保存，不加入返回列表）
+                elif item_type == MediaType.IMAGE:
+                    filepath = await self.media_handler.download_media_item(
+                        item,
+                        label=f"inbound_{message_id}"
+                    )
+                    if filepath:
+                        filename = Path(filepath).name
+                        # 从文件获取实际大小
+                        import os
+                        file_size = os.path.getsize(filepath)
+                        # 保存文件映射：file_size → filename
+                        self.file_mapping.add_file(filename, file_size)
+                        print(f"📎 图片已下载并保存映射: {filename} (size={file_size})")
+                    # 图片消息不返回内容，不发送给 AI
 
-                # 语音消息
-                elif item_type == 3:
-                    content_parts.append("[语音]")
+                # 语音消息（不处理）
+                elif item_type == MediaType.VOICE:
+                    pass  # 语音不返回内容
 
-                # 文件消息
-                elif item_type == 4:
-                    file_item = item.get("file_item", {})
-                    filename = file_item.get("filename", "未知文件")
-                    content_parts.append(f"[文件: {filename}]")
+                # 文件消息（只下载保存，不加入返回列表）
+                elif item_type == MediaType.FILE:
+                    filepath = await self.media_handler.download_media_item(
+                        item,
+                        label=f"inbound_{message_id}"
+                    )
+                    if filepath:
+                        filename = Path(filepath).name
+                        # 从文件获取实际大小
+                        import os
+                        file_size = os.path.getsize(filepath)
+                        # 保存文件映射：file_size → filename
+                        self.file_mapping.add_file(filename, file_size)
+                        print(f"📎 文件已下载并保存映射: {filename} (size={file_size})")
+                    # 文件消息不返回内容，不发送给 AI
 
-                # 视频消息
-                elif item_type == 5:
-                    content_parts.append("[视频]")
+                # 视频消息（只下载保存，不加入返回列表）
+                elif item_type == MediaType.VIDEO:
+                    filepath = await self.media_handler.download_media_item(
+                        item,
+                        label=f"inbound_{message_id}"
+                    )
+                    if filepath:
+                        filename = Path(filepath).name
+                        # 从文件获取实际大小
+                        import os
+                        file_size = os.path.getsize(filepath)
+                        # 保存文件映射：file_size → filename
+                        self.file_mapping.add_file(filename, file_size)
+                        print(f"📎 视频已下载并保存映射: {filename} (size={file_size})")
+                    # 视频消息不返回内容，不发送给 AI
 
-            return "\n".join(content_parts)
+            # 如果只有媒体文件没有文字，返回 None（不发送给 AI）
+            if not content_parts or all(not part.strip() for part in content_parts):
+                return None, []
+
+            return "\n".join(content_parts), ref_files
 
         except Exception as e:
             print(f"❌ 解析消息内容失败: {e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            return None, []
+
+    def _parse_ref_message_and_lookup(self, ref_msg: dict, from_user_id: str) -> tuple[str, list[dict]]:
+        """解析引用消息并从映射表中查找文件
+
+        Returns:
+            (引用文本, 找到的文件列表)
+        """
+        print(f"🔍 开始解析引用消息: {ref_msg}")
+        parts = []
+        found_files = []
+
+        # 添加标题
+        title = ref_msg.get("title")
+        if title:
+            parts.append(title)
+
+        # 添加引用的消息内容
+        ref_item = ref_msg.get("message_item")
+        if ref_item:
+            print(f"🔍 引用消息的 message_item: {ref_item}")
+            ref_type = ref_item.get("type")
+            print(f"🔍 引用消息类型: {ref_type}")
+
+            if ref_type == MediaType.TEXT:  # 文本
+                text = ref_item.get("text_item", {}).get("text", "")
+                if text:
+                    parts.append(text)
+
+            elif ref_type == MediaType.FILE:  # 文件
+                file_item = ref_item.get("file_item", {})
+                filename = file_item.get("filename", "文件")
+                parts.append(f"[文件: {filename}]")
+
+                # 使用文件大小匹配文件
+                file_size = file_item.get("filesize")
+                print(f"🔍 引用文件的 file_size: {file_size}")
+                if file_size:
+                    local_filename = self.file_mapping.get_filename_by_size(file_size)
+                    if local_filename:
+                        # 构造完整文件路径
+                        file_path = str(self.media_handler.save_dir / local_filename)
+                        found_files.append({
+                            "message_id": str(file_size),
+                            "file_path": file_path,
+                            "filename": local_filename,
+                        })
+                        print(f"📎 通过 file_size 精确匹配引用文件: {file_size} → {local_filename}")
+                    else:
+                        print(f"⚠️ 引用文件未找到映射: file_size={file_size}")
+
+            elif ref_type == MediaType.IMAGE:  # 图片
+                parts.append("[图片]")
+                # 使用文件大小匹配文件
+                image_item = ref_item.get("image_item", {})
+                file_size = image_item.get("mid_size")
+                print(f"🔍 引用图片的 file_size: {file_size}")
+                if file_size:
+                    local_filename = self.file_mapping.get_filename_by_size(file_size)
+                    if local_filename:
+                        # 构造完整文件路径
+                        file_path = str(self.media_handler.save_dir / local_filename)
+                        found_files.append({
+                            "message_id": str(file_size),
+                            "file_path": file_path,
+                            "filename": local_filename,
+                        })
+                        print(f"📎 通过 file_size 精确匹配引用图片: {file_size} → {local_filename}")
+                    else:
+                        print(f"⚠️ 引用图片未找到映射: file_size={file_size}")
+
+            elif ref_type == MediaType.VIDEO:  # 视频
+                parts.append("[视频]")
+                # 使用文件大小匹配文件
+                video_item = ref_item.get("video_item", {})
+                file_size = video_item.get("video_size")
+                print(f"🔍 引用视频的 file_size: {file_size}")
+                if file_size:
+                    local_filename = self.file_mapping.get_filename_by_size(file_size)
+                    if local_filename:
+                        # 构造完整文件路径
+                        file_path = str(self.media_handler.save_dir / local_filename)
+                        found_files.append({
+                            "message_id": str(file_size),
+                            "file_path": file_path,
+                            "filename": local_filename,
+                        })
+                        print(f"📎 通过 file_size 精确匹配引用视频: {file_size} → {local_filename}")
+                    else:
+                        print(f"⚠️ 引用视频未找到映射: file_size={file_size}")
+        else:
+            print(f"⚠️ 引用消息没有 message_item")
+
+        return " | ".join(parts), found_files
 
     async def _handle_command(self, from_user_id: str, command: str, account_bot_id: str):
         """处理命令消息
