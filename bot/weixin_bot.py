@@ -7,7 +7,6 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-import logging
 import zlib
 
 # 添加 shared 目录到 Python 路径
@@ -20,8 +19,6 @@ from shared.context_token_storage import ContextTokenStorage
 from bot.weixin_client import WeixinClient, WeixinAccount
 from bot.weixin_qr_login import WeixinAccountManager
 from bot.weixin_media import WeixinMediaHandler, WeixinFileMapping, MediaType
-
-logger = logging.getLogger(__name__)
 
 
 class WeixinBot:
@@ -68,7 +65,7 @@ class WeixinBot:
         # 账号管理
         self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
         self._load_accounts()
-        print(f"✅ 微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
+        print(f"微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
 
         # 加载用户信息（从账号配置中）
         self._load_users()
@@ -79,14 +76,10 @@ class WeixinBot:
         # 文件映射表（使用微信专用的映射表路径，不与 Discord 共享）
         self.file_mapping = WeixinFileMapping(config.weixin_file_mapping_path)
 
-        print(f"✅ 文件下载模块已初始化")
-        print(f"   - 文件保存目录: {config.default_download_directory}")
-        print(f"   - 文件映射表: {config.weixin_file_mapping_path}")
-
     def _load_accounts(self):
         """加载已保存的账号"""
         self.accounts = self.account_manager.load_accounts()
-        logger.info(f"Loaded {len(self.accounts)} accounts")
+        print(f"Loaded {len(self.accounts)} accounts")
 
     def _load_users(self):
         """从账号配置中加载用户信息"""
@@ -111,8 +104,7 @@ class WeixinBot:
             # username -> user_id（用于消息处理）
             self.username_to_userid[account.username] = account.user_id
 
-        print(f"✅ 加载了 {len(self.accounts)} 个用户信息")
-        logger.info(f"Loaded {len(self.accounts)} users")
+        print(f"已加载 {len(self.accounts)} 个用户信息")
 
     async def run(self):
         """启动 Bot"""
@@ -121,7 +113,7 @@ class WeixinBot:
             return
 
         self.running = True
-        print(f"🚀 微信 Bot 启动中...")
+        print("🚀 微信 Bot 启动中...")
 
         # 清理数据库中的旧消息序列（避免重复处理）
         print("🧹 清理旧的消息序列和工具调用结果...")
@@ -177,20 +169,14 @@ class WeixinBot:
 
             if deleted_count > 0:
                 print(f"✅ 已清理 {deleted_count} 条旧的消息序列")
-            else:
-                print("✓ 没有需要清理的消息序列")
-
             if deleted_tools_count > 0:
                 print(f"✅ 已清理 {deleted_tools_count} 条旧的工具调用结果")
-            else:
-                print("✓ 没有需要清理的工具调用结果")
-
             if updated_messages_count > 0:
                 print(f"✅ 已取消 {updated_messages_count} 条旧的处理中消息")
-            else:
-                print("✓ 没有需要取消的旧消息")
+            if deleted_count == 0 and deleted_tools_count == 0 and updated_messages_count == 0:
+                print("✓ 没有需要清理的旧数据")
         except Exception as e:
-            print(f"⚠️  清理旧数据时出错: {e}")
+            print(f"❌ 清理旧数据时出错: {e}")
 
         # 为每个账号启动长轮询任务
         for account in self.accounts:
@@ -215,6 +201,7 @@ class WeixinBot:
             self.sequence_check_task,
             self.tool_result_check_task
         )
+        print("✓ 微信 Bot 已停止")
 
     async def stop(self):
         """停止 Bot"""
@@ -243,7 +230,7 @@ class WeixinBot:
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
             return_exceptions=True
         )
-        print("✅ 微信 Bot 已停止")
+        print("微信 Bot 已停止")
 
     async def _polling_loop(self, account: WeixinAccount):
         """长轮询循环"""
@@ -298,7 +285,6 @@ class WeixinBot:
             context_token=context_token
         )
 
-        print(f"✅ 已发送: {len(response_text)} 字符")
         return result
 
     async def _send_text_to_weixin(self, client: WeixinClient, msg: Message, text: str):
@@ -314,7 +300,6 @@ class WeixinBot:
             context_token=context_token
         )
 
-        print(f"📤 流式发送: {len(text)} 字符")
         return result
 
     async def _check_file_requests(self):
@@ -414,7 +399,6 @@ class WeixinBot:
                             raise Exception(f"未找到 wxid={target_wxid} 对应的账号")
 
                         client = self.clients.get(account.bot_id)
-                        print(f"📤 [文件请求] target_user={target_user}, user_id={user_id_int}, wxid={target_wxid}, 选择账号={account.username}({account.bot_id})")
 
                         if not client:
                             raise Exception(f"账号 {account.bot_id} 的客户端未初始化")
@@ -433,13 +417,14 @@ class WeixinBot:
                         # 只有至少有一个文件成功发送才标记为完成
                         if sent_count > 0:
                             self.message_queue.update_file_request_status(file_request.id, FileRequestStatus.COMPLETED)
+                            print(f"✅ [文件请求] 成功发送 {sent_count}/{len(file_paths)} 个文件")
                         else:
                             self.message_queue.update_file_request_status(
                                 file_request.id,
                                 FileRequestStatus.FAILED,
                                 error=f"所有 {len(file_paths)} 个文件发送失败"
                             )
-                            print(f"❌ 文件请求 {file_request.id} 失败: 所有文件发送失败")
+                            print(f"❌ [文件请求] 所有文件发送失败")
 
                 except Exception as e:
                         print(f"❌ 处理文件请求失败: {e}")
@@ -458,8 +443,6 @@ class WeixinBot:
 
     async def check_message_sequences(self):
         """检查并发送消息序列（统一的发送任务）"""
-        print("🌊 消息序列检查任务已启动")
-
         from datetime import datetime
 
         # 追踪每个消息的发送状态
@@ -477,7 +460,6 @@ class WeixinBot:
 
                         # 检查 AI 响应是否已完成，且所有序列都已发送（和 Discord bot 完全一样的逻辑）
                         if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
-                            print(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
                             # 1. 停止正在输入状态
                             await self.stop_typing_indicator(message_id)
                             # 2. 清理数据库相关序列
@@ -509,7 +491,6 @@ class WeixinBot:
                         msg_status = self.message_queue.get_message_status(message_id)
                         if msg_status == MessageStatus.AI_STARTED:
                             # AI started 但 typing indicator 还没启动，立即启动
-                            print(f"⚡ [消息 #{message_id}] AI 已开始工作但 typing indicator 未启动，尝试启动...")
                             # 查找对应的账号
                             for account in self.accounts:
                                 if account.bot_id in self.clients:
@@ -529,7 +510,6 @@ class WeixinBot:
                                                 "from_user_id": username,
                                                 "account_bot_id": account.bot_id
                                             }
-                                            print(f"✅ [消息 #{message_id}] AI started 时补启动 typing indicator 成功")
                                             break
 
                     # 初始化消息状态
@@ -542,7 +522,6 @@ class WeixinBot:
                     if not pending_sequences:
                         # 没有待发送的序列，检查是否完成
                         stats = self.message_queue.get_message_sequences_stats(message_id)
-                        print(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
 
                         # 检查 AI 响应是否已完成，且所有序列都已发送
                         # 使用和 Discord bot 相同的逻辑：pending == 0 且 AI 响应完成
@@ -550,7 +529,6 @@ class WeixinBot:
                         pending_tool_results = self.message_queue.get_pending_tool_use_results()
                         pending_for_this_msg = [r for r in pending_tool_results if r["message_id"] == message_id]
                         if pending_for_this_msg:
-                            print(f"🔍 [消息 #{message_id}] 还有 {len(pending_for_this_msg)} 个工具结果待处理，等待...")
                             await asyncio.sleep(0.1)
                             continue
 
@@ -575,7 +553,6 @@ class WeixinBot:
 
                     # 根据用户名选择正确的账号
                     if not self.accounts:
-                        print(f"⚠️  没有可用的微信账号")
                         continue
 
                     # 检查 username 是配置的用户名还是原始 wxid
@@ -598,7 +575,6 @@ class WeixinBot:
                         target_account = self.accounts[0]
                         # username 是原始 wxid（外部联系人），直接使用
                         to_user_id = username
-                        print(f"ℹ️  使用默认账号 [{target_account.bot_id}] 发送给 [{username}]")
                     else:
                         # 多个账号，无法确定使用哪个
                         # 检查是否有 context_token，如果有则使用第一个有 token 的账号
@@ -606,21 +582,17 @@ class WeixinBot:
                             # 有 context_token，使用第一个账号
                             target_account = self.accounts[0]
                             to_user_id = username
-                            print(f"ℹ️  使用第一个账号 [{target_account.bot_id}] 发送给 [{username}]")
                         else:
                             # 没有 context_token，跳过这条消息（可能是旧消息）
                             # 清理这些消息序列，避免重复处理
                             self.message_queue.cleanup_message_sequences(message_id)
-                            print(f"⏭️  跳过未配置用户 [{username}] 的消息序列")
                             continue
 
                     if not target_account:
-                        print(f"⚠️  未找到用户 [{username}] 对应的账号")
                         continue
 
                     client = self.clients.get(target_account.bot_id)
                     if not client:
-                        print(f"⚠️  账号 {target_account.bot_id} 的客户端未初始化")
                         continue
 
                     # 获取 context_token
@@ -628,7 +600,6 @@ class WeixinBot:
                     context_token = self.context_tokens.get(username) or msg_context_token or ""
 
                     if not context_token:
-                        print(f"⚠️  用户 {username} 没有有效的 context_token")
                         continue
 
                     # 发送序列项（只有一条）
@@ -655,9 +626,8 @@ class WeixinBot:
                                         typing_ticket = config_result.get("typing_ticket", "")
                                         if typing_ticket:
                                             self.typing_tickets[username] = typing_ticket
-                                            print(f"✅ 自动获取用户 {username} 的 typing_ticket 成功")
                                     except Exception as e:
-                                        print(f"⚠️ 自动获取 typing_ticket 失败: {e}")
+                                        pass
 
                                 # 确保 typing indicator 已启动（AI started 时触发）
                                 if message_id not in self.pending_messages:
@@ -675,10 +645,8 @@ class WeixinBot:
                                             "from_user_id": username,
                                             "account_bot_id": target_account.bot_id
                                         }
-                                        print(f"✅ [消息 #{message_id}] AI started，启动 typing indicator")
 
                                 # 调试日志
-                                print(f"🔍 [消息 #{message_id}] 准备发送: to_user_id={to_user_id}, context_token长度={len(context_token)}, text长度={len(text.strip())}")
 
                                 try:
                                     # 直接发送文本
@@ -687,10 +655,10 @@ class WeixinBot:
                                         text=text.strip(),
                                         context_token=context_token
                                     )
-                                    print(f"✅ [消息 #{message_id}] 已发送文本: {text[:30]}...")
+                                    logger.info(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
                                 except Exception as send_error:
                                     # 发送失败
-                                    print(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
+                                    logger.error(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
                                     # 标记序列为已发送，避免无限重试
                                     self.message_queue.mark_sequence_sent(seq_id)
                                     # 继续下一条消息
@@ -700,8 +668,6 @@ class WeixinBot:
                             # 对于工具调用，由于微信不支持编辑消息
                             # 我们需要等待工具执行完成后再发送通知
                             # 这里先标记序列为已发送，但实际通知在 check_tool_use_results 中发送
-                            tool_name = item_data.get("name", "")
-                            print(f"🔧 [消息 #{message_id}] 工具调用: {tool_name} (等待执行完成)")
                             # 不发送任何消息，等待工具执行完成
 
                             # 保存工具调用引用（用于后续查询工具执行结果）
@@ -726,27 +692,19 @@ class WeixinBot:
                         print(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
                         # 标记为已发送，避免无限重试
                         self.message_queue.mark_sequence_sent(seq_id)
-                        import traceback
-                        traceback.print_exc()
 
                 except Exception as e:
                     print(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
-                    import traceback
-                    traceback.print_exc()
 
                 # 极小延迟，避免无消息时CPU空转
                 await asyncio.sleep(0.01)
 
             except Exception as e:
                 print(f"❌ 检查消息序列时出错: {e}")
-                import traceback
-                traceback.print_exc()
                 await asyncio.sleep(5)
 
     async def check_tool_use_results(self):
         """定期检查工具执行结果并发送工具调用通知"""
-        print("🔧 工具执行结果检查任务已启动")
-
         while self.running:
             try:
                 # 检查是否启用微信工具调用通知
@@ -758,15 +716,10 @@ class WeixinBot:
                 # 获取待处理的工具执行结果（只处理微信频道的）
                 pending_results = self.message_queue.get_pending_tool_use_results(channel_type='weixin')
 
-                if pending_results:
-                    print(f"🔍 找到 {len(pending_results)} 个待处理的工具执行结果")
-
                 for result in pending_results:
                     message_id = result['message_id']
                     tool_use_index = result['tool_use_index']
                     success = result['success']
-
-                    print(f"🔧 处理工具执行结果: 消息#{message_id}, 索引#{tool_use_index}, 成功={success}")
 
                     try:
                         # 从数据库获取消息信息
@@ -790,7 +743,6 @@ class WeixinBot:
 
                         # 根据用户名选择正确的账号
                         if not self.accounts:
-                            print(f"⚠️  没有可用的微信账号")
                             continue
 
                         # 检查 username 是配置的用户名还是原始 wxid
@@ -813,7 +765,6 @@ class WeixinBot:
                             target_account = self.accounts[0]
                             # username 是原始 wxid（外部联系人），直接使用
                             to_user_id = username
-                            print(f"ℹ️  使用默认账号 [{target_account.bot_id}] 发送给 [{username}]")
                         else:
                             # 多个账号，无法确定使用哪个
                             # 检查是否有 context_token，如果有则使用第一个有 token 的账号
@@ -821,23 +772,19 @@ class WeixinBot:
                                 # 有 context_token，使用第一个账号
                                 target_account = self.accounts[0]
                                 to_user_id = username
-                                print(f"ℹ️  使用第一个账号 [{target_account.bot_id}] 发送给 [{username}]")
                             else:
                                 # 没有 context_token，跳过这条消息
                                 # 标记为已处理，避免重复处理
                                 self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
-                                print(f"⏭️  跳过未配置用户 [{username}] 的工具调用通知")
                                 continue
 
                         if not target_account:
-                            print(f"⚠️  未找到用户 [{username}] 对应的账号，跳过工具调用通知")
                             # 标记为已处理
                             self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
                             continue
 
                         client = self.clients.get(target_account.bot_id)
                         if not client:
-                            print(f"⚠️  账号 {target_account.bot_id} 的客户端未初始化，跳过工具调用通知")
                             # 标记为已处理
                             self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
                             continue
@@ -847,7 +794,6 @@ class WeixinBot:
                         context_token = self.context_tokens.get(username) or msg_context_token or ""
 
                         if not context_token:
-                            print(f"⚠️  用户 {username} 没有有效的 context_token，跳过工具调用通知")
                             # 标记为已处理，避免重复处理
                             self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
                             continue
@@ -855,7 +801,6 @@ class WeixinBot:
                         # 获取工具调用信息
                         tool_uses = self.message_queue.get_tool_uses(message_id)
                         if tool_use_index >= len(tool_uses):
-                            print(f"⚠️  工具调用索引 {tool_use_index} 超出范围，跳过")
                             # 标记为已处理
                             self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
                             continue
@@ -953,14 +898,8 @@ class WeixinBot:
                                 typing_ticket = config_result.get("typing_ticket", "")
                                 if typing_ticket:
                                     self.typing_tickets[username] = typing_ticket
-                                    print(f"✅ 自动获取用户 {username} 的 typing_ticket 成功")
                             except Exception as e:
-                                print(f"⚠️ 自动获取 typing_ticket 失败: {e}")
-
-                        print(f"🔍 [消息 #{message_id}] 准备发送工具调用通知:")
-                        print(f"   to_user_id={to_user_id}")
-                        print(f"   context_token长度={len(context_token)}")
-                        print(f"   通知文本={notification_text[:50]}...")
+                                pass
 
                         # 发送通知到微信
                         try:
@@ -969,7 +908,7 @@ class WeixinBot:
                                 text=notification_text,
                                 context_token=context_token
                             )
-                            print(f"✅ [消息 #{message_id}] 已发送工具调用通知: {tool_name} - {'成功' if success else '失败'}")
+                            print(f"🔧 [消息 #{message_id}] 已发送工具调用通知: {tool_name} - {'成功' if success else '失败'}")
                         except Exception as send_error:
                             print(f"❌ [消息 #{message_id}] 发送工具调用通知失败: {send_error}")
                             # 标记为已处理，避免无限重试
@@ -978,8 +917,6 @@ class WeixinBot:
 
                     except Exception as e:
                         print(f"❌ 发送工具调用通知失败: 消息#{message_id}, 工具#{tool_use_index}, 错误: {e}")
-                        import traceback
-                        traceback.print_exc()
 
                     # 标记为已处理
                     self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
@@ -989,8 +926,6 @@ class WeixinBot:
 
             except Exception as e:
                 print(f"❌ 检查工具执行结果时出错: {e}")
-                import traceback
-                traceback.print_exc()
                 await asyncio.sleep(5)
 
     async def _send_file_to_weixin(self, client: WeixinClient, to_user_id: str, file_path: str, context_token: str, user_id: int):
@@ -1036,7 +971,7 @@ class WeixinBot:
                         target_wxid = acc.get("wxid")
                         break
         except Exception as e:
-            print(f"⚠️ 读取账号配置失败: {e}")
+            print(f"❌ 读取账号配置失败: {e}")
 
         if not target_wxid:
             raise Exception(f"未找到用户 wxid: user_id={user_id}")
@@ -1100,8 +1035,7 @@ class WeixinBot:
         }
 
         # 发送媒体消息
-        print(f"📤 [文件发送] to_user_id={target_wxid}, media_type={message_type}, file={file_name}")
-        print(f"📤 [文件发送] context_token长度={len(context_token) if context_token else 0}")
+        print(f"📤 [文件发送] to_user={target_wxid}, type={message_type}, file={file_name}, size={file_size}")
         result = await client.send_media_message(
             to_user_id=target_wxid,
             media_type=message_type,
@@ -1110,7 +1044,7 @@ class WeixinBot:
             file_name=file_name,
             filesize=file_size
         )
-        print(f"✅ [文件发送] 成功发送媒体消息: {result}")
+        print(f"✅ [文件发送] 成功: {file_name}")
 
     async def _handle_message(self, msg: dict, account_id: str):
         """处理单条消息"""
@@ -1140,10 +1074,9 @@ class WeixinBot:
 
             # 如果没有内容（只有文件消息），不发送给 AI
             if not content:
-                print(f"📨 [{from_user_id}] 只发送了文件，已下载并保存，不发送给 AI")
                 return
 
-            print(f"📨 收到来自 [{from_user_id}] 的消息: {content[:30]}...")
+            print(f"📨 [{from_user_id}] 收到消息: {content[:50]}...")
             if ref_files:
                 print(f"📎 引用了 {len(ref_files)} 个文件")
 
@@ -1210,13 +1143,11 @@ class WeixinBot:
                         typing_ticket = config_result.get("typing_ticket", "")
                         if typing_ticket:
                             self.typing_tickets[from_user_id] = typing_ticket
-                            print(f"✅ 获取到用户 {from_user_id} 的 typing ticket")
                     except Exception as e:
-                        print(f"⚠️ 获取 typing ticket 失败: {e}")
+                        pass
 
             # 启动 typing indicator（确保 typing_ticket 存在）
             if from_user_id not in self.typing_tickets:
-                print(f"⚠️ [消息 #{message_id}] 点 A: 等待获取 typing_ticket...")
                 client = self.clients.get(account_id)
                 if client:
                     try:
@@ -1228,15 +1159,12 @@ class WeixinBot:
                         typing_ticket = config_result.get("typing_ticket", "")
                         if typing_ticket:
                             self.typing_tickets[from_user_id] = typing_ticket
-                            print(f"✅ [消息 #{message_id}] 点 A: 自动获取 typing_ticket 成功")
                     except Exception as e:
-                        print(f"⚠️ [消息 #{message_id}] 点 A: 获取 typing_ticket 失败: {e}")
+                        pass
 
             # 尝试启动 typing indicator
             if from_user_id in self.typing_tickets:
                 self.start_typing_indicator(message_id, from_user_id, account_id)
-            else:
-                print(f"⚠️ [消息 #{message_id}] 点 A: 未能启动 typing indicator (typing_ticket 不存在)")
 
         except Exception as e:
             print(f"❌ 处理消息失败: {e}")
@@ -1248,17 +1176,12 @@ class WeixinBot:
             (文本内容, 引用的文件列表)
         """
         try:
-            print(f"🔍 完整消息结构 keys: {list(msg.keys())}")
             item_list = msg.get("item_list", [])
             if not item_list:
                 return None, []
 
             content_parts = []
             ref_files = []
-
-            message_id = msg.get("message_id", "")
-            msg_create_time_ms = msg.get("create_time_ms")
-            print(f"🔍 消息 message_id={message_id}, create_time_ms={msg_create_time_ms}")
 
             for item in item_list:
                 item_type = item.get("type")
@@ -1270,7 +1193,6 @@ class WeixinBot:
 
                     # 检查是否有引用消息
                     ref_msg = item.get("ref_msg")
-                    print(f"🔍 检查 ref_msg: {ref_msg}")
                     if ref_msg:
                         _, found_files = self._parse_ref_message_and_lookup(ref_msg, msg.get("from_user_id", ""))
                         ref_files.extend(found_files)
@@ -1290,7 +1212,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        print(f"📎 图片已下载并保存映射: {filename} (size={file_size})")
+                        print(f"📎 图片已下载: {filename} ({file_size} bytes)")
                     # 图片消息不返回内容，不发送给 AI
 
                 # 语音消息（不处理）
@@ -1310,7 +1232,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        print(f"📎 文件已下载并保存映射: {filename} (size={file_size})")
+                        print(f"📎 文件已下载: {filename} ({file_size} bytes)")
                     # 文件消息不返回内容，不发送给 AI
 
                 # 视频消息（只下载保存，不加入返回列表）
@@ -1326,7 +1248,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        print(f"📎 视频已下载并保存映射: {filename} (size={file_size})")
+                        print(f"📎 视频已下载: {filename} ({file_size} bytes)")
                     # 视频消息不返回内容，不发送给 AI
 
             # 如果只有媒体文件没有文字，返回 None（不发送给 AI）
@@ -1337,8 +1259,6 @@ class WeixinBot:
 
         except Exception as e:
             print(f"❌ 解析消息内容失败: {e}")
-            import traceback
-            traceback.print_exc()
             return None, []
 
     def _parse_ref_message_and_lookup(self, ref_msg: dict, from_user_id: str) -> tuple[str, list[dict]]:
@@ -1347,7 +1267,6 @@ class WeixinBot:
         Returns:
             (引用文本, 找到的文件列表)
         """
-        print(f"🔍 开始解析引用消息: {ref_msg}")
         parts = []
         found_files = []
 
@@ -1359,9 +1278,7 @@ class WeixinBot:
         # 添加引用的消息内容
         ref_item = ref_msg.get("message_item")
         if ref_item:
-            print(f"🔍 引用消息的 message_item: {ref_item}")
             ref_type = ref_item.get("type")
-            print(f"🔍 引用消息类型: {ref_type}")
 
             if ref_type == MediaType.TEXT:  # 文本
                 text = ref_item.get("text_item", {}).get("text", "")
@@ -1375,7 +1292,6 @@ class WeixinBot:
 
                 # 使用文件大小匹配文件
                 file_size = file_item.get("filesize")
-                print(f"🔍 引用文件的 file_size: {file_size}")
                 if file_size:
                     local_filename = self.file_mapping.get_filename_by_size(file_size)
                     if local_filename:
@@ -1386,16 +1302,12 @@ class WeixinBot:
                             "file_path": file_path,
                             "filename": local_filename,
                         })
-                        print(f"📎 通过 file_size 精确匹配引用文件: {file_size} → {local_filename}")
-                    else:
-                        print(f"⚠️ 引用文件未找到映射: file_size={file_size}")
 
             elif ref_type == MediaType.IMAGE:  # 图片
                 parts.append("[图片]")
                 # 使用文件大小匹配文件
                 image_item = ref_item.get("image_item", {})
                 file_size = image_item.get("mid_size")
-                print(f"🔍 引用图片的 file_size: {file_size}")
                 if file_size:
                     local_filename = self.file_mapping.get_filename_by_size(file_size)
                     if local_filename:
@@ -1406,16 +1318,12 @@ class WeixinBot:
                             "file_path": file_path,
                             "filename": local_filename,
                         })
-                        print(f"📎 通过 file_size 精确匹配引用图片: {file_size} → {local_filename}")
-                    else:
-                        print(f"⚠️ 引用图片未找到映射: file_size={file_size}")
 
             elif ref_type == MediaType.VIDEO:  # 视频
                 parts.append("[视频]")
                 # 使用文件大小匹配文件
                 video_item = ref_item.get("video_item", {})
                 file_size = video_item.get("video_size")
-                print(f"🔍 引用视频的 file_size: {file_size}")
                 if file_size:
                     local_filename = self.file_mapping.get_filename_by_size(file_size)
                     if local_filename:
@@ -1426,11 +1334,8 @@ class WeixinBot:
                             "file_path": file_path,
                             "filename": local_filename,
                         })
-                        print(f"📎 通过 file_size 精确匹配引用视频: {file_size} → {local_filename}")
-                    else:
-                        print(f"⚠️ 引用视频未找到映射: file_size={file_size}")
         else:
-            print(f"⚠️ 引用消息没有 message_item")
+            pass
 
         return " | ".join(parts), found_files
 
@@ -1600,7 +1505,6 @@ class WeixinBot:
                     else:
                         msg = f"❌ 文件未找到\n\n找不到 manager.py 文件"
                         await self._send_direct_message(from_user_id, account_bot_id, msg)
-                        print(f"⚠️  manager.py 不存在: {manager_script}")
 
                 except Exception as e:
                     msg = f"❌ 停止失败\n\n错误: {str(e)}"
@@ -1618,7 +1522,6 @@ class WeixinBot:
             "如需确认，请在 60 秒内再次使用 /stop 命令"
         )
         await self._send_direct_message(from_user_id, account_bot_id, msg)
-        print(f"[停止命令] 用户 {from_user_id} 请求停止服务，等待再次确认...")
 
     async def _cmd_restart(self, from_user_id: str, account_bot_id: str):
         """重启服务"""
@@ -1643,7 +1546,6 @@ class WeixinBot:
             else:
                 msg = "❌ 文件未找到\n\n找不到 manager.py 文件"
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
-                print(f"⚠️  manager.py 不存在: {manager_script}")
 
         except Exception as e:
             msg = f"❌ 重启失败\n\n错误: {str(e)}"
@@ -1744,13 +1646,9 @@ class WeixinBot:
                     break
                 except Exception as e:
                     retry_count += 1
-                    print(f"⚠️ 维持 typing indicator 时出错 (第{retry_count}次): {e}")
 
                     if retry_count >= max_retries:
-                        print(f"❌ 维持 typing indicator 失败，已达最大重试次数 ({max_retries})，停止尝试")
                         break
-
-                    print(f"🔄 {retry_delay}秒后重试...")
                     # 使用 wait_for 来响应停止事件
                     try:
                         await asyncio.wait_for(stop_event.wait(), timeout=retry_delay)
@@ -1761,8 +1659,6 @@ class WeixinBot:
         except asyncio.CancelledError:
             # 任务被取消，正常退出
             pass
-        except Exception as e:
-            print(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
 
     def start_typing_indicator(self, message_id: int, from_user_id: str, account_bot_id: str):
         """
@@ -1775,19 +1671,16 @@ class WeixinBot:
         """
         client = self.clients.get(account_bot_id)
         if not client:
-            print(f"⚠️ 账号 {account_bot_id} 的客户端未初始化，无法启动 typing indicator")
             return
 
         # 获取用户的原始 wxid
         wxid = self.username_to_wxid.get(from_user_id)
         if not wxid:
-            print(f"⚠️ 用户 {from_user_id} 的 wxid 未找到，无法启动 typing indicator")
             return
 
         # 检查是否已经有 typing ticket
         typing_ticket = self.typing_tickets.get(from_user_id)
         if not typing_ticket:
-            print(f"⚠️ 用户 {from_user_id} 的 typing ticket 未找到，无法启动 typing indicator")
             return
 
         # 创建停止事件
@@ -1806,8 +1699,6 @@ class WeixinBot:
             "from_user_id": from_user_id,
             "account_bot_id": account_bot_id
         }
-
-        print(f"✅ [消息 #{message_id}] 已启动 typing indicator")
 
     async def stop_typing_indicator(self, message_id: int):
         """
@@ -1832,7 +1723,6 @@ class WeixinBot:
             # 首先设置停止事件，这会立即停止 _maintain_typing_indicator 循环
             if stop_event:
                 stop_event.set()
-                print(f"🛑 [消息 #{message_id}] 已设置停止事件")
 
             # 然后发送取消状态给微信 API
             if from_user_id and account_bot_id:
@@ -1847,9 +1737,8 @@ class WeixinBot:
                                 typing_ticket=typing_ticket,
                                 status=2  # 2 = 取消输入
                             )
-                            print(f"🛑 [消息 #{message_id}] 已发送取消输入状态")
                     except Exception as e:
-                        print(f"⚠️ 发送取消输入状态失败: {e}")
+                        pass
 
             # 取消任务（如果还在运行）
             if task and not task.done():
@@ -1858,7 +1747,6 @@ class WeixinBot:
                     await task  # 等待任务完全停止
                 except asyncio.CancelledError:
                     pass
-                print(f"🛑 [消息 #{message_id}] 已停止 typing indicator 任务")
 
             # 更新状态为已停止
             msg_info["typing_active"] = False
