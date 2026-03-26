@@ -35,6 +35,13 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - 任务启用/禁用/更新/删除
 - 执行历史记录查询
 
+**🎛️ Web 控制界面**
+- 实时监控各组件运行状态（Discord Bot / Weixin Bot / Bridge / Manager）
+- 实时查看日志输出（4 个组件独立日志面板）
+- 深色/浅色主题切换
+- 一键重启/停止所有服务
+- 自动重连 WebSocket 连接
+
 **🎯 服务管理**
 - Windows 守护进程（自动监控重启）
 - Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
@@ -105,7 +112,15 @@ cp config/config.example.yaml config.yaml
 start.bat
 ```
 
-> Manager 守护进程会自动启动并监控所有服务（Discord Bot + Weixin Bot + Bridge）
+> Manager 守护进程会自动启动并监控所有服务（Discord Bot + Weixin Bot + Bridge + Web Server）
+
+启动后访问 **Web 控制界面**：http://localhost:8000
+
+在 Web 界面中你可以：
+- 实时查看各组件运行状态和 PID
+- 查看实时日志输出（4 个组件独立面板）
+- 切换深色/浅色主题
+- 一键重启/停止所有服务
 
 
 ### 5. 使用方法
@@ -330,23 +345,31 @@ weixin:
 
 ## 🔧 故障排查
 
+### Web 界面无法访问
+
+1. 检查 Web Server 是否运行：访问 http://localhost:8000
+2. 查看服务状态：在 Web 界面左侧查看各组件状态
+3. 检查端口占用：确保 8000 端口未被占用
+
 ### Bot 无响应
 
 1. 检查 Discord Token 是否正确
 2. 确认 Bot 有足够权限
 3. 确认已启用 Message Content Intent
+4. 在 Web 界面查看实时日志排查问题
 
 ### Claude Code 未响应
 
 1. 测试 CLI：`claude -p "test"`
 2. 检查是否登录：`claude --version`
-3. 查看桥接服务窗口的错误日志
+3. 在 Web 界面查看 Bridge 日志
+4. 检查工作目录配置是否正确
 
 ### 下载超时
 
 - 已修复：使用轮询检查状态（每 2 秒）
 - 大文件可能需要更长时间，请耐心等待
-- 如一直超时，检查 Bot 进程是否运行
+- 如一直超时，在 Web 界面查看 Bot 进程是否运行
 
 ## 📄 许可证
 
