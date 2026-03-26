@@ -669,10 +669,10 @@ class WeixinBot:
                                         text=text.strip(),
                                         context_token=context_token
                                     )
-                                    logger.info(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
+                                    self.log(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
                                 except Exception as send_error:
                                     # 发送失败
-                                    logger.error(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
+                                    self.log(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
                                     # 标记序列为已发送，避免无限重试
                                     self.message_queue.mark_sequence_sent(seq_id)
                                     # 继续下一条消息
