@@ -99,36 +99,31 @@ manager_ws = ConnectionManager()
 # 进程管理辅助函数
 # ============================================================================
 
+_process_cache = {"python": [], "pythonw": [], "cache_time": 0}
+
+def _refresh_process_cache():
+    """刷新进程缓存"""
+    import time
+    now = time.time()
+    if _process_cache["cache_time"] and now - _process_cache["cache_time"] < 1:
+        return
+    try:
+        result = subprocess.run(
+            ['wmic', 'process', 'get', 'ProcessId,CommandLine', '/format:csv'],
+            capture_output=True, text=True, encoding='utf-8', creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        lines = result.stdout.strip().split('\n')
+        _process_cache["python"] = [l for l in lines if "python.exe" in l.lower()]
+        _process_cache["pythonw"] = [l for l in lines if "pythonw.exe" in l.lower()]
+        _process_cache["cache_time"] = now
+    except:
+        pass
+
 def find_process_by_commandline(pattern: str) -> Optional[int]:
     """通过命令行参数查找进程 PID（支持 python.exe 和 pythonw.exe）"""
+    _refresh_process_cache()
     try:
-        # 查找 python.exe 进程
-        result = subprocess.run(
-            ['wmic', 'process', 'where', "Name='python.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        lines = result.stdout.strip().split('\n')
-        for line in lines:
-            if pattern.lower() in line.lower():
-                parts = line.split(',')
-                if len(parts) >= 3:
-                    pid_str = parts[2].strip('"')
-                    if pid_str.isdigit():
-                        return int(pid_str)
-
-        # 查找 pythonw.exe 进程
-        result = subprocess.run(
-            ['wmic', 'process', 'where', "Name='pythonw.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        lines = result.stdout.strip().split('\n')
-        for line in lines:
+        for line in _process_cache["python"] + _process_cache["pythonw"]:
             if pattern.lower() in line.lower():
                 parts = line.split(',')
                 if len(parts) >= 3:
@@ -329,7 +324,7 @@ async def websocket_status(websocket: WebSocket):
                 "data": status,
                 "timestamp": datetime.now().isoformat()
             })
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
 
     except WebSocketDisconnect:
         pass
@@ -546,7 +541,7 @@ DASHBOARD_HTML = """
 
             wsStatus.onclose = () => {
                 document.getElementById('connectionStatus').classList.add('error');
-                setTimeout(connectStatusWS, 3000);
+                setTimeout(connectStatusWS, 1000);
             };
 
             wsStatus.onerror = () => {
@@ -685,7 +680,7 @@ DASHBOARD_HTML = """
         }
 
         // 定期刷新统计
-        setInterval(fetchStats, 10000);
+        setInterval(fetchStats, 1000);
     </script>
 </body>
 </html>
