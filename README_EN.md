@@ -35,6 +35,13 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Task enable/disable/update/delete
 - Execution history query
 
+**🎛️ Web Control Panel**
+- Real-time monitoring of component status (Discord Bot / Weixin Bot / Bridge / Manager)
+- Real-time log viewing (4 independent component log panels)
+- Dark/Light theme toggle
+- One-click restart/stop all services
+- Auto-reconnect WebSocket connections
+
 **🎯 Service Management**
 - Windows daemon process (auto monitor & restart)
 - Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`)
@@ -105,7 +112,15 @@ Visit [Discord Developer Portal](https://discord.com/developers/applications):
 start.bat
 ```
 
-> Manager daemon will automatically start and monitor all services (Discord Bot + Weixin Bot + Bridge)
+> Manager daemon will automatically start and monitor all services (Discord Bot + Weixin Bot + Bridge + Web Server)
+
+After starting, visit the **Web Control Panel** at: http://localhost:8000
+
+In the Web Panel you can:
+- View real-time status and PID of each component
+- View real-time logs (4 independent component panels)
+- Toggle dark/light theme
+- One-click restart/stop all services
 
 
 ### 5. Usage
@@ -330,23 +345,31 @@ WeChat Bot will automatically start together with Discord Bot, both running inde
 
 ## 🔧 Troubleshooting
 
+### Web Panel Not Accessible
+
+1. Check if Web Server is running: Visit http://localhost:8000
+2. Check service status: View component status in the left sidebar of Web Panel
+3. Check port availability: Ensure port 8000 is not occupied
+
 ### Bot Not Responding
 
 1. Check if Discord Token is correct
 2. Confirm Bot has sufficient permissions
 3. Confirm Message Content Intent is enabled
+4. Check real-time logs in Web Panel for troubleshooting
 
 ### Claude Code Not Responding
 
 1. Test CLI: `claude -p "test"`
 2. Check if logged in: `claude --version`
-3. Check error logs in bridge service window
+3. View Bridge logs in Web Panel
+4. Check if working directory is configured correctly
 
 ### Download Timeout
 
 - Fixed: Using polling to check status (every 2 seconds)
 - Large files may take longer, please be patient
-- If timeout persists, check if Bot process is running
+- If timeout persists, check if Bot process is running in Web Panel
 
 ## 📄 License
 
