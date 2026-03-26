@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -31,6 +32,21 @@ class BotCronScheduler:
         self.tasks: Dict[str, dict] = {}
         self.running = False
 
+        # 日志文件设置
+        self.log_file = Path(__file__).parent.parent / "logs" / "cron_scheduler.log"
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def log(self, message):
+        """同时输出到控制台和日志文件"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {message}\n"
+        print(log_line.strip())
+        try:
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(log_line)
+        except Exception as e:
+            print(f"⚠️  写入日志失败: {e}")
+
     async def start(self):
         """启动调度器"""
         if self.running:
@@ -48,7 +64,7 @@ class BotCronScheduler:
 
         self.scheduler.start()
         self.running = True
-        print(f"⏰ 定时任务调度器已启动，已启用 {count}/{len(self.tasks)} 个任务")
+        self.log(f"⏰ 定时任务调度器已启动，已启用 {count}/{len(self.tasks)} 个任务")
 
     async def stop(self):
         """停止调度器"""
@@ -57,7 +73,7 @@ class BotCronScheduler:
 
         self.scheduler.shutdown(wait=False)
         self.running = False
-        print("⏰ 定时任务调度器已停止")
+        self.log("⏰ 定时任务调度器已停止")
 
     def _load_tasks(self):
         """从文件加载任务"""
@@ -70,7 +86,7 @@ class BotCronScheduler:
                 data = json.load(f)
                 self.tasks = {job['id']: job for job in data}
         except Exception as e:
-            print(f"⚠️  加载定时任务失败: {e}")
+            self.log(f"⚠️  加载定时任务失败: {e}")
             self.tasks = {}
 
     async def _schedule_job(self, job: dict, silent: bool = False):
@@ -101,9 +117,9 @@ class BotCronScheduler:
                 args=[job_id]
             )
             if not silent:
-                print(f"✓ 任务已调度: {job_id} ({cron_expr})")
+                self.log(f"✓ 任务已调度: {job_id} ({cron_expr})")
         except Exception as e:
-            print(f"⚠️  调度任务失败 {job.get('id')}: {e}")
+            self.log(f"⚠️  调度任务失败 {job.get('id')}: {e}")
 
     async def _execute_job(self, job_id: str):
         """执行任务（由调度器调用）"""
@@ -113,7 +129,7 @@ class BotCronScheduler:
 
         is_one_time = not job.get('repeat', True)  # 是否为一次性任务
         task_type = "一次性任务" if is_one_time else "定时任务"
-        print(f"⏰ 执行{task_type}: {job_id} - {job.get('description', '')}")
+        self.log(f"⏰ 执行{task_type}: {job_id} - {job.get('description', '')}")
 
         try:
             # 调用 trigger_scheduled_task.py
@@ -148,7 +164,7 @@ channel_type={job.get('channel_type') or 'discord'}
             if process.returncode != 0:
                 raise Exception(f"脚本执行失败: {stderr.decode('utf-8')}")
 
-            print(f"✅ {task_type}执行成功: {job_id}")
+            self.log(f"✅ {task_type}执行成功: {job_id}")
 
             # 更新执行记录
             job['last_run'] = datetime.now().isoformat()
@@ -157,13 +173,13 @@ channel_type={job.get('channel_type') or 'discord'}
             # 如果是一次性任务，执行后自动禁用
             if is_one_time:
                 job['enabled'] = False
-                print(f"✓ 一次性任务已完成并禁用: {job_id}")
+                self.log(f"✓ 一次性任务已完成并禁用: {job_id}")
 
             self._save_tasks()
 
         except Exception as e:
             error_msg = str(e)
-            print(f"❌ 任务执行失败 {job_id}: {error_msg}")
+            self.log(f"❌ 任务执行失败 {job_id}: {error_msg}")
 
             # 更新错误记录
             job['last_run'] = datetime.now().isoformat()
@@ -178,7 +194,7 @@ channel_type={job.get('channel_type') or 'discord'}
             with open(self.tasks_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"⚠️  保存定时任务失败: {e}")
+            self.log(f"⚠️  保存定时任务失败: {e}")
     
     async def reload_tasks(self):
         """重新加载任务文件（检测变化、新增、删除）
@@ -200,14 +216,14 @@ channel_type={job.get('channel_type') or 'discord'}
             job = self.tasks[job_id]
             if job.get('enabled', True):
                 await self._schedule_job(job)
-                print(f"✓ 检测到新任务: {job_id}")
+                self.log(f"✓ 检测到新任务: {job_id}")
     
         # 检测删除任务
         removed = old_task_ids - new_task_ids
         for job_id in removed:
             if self.scheduler.get_job(job_id):
                 self.scheduler.remove_job(job_id)
-                print(f"✓ 检测到任务删除: {job_id}")
+                self.log(f"✓ 检测到任务删除: {job_id}")
     
         # 检测修改任务（关键修改：对比 cron_expr 和 enabled 状态）
         modified = set()
@@ -230,9 +246,9 @@ channel_type={job.get('channel_type') or 'discord'}
             # 如果新状态是启用的，重新调度
             if job.get('enabled', True):
                 await self._schedule_job(job, silent=False)
-                print(f"✓ 检测到任务修改，已重新调度: {job_id} -> 新规则 [{job.get('cron_expr')}]")
+                self.log(f"✓ 检测到任务修改，已重新调度: {job_id} -> 新规则 [{job.get('cron_expr')}]")
             else:
-                print(f"✓ 检测到任务已被禁用: {job_id}")
+                self.log(f"✓ 检测到任务已被禁用: {job_id}")
     
         return len(added) + len(removed) + len(modified) > 0
 
@@ -249,5 +265,5 @@ channel_type={job.get('channel_type') or 'discord'}
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"⚠️  扫描任务文件时出错: {e}")
+                self.log(f"⚠️  扫描任务文件时出错: {e}")
                 await asyncio.sleep(5)
