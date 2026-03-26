@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IM-Claude-Bridge 控制台</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f5f3ef;
+            color: #3d3d3d;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧边栏 */
+        .sidebar {
+            width: 260px;
+            background: #eae8e3;
+            border-right: 1px solid #d4d0c8;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #5a5853;
+            padding: 0 8px;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+
+        .title-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            background: #f5f3ef;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: #9a9893;
+            border: 1px solid #d4d0c8;
+            flex-shrink: 0;
+        }
+
+        .connection-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #7aaa74;
+        }
+
+        .connection-dot.disconnected {
+            background: #c87474;
+        }
+
+        /* 组件状态列表 */
+        .component-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .component-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: #f5f3ef;
+            border-radius: 8px;
+            border: 1px solid #e0ddd5;
+            transition: all 0.2s ease;
+        }
+
+        .component-item:hover {
+            background: #faf8f5;
+            border-color: #d4d0c8;
+        }
+
+        .component-name {
+            font-size: 0.85rem;
+            color: #5a5853;
+            font-weight: 400;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: #8a8883;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #c8c5be;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.running {
+            background: #7aaa74;
+            box-shadow: 0 0 6px rgba(122, 170, 116, 0.4);
+        }
+
+        .status-text {
+            min-width: 42px;
+            text-align: right;
+        }
+
+        .component-pid {
+            font-size: 0.7rem;
+            color: #a8a6a1;
+            margin-top: 2px;
+        }
+
+        /* 最后更新时间 */
+        .last-update {
+            font-size: 0.7rem;
+            color: #9a9893;
+        }
+
+        /* 控制按钮区 */
+        .control-section {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-top: 20px;
+            border-top: 1px solid #d4d0c8;
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 8px;
+        }
+
+        .control-label {
+            font-size: 0.75rem;
+            color: #8a8883;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn {
+            padding: 11px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 400;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-restart {
+            background: #e0ddd5;
+            color: #5a5853;
+        }
+
+        .btn-restart:hover {
+            background: #d4d0c8;
+        }
+
+        .btn-stop {
+            background: #e8d4d4;
+            color: #8a5a5a;
+        }
+
+        .btn-stop:hover {
+            background: #dfc5c5;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 右侧主区域 */
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            flex: 1;
+            min-height: 0;
+            height: 100%;
+        }
+
+        /* 日志面板 */
+        .log-panel {
+            background: #eae8e3;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #d4d0c8;
+        }
+
+        .log-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #e0ddd5;
+            border-bottom: 1px solid #d4d0c8;
+        }
+
+        .log-title {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #5a5853;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .log-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #c8c5be;
+        }
+
+        .log-status-dot.running {
+            background: #7aaa74;
+        }
+
+        .log-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .log-btn {
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            background: #f5f3ef;
+            border: 1px solid #d4d0c8;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #6a6863;
+            transition: all 0.15s ease;
+        }
+
+        .log-btn:hover {
+            background: #eae8e3;
+        }
+
+        .log-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', 'SF Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            min-height: 0;
+        }
+
+        .log-line {
+            padding: 2px 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #4a4843;
+        }
+
+        .log-timestamp {
+            color: #9a9893;
+        }
+
+        /* 滚动条样式 */
+        .log-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .log-content::-webkit-scrollbar-thumb {
+            background: #c8c5be;
+            border-radius: 3px;
+        }
+
+        .log-content::-webkit-scrollbar-thumb:hover {
+            background: #b8b5ae;
+        }
+
+        /* 响应式 */
+        @media (max-width: 1200px) {
+            .log-grid {
+                grid-template-columns: repeat(2, 1fr);
+                grid-template-rows: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 700px) {
+            body {
+                flex-direction: column;
+                height: auto;
+                min-height: 100vh;
+                overflow: auto;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #d4d0c8;
+                flex-shrink: 0;
+            }
+
+            .main-content {
+                height: 500px;
+                min-height: 0;
+            }
+
+            .log-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: repeat(4, 1fr);
+            }
+
+            .control-section {
+                flex-direction: row;
+                margin-top: 10px;
+            }
+
+            .btn {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 左侧边栏 -->
+    <div class="sidebar">
+        <div class="app-title">
+            <span class="title-text">IM-Claude-Bridge</span>
+            <div class="connection-status">
+                <div class="connection-dot disconnected" id="connectionDot"></div>
+                <span id="connectionText">连接中...</span>
+            </div>
+        </div>
+
+        <div class="component-list">
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Discord Bot</div>
+                    <div class="component-pid" id="discord_bot_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="discord_bot_dot"></div>
+                    <span class="status-text" id="discord_bot_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Weixin Bot</div>
+                    <div class="component-pid" id="weixin_bot_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="weixin_bot_dot"></div>
+                    <span class="status-text" id="weixin_bot_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Claude Bridge</div>
+                    <div class="component-pid" id="claude_bridge_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="claude_bridge_dot"></div>
+                    <span class="status-text" id="claude_bridge_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Manager</div>
+                    <div class="component-pid" id="manager_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="manager_dot"></div>
+                    <span class="status-text" id="manager_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Web Server</div>
+                    <div class="component-pid" id="web_server_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot running" id="web_server_dot"></div>
+                    <span class="status-text" id="web_server_status">运行中</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <div class="control-header">
+                <div class="control-label">系统控制</div>
+                <div class="last-update" id="lastUpdate">--:--:--</div>
+            </div>
+            <button class="btn btn-restart" onclick="controlAction('restart')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+                重启全部
+            </button>
+            <button class="btn btn-stop" onclick="controlAction('stop')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                </svg>
+                停止全部
+            </button>
+        </div>
+    </div>
+
+    <!-- 右侧主区域 -->
+    <div class="main-content">
+        <div class="log-grid">
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-title">
+                        <span class="log-status-dot" id="log_manager_dot"></span>
+                        Manager
+                    </span>
+                    <div class="log-actions">
+                        <button class="log-btn" onclick="clearLog('manager')">清空</button>
+                        <button class="log-btn" onclick="scrollToBottom('manager')">底部</button>
+                    </div>
+                </div>
+                <div class="log-content" id="log_manager"></div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-title">
+                        <span class="log-status-dot" id="log_discord_bot_dot"></span>
+                        Discord
+                    </span>
+                    <div class="log-actions">
+                        <button class="log-btn" onclick="clearLog('discord_bot')">清空</button>
+                        <button class="log-btn" onclick="scrollToBottom('discord_bot')">底部</button>
+                    </div>
+                </div>
+                <div class="log-content" id="log_discord_bot"></div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-title">
+                        <span class="log-status-dot" id="log_weixin_bot_dot"></span>
+                        Weixin
+                    </span>
+                    <div class="log-actions">
+                        <button class="log-btn" onclick="clearLog('weixin_bot')">清空</button>
+                        <button class="log-btn" onclick="scrollToBottom('weixin_bot')">底部</button>
+                    </div>
+                </div>
+                <div class="log-content" id="log_weixin_bot"></div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-title">
+                        <span class="log-status-dot" id="log_claude_bridge_dot"></span>
+                        Bridge
+                    </span>
+                    <div class="log-actions">
+                        <button class="log-btn" onclick="clearLog('claude_bridge')">清空</button>
+                        <button class="log-btn" onclick="scrollToBottom('claude_bridge')">底部</button>
+                    </div>
+                </div>
+                <div class="log-content" id="log_claude_bridge"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const components = ['manager', 'discord_bot', 'weixin_bot', 'claude_bridge'];
+        let wsStatus = null;
+        let wsLogs = {};
+        const maxLogLines = 200;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStatus();
+            connectStatusWS();
+            components.forEach(comp => connectLogWS(comp));
+        });
+
+        // WebSocket: 状态
+        function connectStatusWS() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsStatus = new WebSocket(`${protocol}//${location.host}/ws/status`);
+
+            wsStatus.onopen = () => {
+                updateConnectionStatus(true);
+            };
+
+            wsStatus.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'status_update') {
+                    updateStatus(data.data);
+                }
+            };
+
+            wsStatus.onclose = () => {
+                updateConnectionStatus(false);
+                setTimeout(connectStatusWS, 2000);
+            };
+
+            wsStatus.onerror = () => {
+                updateConnectionStatus(false);
+            };
+        }
+
+        // WebSocket: 日志
+        function connectLogWS(component) {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${location.host}/ws/logs/${component}`);
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'log') {
+                    appendLog(component, data.data);
+                }
+            };
+
+            ws.onopen = () => {
+                updateLogStatusDot(component, true);
+            };
+
+            ws.onclose = () => {
+                updateLogStatusDot(component, false);
+                setTimeout(() => connectLogWS(component), 2000);
+            };
+
+            wsLogs[component] = ws;
+        }
+
+        // 更新连接状态
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            dot.className = `connection-dot ${connected ? '' : 'disconnected'}`;
+            text.textContent = connected ? '已连接' : '重连中...';
+        }
+
+        // 更新日志状态点
+        function updateLogStatusDot(component, connected) {
+            const dot = document.getElementById(`log_${component}_dot`);
+            if (dot) {
+                dot.className = `log-status-dot ${connected ? 'running' : ''}`;
+            }
+        }
+
+        // 更新组件状态
+        function updateStatus(status) {
+            // 更新时间显示
+            document.getElementById('lastUpdate').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
+
+            for (const [component, info] of Object.entries(status)) {
+                const dot = document.getElementById(`${component}_dot`);
+                const statusEl = document.getElementById(`${component}_status`);
+                const pidEl = document.getElementById(`${component}_pid`);
+
+                if (dot) {
+                    dot.className = `status-dot${info.running ? ' running' : ''}`;
+                }
+                if (statusEl) {
+                    statusEl.textContent = info.running ? '运行中' : '已停止';
+                }
+                if (pidEl) {
+                    pidEl.textContent = info.pid ? `PID: ${info.pid}` : '';
+                }
+
+                // 同步日志面板的状态点
+                if (components.includes(component)) {
+                    updateLogStatusDot(component, info.running);
+                }
+            }
+        }
+
+        // 添加日志行
+        function appendLog(component, line) {
+            const viewer = document.getElementById(`log_${component}`);
+            if (!viewer) return;
+
+            const lineEl = document.createElement('div');
+            lineEl.className = 'log-line';
+            lineEl.innerHTML = formatLogLine(line);
+            viewer.appendChild(lineEl);
+
+            // 自动滚动到底部
+            viewer.scrollTop = viewer.scrollHeight;
+
+            // 限制最大行数
+            while (viewer.children.length > maxLogLines) {
+                viewer.removeChild(viewer.firstChild);
+            }
+        }
+
+        // 格式化日志行
+        function formatLogLine(line) {
+            const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
+            if (timestampMatch) {
+                return `<span class="log-timestamp">[${timestampMatch[1]}]</span>${line.substring(timestampMatch[0].length)}`;
+            }
+            return line;
+        }
+
+        // 清空日志
+        function clearLog(component) {
+            const viewer = document.getElementById(`log_${component}`);
+            if (viewer) {
+                viewer.innerHTML = '';
+            }
+        }
+
+        // 滚动到底部
+        function scrollToBottom(component) {
+            const viewer = document.getElementById(`log_${component}`);
+            if (viewer) {
+                viewer.scrollTop = viewer.scrollHeight;
+            }
+        }
+
+        // 获取状态
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                updateStatus(data.status);
+            } catch (e) {
+                console.error('Failed to fetch status:', e);
+            }
+        }
+
+        // 控制操作
+        async function controlAction(action) {
+            const actionText = action === 'restart' ? '重启' : '停止';
+            if (!confirm(`确定要${actionText}所有服务吗？`)) {
+                return;
+            }
+
+            const btn = document.querySelector(`.btn-${action}`);
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span>执行中...</span>`;
+
+            try {
+                const res = await fetch(`/api/control/${action}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    console.log(`${action} executed successfully`);
+                }
+            } catch (e) {
+                console.error(`Failed to ${action}:`, e);
+            } finally {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                    fetchStatus();
+                }, 2000);
+            }
+        }
+    </script>
+</body>
+</html>
