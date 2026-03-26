@@ -64,10 +64,28 @@ class Manager:
             print(f"⚠️  写入日志失败: {e}")
 
     def find_process_by_commandline(self, pattern):
-        """通过命令行参数查找进程 PID"""
+        """通过命令行参数查找进程 PID（支持 python.exe 和 pythonw.exe）"""
         try:
+            # 查找 python.exe 进程
             result = subprocess.run(
                 ['wmic', 'process', 'where', "Name='python.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                if pattern.lower() in line.lower():
+                    parts = line.split(',')
+                    if len(parts) >= 3:
+                        pid_str = parts[2].strip('"')
+                        if pid_str.isdigit():
+                            return int(pid_str)
+
+            # 查找 pythonw.exe 进程
+            result = subprocess.run(
+                ['wmic', 'process', 'where', "Name='pythonw.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'],
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
@@ -99,6 +117,10 @@ class Manager:
     def is_bridge_running(self):
         """检查 Claude Bridge 是否运行"""
         return self.find_process_by_commandline("claude_bridge.py") is not None
+
+    def is_web_server_running(self):
+        """检查 Web Server 是否运行"""
+        return self.find_process_by_commandline("web_server.py") is not None
 
     def get_retry_count(self):
         """获取当前重试次数"""
@@ -140,7 +162,7 @@ class Manager:
             subprocess.Popen(
                 ["cmd", "/c", str(start_script)],
                 cwd=self.project_dir,
-                creationflags=subprocess.CREATE_NEW_CONSOLE
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             self.log("✅ start.bat 已执行")
             return True
@@ -153,33 +175,24 @@ class Manager:
         """停止所有服务"""
         self.log("🛑 停止所有服务...")
 
-        # 创建停止标记
-        self.stop_file.touch()
-        self.log("📝 已创建停止标记")
+        stop_script = self.project_dir / "stop.bat"
 
-        # 停止进程
-        processes = [
-            ("Claude Bridge", "claude_bridge.py"),
-            ("Discord Bot", "discord_bot.py"),
-            ("微信 Bot", "weixin_bot.py")
-        ]
+        if not stop_script.exists():
+            self.log(f"❌ 找不到 stop.bat: {stop_script}")
+            return False
 
-        for name, pattern in processes:
-            pid = self.find_process_by_commandline(pattern)
-            if pid:
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                    self.log(f"✅ {name} (PID: {pid}) 已停止")
-                except Exception as e:
-                    self.log(f"❌ 停止 {name} 失败: {e}")
-            else:
-                self.log(f"⚠️  {name} 未运行")
+        try:
+            subprocess.Popen(
+                ["cmd", "/c", str(stop_script)],
+                cwd=self.project_dir,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            self.log("✅ stop.bat 已执行")
+            return True
 
-        self.log("✅ 所有服务已停止")
+        except Exception as e:
+            self.log(f"❌ 执行 stop.bat 失败: {e}")
+            return False
 
     def restart_all(self):
         """重启所有服务（创建重启标记）"""
@@ -202,7 +215,7 @@ class Manager:
             subprocess.Popen(
                 ["cmd", "/c", str(restart_script)],
                 cwd=self.project_dir,
-                creationflags=subprocess.CREATE_NEW_CONSOLE
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             self.log("✅ restart.bat 已执行")
             return True
@@ -222,6 +235,7 @@ class Manager:
         bot_running = self.is_bot_running()
         weixin_bot_running = self.is_weixin_bot_running()
         bridge_running = self.is_bridge_running()
+        web_server_running = self.is_web_server_running()
 
         if bot_running and weixin_bot_running and bridge_running:
             self.log("✅ 初始检查: 所有服务运行正常")
@@ -232,6 +246,8 @@ class Manager:
                 self.log("⚠️  初始检查: 微信 Bot 未运行")
             if not bridge_running:
                 self.log("⚠️  初始检查: Claude Bridge 未运行")
+            if not web_server_running:
+                self.log("⚠️  初始检查: Web Server 未运行")
 
         while True:
             try:
@@ -246,7 +262,7 @@ class Manager:
                     time.sleep(30)
 
                     # 延迟后再次检查
-                    if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running():
+                    if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running() and self.is_web_server_running():
                         self.log("✅ 重启成功，移除重启标记和重置重试次数")
                         self.restarting_file.unlink()
                         self.reset_retry_count()
@@ -269,7 +285,7 @@ class Manager:
                     subprocess.Popen(
                         ["cmd", "/c", str(self.project_dir / "restart.bat")],
                         cwd=self.project_dir,
-                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                        creationflags=subprocess.CREATE_NO_WINDOW
                     )
 
                     # 增加重试次数
@@ -285,12 +301,13 @@ class Manager:
                 bot_running = self.is_bot_running()
                 weixin_bot_running = self.is_weixin_bot_running()
                 bridge_running = self.is_bridge_running()
+                web_server_running = self.is_web_server_running()
 
-                if bot_running and weixin_bot_running and bridge_running:
+                if bot_running and weixin_bot_running and bridge_running and web_server_running:
                     # 所有进程正常，重置重试次数
                     if self.retry_count_file.exists():
                         self.reset_retry_count()
-                elif not bot_running or not weixin_bot_running or not bridge_running:
+                elif not bot_running or not weixin_bot_running or not bridge_running or not web_server_running:
                     # 发现进程挂了，创建重启标记并触发重启
                     if not bot_running:
                         self.log("⚠️  Discord Bot 未运行，触发重启...")
@@ -298,6 +315,8 @@ class Manager:
                         self.log("⚠️  微信 Bot 未运行，触发重启...")
                     if not bridge_running:
                         self.log("⚠️  Claude Bridge 未运行，触发重启...")
+                    if not web_server_running:
+                        self.log("⚠️  Web Server 未运行，触发重启...")
 
                     # 创建重启标记
                     self.restarting_file.touch()
@@ -345,12 +364,12 @@ def main():
         print("Discord Bridge Manager - Windows 守护程序")
         print()
         print("用法:")
-        print("  python manager.py console    # 在独立窗口启动监控控制台（推荐）")
-        print("  python manager.py start      # 启动监控控制台（独立窗口）")
-        print("  python manager.py start-all  # 启动所有服务")
-        print("  python manager.py stop       # 停止所有服务")
-        print("  python manager.py restart    # 重启所有服务")
-        print("  python manager.py logs       # 查看日志")
+        print("  python im_claude_bridge_manager.py console    # 在独立窗口启动监控控制台（推荐）")
+        print("  python im_claude_bridge_manager.py start      # 启动监控控制台（独立窗口）")
+        print("  python im_claude_bridge_manager.py start-all  # 启动所有服务")
+        print("  python im_claude_bridge_manager.py stop       # 停止所有服务")
+        print("  python im_claude_bridge_manager.py restart    # 重启所有服务")
+        print("  python im_claude_bridge_manager.py logs       # 查看日志")
         sys.exit(1)
 
     command = sys.argv[1].lower()
@@ -360,7 +379,7 @@ def main():
         # 在独立窗口中启动监控循环
         print()
         print("=" * 50)
-        print("  Discord Bridge Manager Console")
+        print("  IM Claude Bridge Manager Console")
         print("=" * 50)
         print()
         print("🔄 监控控制台正在运行，日志实时显示")
