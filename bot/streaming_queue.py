@@ -9,8 +9,13 @@ import time
 import discord
 from enum import Enum
 from typing import Union, List
-from datetime import datetime
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.logger import get_logger
+
+log = get_logger("StreamingQueue", "discord")
 
 
 class MessageType(Enum):
@@ -43,21 +48,6 @@ class StreamingMessageQueue:
         self.current_content_block_index = 0  # 当前发送到第几个 content block
         self.content_block_senders = {}  # 记录每个 content block 的发送状态：{index: {"pending": int, "sent": int}}
         self.content_block_lock = asyncio.Lock()  # Content block 顺序锁
-
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "discord_bot.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     async def add_block(self, block: str):
         """
@@ -218,16 +208,16 @@ class StreamingMessageQueue:
             except discord.HTTPException as e:
                 if e.status == 429:  # 速率限制
                     retry_after = e.retry_after
-                    self.log(f"⚠️ 触发 Discord 速率限制，等待 {retry_after:.2f} 秒")
+                    log.log(f"⚠️ 触发 Discord 速率限制，等待 {retry_after:.2f} 秒")
                     await asyncio.sleep(retry_after)
                     # 重试
                     continue
                 else:
-                    self.log(f"❌ 发送消息失败: {e}")
+                    log.log(f"❌ 发送消息失败: {e}")
                     raise
 
             except Exception as e:
-                self.log(f"❌ 发送消息时出错: {e}")
+                log.log(f"❌ 发送消息时出错: {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1)
                 else:

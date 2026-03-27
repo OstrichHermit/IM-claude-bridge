@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Optional
 from threading import Lock
 
+from shared.logger import get_logger
+
+log = get_logger("FileMapping", "manager")
+
 
 class FileMapping:
     """文件映射表管理器"""
@@ -39,13 +43,13 @@ class FileMapping:
             try:
                 with open(self.mapping_file, 'r', encoding='utf-8') as f:
                     self._mapping = json.load(f)
-                print(f"[文件映射] 已加载 {len(self._mapping)} 条映射记录")
+                log.log(f"已加载 {len(self._mapping)} 条映射记录")
             except Exception as e:
-                print(f"[文件映射] 加载失败: {e}")
+                log.log(f"加载失败: {e}")
                 self._mapping = {}
         else:
             self._mapping = {}
-            print(f"[文件映射] 映射表文件不存在，创建新的映射表")
+            log.log("映射表文件不存在，创建新的映射表")
 
     def _save(self):
         """保存映射表到文件"""
@@ -55,9 +59,9 @@ class FileMapping:
 
             with open(self.mapping_file, 'w', encoding='utf-8') as f:
                 json.dump(self._mapping, f, ensure_ascii=False, indent=2)
-            print(f"[文件映射] 已保存 {len(self._mapping)} 条映射记录")
+            log.log(f"已保存 {len(self._mapping)} 条映射记录")
         except Exception as e:
-            print(f"[文件映射] 保存失败: {e}")
+            log.log(f"保存失败: {e}")
 
     def get_local_filename(self, attachment_id: int) -> Optional[str]:
         """获取附件对应的本地文件名

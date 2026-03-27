@@ -11,6 +11,10 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+from shared.logger import get_logger
+
+log = get_logger("MessageQueue", "bridge")
+
 
 class MessageStatus(Enum):
     """消息状态枚举"""
@@ -997,7 +1001,7 @@ class MessageQueue:
             self.update_status(message_id, MessageStatus.ABORTING)
             return True
         except Exception as e:
-            print(f"❌ 请求中止失败: {e}")
+            log.log(f"❌ 请求中止失败: {e}")
             return False
 
     def is_aborting(self, message_id: int) -> bool:
@@ -1411,24 +1415,24 @@ class MessageQueue:
             for jsonl_file in jsonl_files:
                 try:
                     jsonl_file.unlink()
-                    print(f"[会话清理] 已删除 Claude 会话文件: {jsonl_file.name}")
+                    log.log(f"[会话清理] 已删除 Claude 会话文件: {jsonl_file.name}")
                     deleted = True
                 except Exception as e:
-                    print(f"⚠️ 删除会话文件失败: {e}")
+                    log.log(f"⚠️ 删除会话文件失败: {e}")
 
             # 删除会话索引文件
             index_file = session_path / "sessions-index.json"
             if index_file.exists():
                 try:
                     index_file.unlink()
-                    print(f"[会话清理] 已删除会话索引: sessions-index.json")
+                    log.log(f"[会话清理] 已删除会话索引: sessions-index.json")
                 except Exception as e:
-                    print(f"⚠️ 删除索引文件失败: {e}")
+                    log.log(f"⚠️ 删除索引文件失败: {e}")
 
             return deleted
 
         except Exception as e:
-            print(f"❌ 删除 Claude 会话文件时出错: {e}")
+            log.log(f"❌ 删除 Claude 会话文件时出错: {e}")
             return False
 
     def get_latest_session_id(self, working_dir: str) -> str:
@@ -1466,7 +1470,7 @@ class MessageQueue:
             return None
 
         except Exception as e:
-            print(f"⚠️ 获取最新 session_id 失败: {e}")
+            log.log(f"⚠️ 获取最新 session_id 失败: {e}")
             return None
 
     def update_session_id(self, session_key: str, session_id: str):
@@ -1491,10 +1495,10 @@ class MessageQueue:
             conn.commit()
             conn.close()
 
-            print(f"✅ session_id 已更新: {session_key} -> {session_id}")
+            log.log(f"✅ session_id 已更新: {session_key} -> {session_id}")
 
         except Exception as e:
-            print(f"❌ 更新 session_id 失败: {e}")
+            log.log(f"❌ 更新 session_id 失败: {e}")
 
     def mark_session_created(self, session_key: str):
         """
@@ -1517,10 +1521,10 @@ class MessageQueue:
             conn.commit()
             conn.close()
 
-            print(f"✅ 会话已标记为创建: {session_key}")
+            log.log(f"✅ 会话已标记为创建: {session_key}")
 
         except Exception as e:
-            print(f"❌ 标记会话创建失败: {e}")
+            log.log(f"❌ 标记会话创建失败: {e}")
 
     def cleanup_old_sessions(self, days: int = 7):
         """
@@ -1916,7 +1920,7 @@ class MessageQueue:
             try:
                 self.delete_claude_session_files(working_dir)
             except Exception as e:
-                print(f"⚠️ 删除 Claude 会话文件时出错: {e}")
+                log.log(f"⚠️ 删除 Claude 会话文件时出错: {e}")
 
         return deleted
 

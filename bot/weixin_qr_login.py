@@ -7,12 +7,15 @@ import aiohttp
 import asyncio
 import json
 import base64
+import sys
 from typing import Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-import logging
 
-logger = logging.getLogger(__name__)
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.logger import get_logger
+
+log = get_logger("WeixinQRLogin", "weixin")
 
 
 @dataclass
@@ -82,7 +85,7 @@ class WeixinQRLogin:
             async with session.get(url, params=params) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    logger.error(f"getQRcode HTTP {resp.status}: {error_text}")
+                    log.log(f"getQRcode HTTP {resp.status}: {error_text}")
                     raise Exception(f"HTTP {resp.status}: {error_text}")
 
                 # 微信 API 可能返回 JSON 或 octet-stream
@@ -96,10 +99,10 @@ class WeixinQRLogin:
 
                     if not qrcode:
                         error = data.get("error", "未知错误")
-                        logger.error(f"getQRcode failed: {error}")
+                        log.log(f"getQRcode failed: {error}")
                         raise Exception(f"获取二维码失败: {error}")
 
-                    logger.info(f"QRcode obtained: {qrcode[:16]}...")
+                    log.log(f"QRcode obtained: {qrcode[:16]}...")
                     return qrcode, qrcode_img
 
                 elif 'application/octet-stream' in content_type or 'image/png' in content_type:
@@ -113,8 +116,8 @@ class WeixinQRLogin:
                         qrcode_img = data.get("qrcode_img_content")
 
                         if qrcode and qrcode_img:
-                            logger.info(f"QRcode obtained (JSON in octet-stream): {qrcode[:16]}...")
-                            logger.info(f"QRcode image URL: {qrcode_img[:100] if qrcode_img else 'N/A'}")
+                            log.log(f"QRcode obtained (JSON in octet-stream): {qrcode[:16]}...")
+                            log.log(f"QRcode image URL: {qrcode_img[:100] if qrcode_img else 'N/A'}")
                             return qrcode, qrcode_img
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         pass
@@ -127,7 +130,7 @@ class WeixinQRLogin:
                     import base64
                     qrcode_img = f"data:image/png;base64,{base64.b64encode(raw_data).decode()}"
 
-                    logger.info(f"QRcode obtained (image): {qrcode[:16]}...")
+                    log.log(f"QRcode obtained (image): {qrcode[:16]}...")
                     return qrcode, qrcode_img
 
                 else:
@@ -141,15 +144,15 @@ class WeixinQRLogin:
 
                         if not qrcode:
                             error = data.get("error", "未知错误")
-                            logger.error(f"getQRcode failed: {error}")
+                            log.log(f"getQRcode failed: {error}")
                             raise Exception(f"获取二维码失败: {error}")
 
-                        logger.info(f"QRcode obtained: {qrcode[:16]}...")
-                        logger.info(f"QRcode image URL: {qrcode_img[:100] if qrcode_img else 'N/A'}")
+                        log.log(f"QRcode obtained: {qrcode[:16]}...")
+                        log.log(f"QRcode image URL: {qrcode_img[:100] if qrcode_img else 'N/A'}")
                         return qrcode, qrcode_img
                     except json.JSONDecodeError:
                         # 真的不是 JSON，返回原始数据
-                        logger.error(f"Unexpected response: {text[:200]}")
+                        log.log(f"Unexpected response: {text[:200]}")
                         raise Exception(f"无法解析响应: Content-Type={content_type}")
 
     @staticmethod
@@ -183,7 +186,7 @@ class WeixinQRLogin:
                 # 检查超时
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > timeout:
-                    logger.warning(f"QRcode login timeout after {timeout}s")
+                    log.log(f"QRcode login timeout after {timeout}s")
                     return LoginResult(
                         success=False,
                         error=f"扫码超时（{timeout}秒）"
@@ -198,7 +201,7 @@ class WeixinQRLogin:
                     ) as resp:
                         if resp.status != 200:
                             error_text = await resp.text()
-                            logger.error(f"getQRcodeStatus HTTP {resp.status}: {error_text}")
+                            log.log(f"getQRcodeStatus HTTP {resp.status}: {error_text}")
                             await asyncio.sleep(3)
                             continue
 
@@ -207,12 +210,12 @@ class WeixinQRLogin:
                         try:
                             data = json.loads(raw_data.decode('utf-8'))
                         except json.JSONDecodeError:
-                            logger.error(f"Failed to decode response: {raw_data[:200]}")
+                            log.log(f"Failed to decode response: {raw_data[:200]}")
                             await asyncio.sleep(3)
                             continue
 
                         status = data.get("status")
-                        logger.info(f"QRcode status: {status}")
+                        log.log(f"QRcode status: {status}")
 
                         # 回调状态变化
                         if on_status_change:
@@ -225,7 +228,7 @@ class WeixinQRLogin:
 
                         elif status == "scaned":
                             # 已扫码，等待确认
-                            logger.info("QRcode scanned, waiting for confirmation...")
+                            log.log("QRcode scanned, waiting for confirmation...")
                             await asyncio.sleep(2)
                             continue
 
@@ -237,13 +240,13 @@ class WeixinQRLogin:
                             user_id = data.get("ilink_user_id")
 
                             if not bot_token or not bot_id:
-                                logger.error("Missing bot_token or bot_id in response")
+                                log.log("Missing bot_token or bot_id in response")
                                 return LoginResult(
                                     success=False,
                                     error="登录信息不完整"
                                 )
 
-                            logger.info(f"Login success: bot_id={bot_id}, user_id={user_id}")
+                            log.log(f"Login success: bot_id={bot_id}, user_id={user_id}")
                             return LoginResult(
                                 success=True,
                                 bot_token=bot_token,
@@ -256,22 +259,22 @@ class WeixinQRLogin:
                             # 二维码过期
                             refresh_count += 1
                             if refresh_count > WeixinQRLogin.MAX_REFRESH:
-                                logger.error("QRcode expired too many times")
+                                log.log("QRcode expired too many times")
                                 return LoginResult(
                                     success=False,
                                     error="二维码过期次数过多"
                                 )
 
-                            logger.warning(f"QRcode expired, refreshing ({refresh_count}/{WeixinQRLogin.MAX_REFRESH})...")
+                            log.log(f"QRcode expired, refreshing ({refresh_count}/{WeixinQRLogin.MAX_REFRESH})...")
 
                             # 重新获取二维码
                             try:
                                 new_qrcode, _ = await WeixinQRLogin.get_qrcode(base_url)
                                 params["qrcode"] = new_qrcode
-                                logger.info(f"QRcode refreshed: {new_qrcode[:16]}...")
+                                log.log(f"QRcode refreshed: {new_qrcode[:16]}...")
                                 continue
                             except Exception as e:
-                                logger.error(f"Failed to refresh QRcode: {e}")
+                                log.log(f"Failed to refresh QRcode: {e}")
                                 return LoginResult(
                                     success=False,
                                     error=f"刷新二维码失败: {e}"
@@ -279,20 +282,20 @@ class WeixinQRLogin:
 
                         else:
                             # 未知状态
-                            logger.warning(f"Unknown status: {status}")
+                            log.log(f"Unknown status: {status}")
                             await asyncio.sleep(3)
                             continue
 
                 except asyncio.TimeoutError:
                     # 长轮询超时，继续
-                    logger.debug("QRcode polling timeout (normal)")
+                    log.log("QRcode polling timeout (normal)")
                     continue
                 except aiohttp.ClientError as e:
-                    logger.error(f"QRcode polling error: {e}")
+                    log.log(f"QRcode polling error: {e}")
                     await asyncio.sleep(3)
                     continue
                 except Exception as e:
-                    logger.error(f"QRcode polling unexpected error: {e}")
+                    log.log(f"QRcode polling unexpected error: {e}")
                     await asyncio.sleep(3)
                     continue
 
@@ -320,7 +323,7 @@ class WeixinAccountManager:
                 data = json.load(f)
                 return [WeixinAccount.from_dict(acc) for acc in data]
         except Exception as e:
-            logger.error(f"Failed to load accounts: {e}")
+            log.log(f"Failed to load accounts: {e}")
             return []
 
     def save_accounts(self, accounts: list):
@@ -333,9 +336,9 @@ class WeixinAccountManager:
             data = [acc.to_dict() for acc in accounts]
             with open(self.accounts_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info(f"Saved {len(accounts)} accounts to {self.accounts_file}")
+            log.log(f"Saved {len(accounts)} accounts to {self.accounts_file}")
         except Exception as e:
-            logger.error(f"Failed to save accounts: {e}")
+            log.log(f"Failed to save accounts: {e}")
             raise
 
     def add_account(self, account) -> bool:
@@ -352,12 +355,12 @@ class WeixinAccountManager:
         # 检查是否已存在
         for acc in accounts:
             if acc.bot_id == account.bot_id:
-                logger.warning(f"Account {account.bot_id} already exists")
+                log.log(f"Account {account.bot_id} already exists")
                 return False
 
         accounts.append(account)
         self.save_accounts(accounts)
-        logger.info(f"Added account: {account.bot_id}")
+        log.log(f"Added account: {account.bot_id}")
         return True
 
     def remove_account(self, bot_id: str) -> bool:
@@ -375,9 +378,9 @@ class WeixinAccountManager:
         accounts = [acc for acc in accounts if acc.bot_id != bot_id]
 
         if len(accounts) == original_len:
-            logger.warning(f"Account {bot_id} not found")
+            log.log(f"Account {bot_id} not found")
             return False
 
         self.save_accounts(accounts)
-        logger.info(f"Removed account: {bot_id}")
+        log.log(f"Removed account: {bot_id}")
         return True

@@ -11,6 +11,9 @@ from typing import Optional, List, Dict
 from dataclasses import dataclass, asdict
 from shared.message_queue import MessageQueue
 from shared.config import Config
+from shared.logger import get_logger
+
+log = get_logger("MCPWeixinService", "mcp_server")
 
 
 class WeixinBridgeError(Exception):
@@ -75,7 +78,7 @@ class WeixinService:
     def ensure_mapping_loaded(self):
         """确保用户名映射已加载"""
         if not self.user_mapping:
-            print("🔄 重新加载用户名映射...")
+            log.log("🔄 重新加载用户名映射...")
             self._load_user_mapping()
 
     def _load_user_mapping(self):
@@ -103,15 +106,15 @@ class WeixinService:
                     "user_id": user_id
                 }
 
-            print(f"✅ 加载了 {len(accounts)} 个用户信息")
+            log.log(f"✅ 加载了 {len(accounts)} 个用户信息")
             if accounts:
-                print(f"📋 用户示例: {[(acc['username'], acc['user_id']) for acc in accounts[:3]]}")
+                log.log(f"📋 用户示例: {[(acc['username'], acc['user_id']) for acc in accounts[:3]]}")
         except FileNotFoundError:
-            print(f"⚠️  账号文件不存在: {self.config.weixin_accounts_file}")
+            log.log(f"⚠️  账号文件不存在: {self.config.weixin_accounts_file}")
         except Exception as e:
-            print(f"⚠️  加载用户信息失败: {e}")
+            log.log(f"⚠️  加载用户信息失败: {e}")
             import traceback
-            traceback.print_exc()
+            log.log(traceback.format_exc())
 
     def weixin_id_to_int(self, weixin_id: str) -> int:
         """将微信用户ID转换为固定的整数ID
@@ -128,30 +131,30 @@ class WeixinService:
         # 1. 如果传入的是用户名，先转换为 wxid
         if weixin_id in self.username_to_wxid:
             wxid = self.username_to_wxid[weixin_id]
-            print(f"🔄 用户名转wxid: {weixin_id} -> {wxid}")
+            log.log(f"🔄 用户名转wxid: {weixin_id} -> {wxid}")
             # 然后查找对应的 user_id
             for user_id, user_info in self.userid_to_user.items():
                 if user_info["wxid"] == wxid:
-                    print(f"🔄 wxid转整数ID: {wxid} -> {user_id}")
+                    log.log(f"🔄 wxid转整数ID: {wxid} -> {user_id}")
                     return user_id
 
         # 2. 如果传入的是 wxid，直接查找对应的 user_id
         for user_id, user_info in self.userid_to_user.items():
             if user_info["wxid"] == weixin_id:
-                print(f"🔄 wxid转整数ID: {weixin_id} -> {user_id}")
+                log.log(f"🔄 wxid转整数ID: {weixin_id} -> {user_id}")
                 return user_id
 
         # 3. 如果传入的是整数 user_id 字符串，尝试直接转换
         try:
             int_id = int(weixin_id)
             if int_id in self.userid_to_user:
-                print(f"🔄 整数ID: {weixin_id} -> {int_id}")
+                log.log(f"🔄 整数ID: {weixin_id} -> {int_id}")
                 return int_id
         except ValueError:
             pass
 
         # 如果找不到，返回 0
-        print(f"⚠️  未找到用户: {weixin_id}")
+        log.log(f"⚠️  未找到用户: {weixin_id}")
         return 0
 
     def send_files(
@@ -188,7 +191,7 @@ class WeixinService:
         for file_path in file_paths:
             if not os.path.exists(file_path):
                 failed_files.append(file_path)
-                print(f"⚠️  文件不存在: {file_path}")
+                log.log(f"⚠️  文件不存在: {file_path}")
             else:
                 valid_files.append(file_path)
 
@@ -209,24 +212,24 @@ class WeixinService:
             status=FileRequestStatus.PENDING.value
         )
 
-        print(f"🔍 创建文件请求: channel_type={request.channel_type}, type={type(request.channel_type)}")
+        log.log(f"🔍 创建文件请求: channel_type={request.channel_type}, type={type(request.channel_type)}")
 
-        print(f"📋 文件请求: 原始 user_id={user_id} (type: {type(user_id)})")
+        log.log(f"📋 文件请求: 原始 user_id={user_id} (type: {type(user_id)})")
         if user_id:
             mapped_id = self.user_mapping.get(user_id, user_id)
-            print(f"📋 映射后: {user_id} -> {mapped_id}")
+            log.log(f"📋 映射后: {user_id} -> {mapped_id}")
             int_id = self.weixin_id_to_int(user_id)
-            print(f"📋 转整数: {mapped_id} -> {int_id}")
+            log.log(f"📋 转整数: {mapped_id} -> {int_id}")
         else:
-            print(f"📋 user_id 为空，使用 channel_id")
+            log.log(f"📋 user_id 为空，使用 channel_id")
 
-        print(f"📋 FileRequest 创建时:")
-        print(f"   user_id={request.user_id} (type: {type(request.user_id)})")
-        print(f"   channel_type={request.channel_type}")
-        print(f"   status={request.status}")
+        log.log(f"📋 FileRequest 创建时:")
+        log.log(f"   user_id={request.user_id} (type: {type(request.user_id)})")
+        log.log(f"   channel_type={request.channel_type}")
+        log.log(f"   status={request.status}")
 
         req_id = self.message_queue.add_file_request(request)
-        print(f"✅ 文件发送请求已加入队列 (ID: {req_id})")
+        log.log(f"✅ 文件发送请求已加入队列 (ID: {req_id})")
 
         return FileSendResult(
             success=True,

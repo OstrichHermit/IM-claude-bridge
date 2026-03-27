@@ -3,6 +3,7 @@
 支持从微信 CDN 下载并解密文件
 """
 import os
+import sys
 import aiohttp
 import hashlib
 import base64
@@ -10,9 +11,13 @@ import json
 import re
 from typing import Optional, Dict, Any
 from pathlib import Path
-from datetime import datetime
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.logger import get_logger
+
+log = get_logger("WeixinMedia", "weixin")
 
 
 class MediaType:
@@ -31,21 +36,6 @@ class WeixinMediaDownloader:
 
     def __init__(self, cdn_base_url: str = None):
         self.cdn_base_url = cdn_base_url or self.DEFAULT_CDN_BASE_URL
-
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "weixin_bot.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     async def download_and_decrypt(
         self,
@@ -72,7 +62,7 @@ class WeixinMediaDownloader:
         if filekey:
             url += f"&filekey={quote(filekey)}"
 
-        self.log(f"📥 正在下载: {url[:80]}...")
+        log.log(f"📥 正在下载: {url[:80]}...")
 
         # 下载加密数据
         async with aiohttp.ClientSession() as session:
@@ -85,7 +75,7 @@ class WeixinMediaDownloader:
                     raise Exception(f"CDN 下载失败: HTTP {resp.status} - {error_text}")
 
                 ciphertext = await resp.read()
-                self.log(f"📥 下载了 {len(ciphertext)} 字节加密数据")
+                log.log(f"📥 下载了 {len(ciphertext)} 字节加密数据")
 
         # 解析 AES key
         aes_key_bytes = self._parse_aes_key(aes_key)
@@ -94,7 +84,7 @@ class WeixinMediaDownloader:
         cipher = AES.new(aes_key_bytes, AES.MODE_ECB)
         plaintext = unpad(cipher.decrypt(ciphertext), AES.block_size)
 
-        self.log(f"📥 解密后 {len(plaintext)} 字节")
+        log.log(f"📥 解密后 {len(plaintext)} 字节")
         return plaintext
 
     def _parse_aes_key(self, aes_key: str) -> bytes:
@@ -121,21 +111,6 @@ class WeixinMediaHandler:
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.downloader = WeixinMediaDownloader(cdn_base_url)
-
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "weixin_bot.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     async def download_media_item(
         self,
@@ -197,11 +172,11 @@ class WeixinMediaHandler:
             with open(filepath, "wb") as f:
                 f.write(content)
 
-            self.log(f"✅ [{label}] 图片已保存: {filepath}")
+            log.log(f"✅ [{label}] 图片已保存: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            self.log(f"❌ [{label}] 图片下载失败: {e}")
+            log.log(f"❌ [{label}] 图片下载失败: {e}")
             return None
 
     async def _download_file(self, item: Dict[str, Any], label: str) -> Optional[str]:
@@ -233,11 +208,11 @@ class WeixinMediaHandler:
             with open(filepath, "wb") as f:
                 f.write(content)
 
-            self.log(f"✅ [{label}] 文件已保存: {filepath}")
+            log.log(f"✅ [{label}] 文件已保存: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            self.log(f"❌ [{label}] 文件下载失败: {e}")
+            log.log(f"❌ [{label}] 文件下载失败: {e}")
             return None
 
     async def _download_voice(self, item: Dict[str, Any], label: str) -> Optional[str]:
@@ -261,11 +236,11 @@ class WeixinMediaHandler:
             with open(filepath, "wb") as f:
                 f.write(content)
 
-            self.log(f"✅ [{label}] 语音已保存: {filepath}")
+            log.log(f"✅ [{label}] 语音已保存: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            self.log(f"❌ [{label}] 语音下载失败: {e}")
+            log.log(f"❌ [{label}] 语音下载失败: {e}")
             return None
 
     async def _download_video(self, item: Dict[str, Any], label: str) -> Optional[str]:
@@ -289,11 +264,11 @@ class WeixinMediaHandler:
             with open(filepath, "wb") as f:
                 f.write(content)
 
-            self.log(f"✅ [{label}] 视频已保存: {filepath}")
+            log.log(f"✅ [{label}] 视频已保存: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            self.log(f"❌ [{label}] 视频下载失败: {e}")
+            log.log(f"❌ [{label}] 视频下载失败: {e}")
             return None
 
     @staticmethod
@@ -320,22 +295,7 @@ class WeixinFileMapping:
         self.mapping_file.parent.mkdir(parents=True, exist_ok=True)
         self.mapping: Dict[int, str] = {}  # file_size → filename
 
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "weixin_bot.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
         self._load()
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     def _load(self):
         """从文件加载映射表"""
@@ -365,13 +325,13 @@ class WeixinFileMapping:
                 if new_mapping:
                     self.mapping = new_mapping
                     self._save()
-                    self.log(f"📋 迁移了旧格式映射表到新格式")
+                    log.log(f"📋 迁移了旧格式映射表到新格式")
                 else:
                     self.mapping = {int(k): v for k, v in data.items() if isinstance(v, str)}
 
-                self.log(f"📋 加载了 {len(self.mapping)} 条文件映射")
+                log.log(f"📋 加载了 {len(self.mapping)} 条文件映射")
             except Exception as e:
-                self.log(f"⚠️ 加载文件映射失败: {e}")
+                log.log(f"⚠️ 加载文件映射失败: {e}")
                 self.mapping = {}
 
     def _save(self):
@@ -380,7 +340,7 @@ class WeixinFileMapping:
             with open(self.mapping_file, 'w', encoding='utf-8') as f:
                 json.dump(self.mapping, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            self.log(f"⚠️ 保存文件映射失败: {e}")
+            log.log(f"⚠️ 保存文件映射失败: {e}")
 
     def add_file(self, filename: str, file_size: int) -> None:
         """添加文件映射
@@ -391,7 +351,7 @@ class WeixinFileMapping:
         """
         self.mapping[file_size] = filename
         self._save()
-        self.log(f"📋 添加文件映射: {file_size} → {filename}")
+        log.log(f"📋 添加文件映射: {file_size} → {filename}")
 
     def get_filename_by_size(self, file_size: int) -> Optional[str]:
         """根据文件大小获取本地文件名

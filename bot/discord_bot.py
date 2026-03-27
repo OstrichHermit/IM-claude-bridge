@@ -9,15 +9,17 @@ import asyncio
 import sys
 import json
 from pathlib import Path
-from datetime import datetime
 
 # 添加 shared 目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
+from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.file_mapping import FileMapping
 from bot.cron_scheduler import BotCronScheduler
+
+log = get_logger("DiscordBot", "discord")
 
 
 class DiscordBot(discord.Client):
@@ -53,22 +55,6 @@ class DiscordBot(discord.Client):
         self.cron_scheduler = None
         self.cron_scan_task = None
 
-        # 日志文件设置
-        self.log_file = "logs/discord_bot.log"
-        logs_dir = Path(__file__).parent.parent / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
-
-    def log(self, message):
-        """同时输出到控制台和写入日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
-
     def _get_unified_queue(self, channel: discord.abc.Messageable):
         """
         获取或创建频道的消息队列
@@ -91,7 +77,7 @@ class DiscordBot(discord.Client):
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
-        self.log(f"Bot 已启动，登录为 {self.user}")
+        log.log(f"Bot 已启动，登录为 {self.user}")
 
         # 清理上次崩溃时卡住的消息
         await self.cleanup_stuck_messages()
@@ -101,16 +87,16 @@ class DiscordBot(discord.Client):
 
         # 同步命令到 Discord（全局同步）
         try:
-            self.log("🔄 正在同步斜杠命令到 Discord（全局）...")
+            log.log("🔄 正在同步斜杠命令到 Discord（全局）...")
             synced = await self.tree.sync()
-            self.log(f"✅ 已同步 {len(synced)} 个斜杠命令")
-            self.log(f"⏱️  注意：全局命令可能需要 1-5 分钟才能生效")
+            log.log(f"✅ 已同步 {len(synced)} 个斜杠命令")
+            log.log(f"⏱️  注意：全局命令可能需要 1-5 分钟才能生效")
 
         except Exception as e:
-            self.log(f"⚠️ 命令同步失败: {e}")
-            self.log(f"📋 请确认：")
-            self.log(f"   1. Bot Token 是否正确")
-            self.log(f"   2. 是否已在 Discord Developer Portal 启用 'applications.commands' scope")
+            log.log(f"⚠️ 命令同步失败: {e}")
+            log.log(f"📋 请确认：")
+            log.log(f"   1. Bot Token 是否正确")
+            log.log(f"   2. 是否已在 Discord Developer Portal 启用 'applications.commands' scope")
 
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
@@ -139,7 +125,7 @@ class DiscordBot(discord.Client):
             # 启动任务文件扫描任务
             self.cron_scan_task = asyncio.create_task(self.cron_scheduler.scan_loop())
         except Exception as e:
-            self.log(f"⚠️  定时任务调度器启动失败: {e}")
+            log.log(f"⚠️  定时任务调度器启动失败: {e}")
             self.cron_scheduler = None
 
     async def cleanup_stuck_messages(self):
@@ -154,7 +140,7 @@ class DiscordBot(discord.Client):
             stuck_count = cursor.fetchone()[0]
 
             if stuck_count > 0:
-                self.log(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
+                log.log(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
 
                 cursor.execute("""
                                UPDATE messages
@@ -166,16 +152,16 @@ class DiscordBot(discord.Client):
 
                 affected = cursor.rowcount
                 conn.commit()
-                self.log(f"✅ 已清理 {affected} 条卡住的消息")
+                log.log(f"✅ 已清理 {affected} 条卡住的消息")
             else:
-                self.log("✓ 没有发现 PROCESSING 状态的消息")
+                log.log("✓ 没有发现 PROCESSING 状态的消息")
 
             # 2. 清理 PENDING 状态的消息（避免重启后重复处理，只清理 Discord 频道的）
             cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending' AND channel_type = ?", (ChannelType.DISCORD.value,))
             pending_count = cursor.fetchone()[0]
 
             if pending_count > 0:
-                self.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
+                log.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
 
                 cursor.execute("""
                                UPDATE messages
@@ -187,16 +173,16 @@ class DiscordBot(discord.Client):
 
                 affected = cursor.rowcount
                 conn.commit()
-                self.log(f"✅ 已跳过 {affected} 条旧消息")
+                log.log(f"✅ 已跳过 {affected} 条旧消息")
             else:
-                self.log("✓ 没有发现 PENDING 状态的消息")
+                log.log("✓ 没有发现 PENDING 状态的消息")
 
             # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知，只清理 Discord 频道的）
             cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started' AND channel_type = ?", (ChannelType.DISCORD.value,))
             ai_started_count = cursor.fetchone()[0]
 
             if ai_started_count > 0:
-                self.log(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
+                log.log(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
 
                 cursor.execute("""
                                UPDATE messages
@@ -208,14 +194,14 @@ class DiscordBot(discord.Client):
 
                 affected = cursor.rowcount
                 conn.commit()
-                self.log(f"✅ 已标记 {affected} 条 AI_STARTED 消息为已完成")
+                log.log(f"✅ 已标记 {affected} 条 AI_STARTED 消息为已完成")
             else:
-                self.log("✓ 没有发现 AI_STARTED 状态的消息")
+                log.log("✓ 没有发现 AI_STARTED 状态的消息")
 
             conn.close()
 
         except Exception as e:
-            self.log(f"⚠️ 清理卡住消息时出错: {e}")
+            log.log(f"⚠️ 清理卡住消息时出错: {e}")
 
     async def _send_long_message(self, channel, content: str):
         """发送长消息，自动分割超过 2000 字符的消息"""
@@ -288,7 +274,7 @@ class DiscordBot(discord.Client):
                         if i < len(parts):
                             await asyncio.sleep(0.5)
                     except discord.errors.HTTPException as e:
-                        self.log(f"❌ 发送消息部分 {i}/{len(parts)} 失败: {e}")
+                        log.log(f"❌ 发送消息部分 {i}/{len(parts)} 失败: {e}")
                         # 尝试再次强制分割
                         if len(part) > MAX_LENGTH:
                             for j in range(0, len(part), MAX_LENGTH):
@@ -304,7 +290,7 @@ class DiscordBot(discord.Client):
 
         # 如果都没有配置，跳过通知
         if not notification_channel_id and not notification_user_id:
-            self.log("ℹ️  未配置启动通知，跳过")
+            log.log("ℹ️  未配置启动通知，跳过")
             return
 
         # 创建启动成功消息
@@ -331,14 +317,14 @@ class DiscordBot(discord.Client):
             try:
                 channel = self.get_channel(int(notification_channel_id))
                 if not channel:
-                    self.log(f"⚠️  找不到启动通知频道: {notification_channel_id}")
+                    log.log(f"⚠️  找不到启动通知频道: {notification_channel_id}")
                 else:
                     await channel.send(embed=embed)
-                    self.log(f"✅ 已向频道 #{channel.name} 发送启动通知")
+                    log.log(f"✅ 已向频道 #{channel.name} 发送启动通知")
             except ValueError:
-                self.log(f"⚠️  启动通知频道 ID 格式错误: {notification_channel_id}")
+                log.log(f"⚠️  启动通知频道 ID 格式错误: {notification_channel_id}")
             except Exception as e:
-                self.log(f"❌ 发送到频道失败: {e}")
+                log.log(f"❌ 发送到频道失败: {e}")
 
         # 发送到用户私聊
         if notification_user_id:
@@ -348,21 +334,21 @@ class DiscordBot(discord.Client):
                     try:
                         user = await self.fetch_user(int(notification_user_id))
                     except discord.NotFound:
-                        self.log(f"⚠️  找不到启动通知用户: {notification_user_id}")
+                        log.log(f"⚠️  找不到启动通知用户: {notification_user_id}")
                         return
                     except discord.HTTPException as e:
-                        self.log(f"⚠️  获取用户失败: {e}")
+                        log.log(f"⚠️  获取用户失败: {e}")
                         return
 
                 # 创建或获取 DM 频道
                 dm_channel = await user.create_dm()
                 await dm_channel.send(embed=embed)
-                self.log(f"✅ 已向用户 {user.display_name} 发送启动通知（私聊）")
+                log.log(f"✅ 已向用户 {user.display_name} 发送启动通知（私聊）")
 
             except ValueError:
-                self.log(f"⚠️  启动通知用户 ID 格式错误: {notification_user_id}")
+                log.log(f"⚠️  启动通知用户 ID 格式错误: {notification_user_id}")
             except Exception as e:
-                self.log(f"❌ 发送到用户私聊失败: {e}")
+                log.log(f"❌ 发送到用户私聊失败: {e}")
 
     async def add_commands(self):
         """注册斜杠命令"""
@@ -417,10 +403,10 @@ class DiscordBot(discord.Client):
                 embed.add_field(name="新的 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
                 embed.add_field(name="说明", value="下次对话将使用新的会话 ID 创建全新上下文。", inline=False)
                 await interaction.response.send_message(embed=embed)
-                self.log(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
-                self.log(f"[会话重置] Session Key: {session_key}")
-                self.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
-                self.log(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
+                log.log(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
+                log.log(f"[会话重置] Session Key: {session_key}")
+                log.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
+                log.log(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
             else:
                 embed = discord.Embed(
                     title="⚠️ 没有活跃会话",
@@ -496,7 +482,7 @@ class DiscordBot(discord.Client):
                     )
                     embed.add_field(name="说明", value="服务将在几秒钟后停止。", inline=False)
                     await interaction.response.send_message(embed=embed)
-                    self.log(f"[停止命令] 用户 {interaction.user.display_name} 确认停止服务")
+                    log.log(f"[停止命令] 用户 {interaction.user.display_name} 确认停止服务")
 
                     # 执行停止脚本（通过 manager）
                     import subprocess
@@ -513,7 +499,7 @@ class DiscordBot(discord.Client):
                                 cwd=script_dir,
                                 creationflags=subprocess.CREATE_NEW_CONSOLE
                             )
-                            self.log(f"✅ 停止命令已执行: python im_claude_bridge_manager.py stop")
+                            log.log(f"✅ 停止命令已执行: python im_claude_bridge_manager.py stop")
                         else:
                             embed = discord.Embed(
                                 title="❌ 文件未找到",
@@ -521,7 +507,7 @@ class DiscordBot(discord.Client):
                                 color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed)
-                            self.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
+                            log.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
 
                     except Exception as e:
                         embed = discord.Embed(
@@ -530,7 +516,7 @@ class DiscordBot(discord.Client):
                             color=discord.Color.red()
                         )
                         await interaction.followup.send(embed=embed)
-                        self.log(f"❌ 执行停止命令时出错: {e}")
+                        log.log(f"❌ 执行停止命令时出错: {e}")
                         import traceback
                         traceback.print_exc()
 
@@ -548,7 +534,7 @@ class DiscordBot(discord.Client):
             embed.add_field(name="确认方式", value="如需确认，请在 60 秒内再次使用 `/stop` 命令", inline=False)
             await interaction.response.send_message(embed=embed)
 
-            self.log(f"[停止命令] 用户 {interaction.user.display_name} 请求停止服务，等待再次确认...")
+            log.log(f"[停止命令] 用户 {interaction.user.display_name} 请求停止服务，等待再次确认...")
 
         @self.tree.command(name="restart", description="重启 Discord Bridge 服务")
         async def restart_command(interaction: discord.Interaction):
@@ -570,7 +556,7 @@ class DiscordBot(discord.Client):
             )
             embed.add_field(name="说明", value="请稍候，服务将在几秒钟后重新启动。", inline=False)
             await interaction.response.send_message(embed=embed)
-            self.log(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
+            log.log(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
 
             # 执行重启脚本（通过 manager）
             import subprocess
@@ -588,7 +574,7 @@ class DiscordBot(discord.Client):
                         cwd=script_dir,
                         creationflags=subprocess.CREATE_NEW_CONSOLE
                     )
-                    self.log(f"✅ 重启命令已执行: python im_claude_bridge_manager.py restart")
+                    log.log(f"✅ 重启命令已执行: python im_claude_bridge_manager.py restart")
                 else:
                     embed = discord.Embed(
                         title="❌ 文件未找到",
@@ -596,7 +582,7 @@ class DiscordBot(discord.Client):
                         color=discord.Color.red()
                     )
                     await interaction.followup.send(embed=embed)
-                    self.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
+                    log.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
 
             except Exception as e:
                 embed = discord.Embed(
@@ -605,7 +591,7 @@ class DiscordBot(discord.Client):
                     color=discord.Color.red()
                 )
                 await interaction.followup.send(embed=embed)
-                self.log(f"❌ 执行重启命令时出错: {e}")
+                log.log(f"❌ 执行重启命令时出错: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -642,7 +628,7 @@ class DiscordBot(discord.Client):
                 )
                 embed.add_field(name="说明", value="Claude 响应将在几秒内停止...", inline=False)
                 await interaction.response.send_message(embed=embed)
-                self.log(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
+                log.log(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
 
                 # 停止正在输入状态
                 self.stop_typing_indicator(message_to_abort.id)
@@ -660,7 +646,7 @@ class DiscordBot(discord.Client):
             import aiohttp
             from pathlib import Path
 
-            self.log(f"[下载命令] 用户 {interaction.user.display_name} 右键点击消息 {message.id}")
+            log.log(f"[下载命令] 用户 {interaction.user.display_name} 右键点击消息 {message.id}")
 
             # 检查消息是否有附件
             if not message.attachments:
@@ -693,7 +679,7 @@ class DiscordBot(discord.Client):
                         if mapped_filename:
                             # 使用映射表中的文件名
                             local_path = save_dir / mapped_filename
-                            self.log(f"[下载命令] 使用已映射文件名: {mapped_filename}")
+                            log.log(f"[下载命令] 使用已映射文件名: {mapped_filename}")
                         else:
                             # 处理文件名冲突
                             local_path = save_dir / attachment.filename
@@ -723,7 +709,7 @@ class DiscordBot(discord.Client):
                                     "local_path": str(local_path),
                                     "size": len(file_content)
                                 })
-                                self.log(f"[下载命令] ✓ 已下载: {attachment.filename} -> {local_path}")
+                                log.log(f"[下载命令] ✓ 已下载: {attachment.filename} -> {local_path}")
                             else:
                                 raise ValueError(f"HTTP {resp.status}")
 
@@ -732,7 +718,7 @@ class DiscordBot(discord.Client):
                             "filename": attachment.filename,
                             "error": str(e)
                         })
-                        self.log(f"[下载命令] ✗ 下载失败: {attachment.filename} - {e}")
+                        log.log(f"[下载命令] ✗ 下载失败: {attachment.filename} - {e}")
 
             # 构建响应消息
             response_lines = [
@@ -758,15 +744,15 @@ class DiscordBot(discord.Client):
             followup_msg = "\n".join(response_lines)
             await status_message.edit(content=followup_msg)
 
-            self.log(f"[下载命令] 用户 {interaction.user.display_name} 下载了 {len(downloaded_files)}/{len(message.attachments)} 个文件")
+            log.log(f"[下载命令] 用户 {interaction.user.display_name} 下载了 {len(downloaded_files)}/{len(message.attachments)} 个文件")
 
 
     async def on_ready(self):
         """Bot 准备就绪"""
-        self.log(f"✓ Bot 已准备就绪!")
-        self.log(f"✓ 在 {len(self.guilds)} 个服务器中")
-        self.log(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort")
-        self.log(f"✓ 上下文菜单: 下载附件")
+        log.log(f"✓ Bot 已准备就绪!")
+        log.log(f"✓ 在 {len(self.guilds)} 个服务器中")
+        log.log(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort")
+        log.log(f"✓ 上下文菜单: 下载附件")
 
         # 发送启动通知
         await self.send_startup_notification()
@@ -820,7 +806,7 @@ class DiscordBot(discord.Client):
             # 检查并处理附件
             attachment_infos = None
             if message.attachments:
-                self.log(f"[附件检测] 用户 {message.author.display_name} 发送了 {len(message.attachments)} 个附件")
+                log.log(f"[附件检测] 用户 {message.author.display_name} 发送了 {len(message.attachments)} 个附件")
 
                 # 使用配置的默认下载目录
                 save_dir = Path(self.config.default_download_directory)
@@ -837,7 +823,7 @@ class DiscordBot(discord.Client):
                             if mapped_filename:
                                 # 使用映射表中的文件名
                                 local_path = save_dir / mapped_filename
-                                self.log(f"[附件下载] 使用已映射文件名: {mapped_filename}")
+                                log.log(f"[附件下载] 使用已映射文件名: {mapped_filename}")
                             else:
                                 # 处理文件名冲突
                                 local_path = save_dir / attachment.filename
@@ -867,12 +853,12 @@ class DiscordBot(discord.Client):
                                         "local_path": str(local_path),
                                         "size": len(file_content)
                                     })
-                                    self.log(f"[附件下载] ✓ 已下载: {attachment.filename} -> {local_path}")
+                                    log.log(f"[附件下载] ✓ 已下载: {attachment.filename} -> {local_path}")
                                 else:
                                     raise ValueError(f"HTTP {resp.status}")
 
                         except Exception as e:
-                            self.log(f"[附件下载] ✗ 下载失败: {attachment.filename} - {e}")
+                            log.log(f"[附件下载] ✗ 下载失败: {attachment.filename} - {e}")
 
                 # 构建附件信息对象列表
                 if downloaded_files:
@@ -886,7 +872,7 @@ class DiscordBot(discord.Client):
                             url=f"file://{f['local_path']}",  # 使用本地文件路径
                             description=None
                         ))
-                    self.log(f"[附件处理] 成功处理 {len(attachment_infos)} 个附件")
+                    log.log(f"[附件处理] 成功处理 {len(attachment_infos)} 个附件")
 
             # 如果没有内容也没有附件，返回错误
             if not content and not attachment_infos:
@@ -927,7 +913,7 @@ class DiscordBot(discord.Client):
 
             # 打印日志，包含附件信息
             attach_info = f" (+{len(attachment_infos)}个附件)" if attachment_infos else ""
-            self.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
+            log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
 
             # 不发送确认消息，直接启动 typing indicator
             from bot.streaming_queue import StreamingMessageQueue
@@ -956,10 +942,10 @@ class DiscordBot(discord.Client):
                 "current_text_block_index": 0,  # 当前文本块索引（在所有 text 类型的 content block 中）
                 "text_block_item_indices": {},  # {text_block_index: item_count}
             }
-            self.log(f"[消息 #{message_id}] 已启动 typing indicator")
+            log.log(f"[消息 #{message_id}] 已启动 typing indicator")
 
         except Exception as e:
-            self.log(f"❌ 处理消息时出错: {e}")
+            log.log(f"❌ 处理消息时出错: {e}")
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
@@ -971,7 +957,7 @@ class DiscordBot(discord.Client):
             original_message_id = message.reference.message_id
             original_channel_id = message.reference.channel_id
 
-            self.log(f"[附件引用] 用户 {message.author.display_name} 引用了消息 {original_message_id}")
+            log.log(f"[附件引用] 用户 {message.author.display_name} 引用了消息 {original_message_id}")
 
             # 获取原始消息
             channel = self.get_channel(original_channel_id)
@@ -1027,9 +1013,9 @@ class DiscordBot(discord.Client):
                     description=attachment.description
                 ))
 
-            self.log(f"[附件引用] 检测到 {len(attachment_infos)} 个附件")
+            log.log(f"[附件引用] 检测到 {len(attachment_infos)} 个附件")
             for idx, att in enumerate(attachment_infos, 1):
-                self.log(f"  附件 {idx}: {att.filename} ({att.size} 字节)")
+                log.log(f"  附件 {idx}: {att.filename} ({att.size} 字节)")
 
             # 移除 bot 提及，提取用户输入的内容
             content = message.content
@@ -1078,7 +1064,7 @@ class DiscordBot(discord.Client):
                 # 添加到消息队列
                 message_id = self.message_queue.add_message(msg)
 
-                self.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的附件引用消息 ({'私聊' if is_dm else '频道'})")
+                log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的附件引用消息 ({'私聊' if is_dm else '频道'})")
 
                 # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
                 from bot.streaming_queue import StreamingMessageQueue
@@ -1103,10 +1089,10 @@ class DiscordBot(discord.Client):
                     "last_streaming_content": "",
                     "sent_blocks": [],
                 }
-                self.log(f"[消息 #{message_id}] 已启动 typing indicator")
+                log.log(f"[消息 #{message_id}] 已启动 typing indicator")
 
         except Exception as e:
-            self.log(f"❌ 处理附件引用消息时出错: {e}")
+            log.log(f"❌ 处理附件引用消息时出错: {e}")
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
@@ -1123,7 +1109,7 @@ class DiscordBot(discord.Client):
             elapsed = 0
             last_progress_update = 0
 
-            self.log(f"[文件下载 #{request_id}] 开始监控下载进度")
+            log.log(f"[文件下载 #{request_id}] 开始监控下载进度")
 
             while elapsed < max_wait_time:
                 # 直接查询数据库状态
@@ -1142,7 +1128,7 @@ class DiscordBot(discord.Client):
 
                     if status == FileDownloadRequestStatus.COMPLETED.value:
                         # 下载完成
-                        self.log(f"[文件下载 #{request_id}] 下载完成")
+                        log.log(f"[文件下载 #{request_id}] 下载完成")
 
                         downloaded_files = []
                         if files_json:
@@ -1150,7 +1136,7 @@ class DiscordBot(discord.Client):
                                 result_data = json.loads(files_json)
                                 downloaded_files = result_data.get("downloaded_files", [])
                             except json.JSONDecodeError as e:
-                                self.log(f"[文件下载 #{request_id}] 解析文件列表失败: {e}")
+                                log.log(f"[文件下载 #{request_id}] 解析文件列表失败: {e}")
 
                         if downloaded_files:
                             files_info = "\n".join([
@@ -1179,7 +1165,7 @@ class DiscordBot(discord.Client):
 
                     elif status == FileDownloadRequestStatus.FAILED.value:
                         # 下载失败
-                        self.log(f"[文件下载 #{request_id}] 下载失败: {error}")
+                        log.log(f"[文件下载 #{request_id}] 下载失败: {error}")
                         error_msg = error or "未知错误"
                         embed = discord.Embed(
                             title="❌ 文件下载失败",
@@ -1192,7 +1178,7 @@ class DiscordBot(discord.Client):
 
                     elif status == FileDownloadRequestStatus.PROCESSING.value:
                         # 正在处理中
-                        self.log(f"[文件下载 #{request_id}] 正在处理中... ({elapsed}s)")
+                        log.log(f"[文件下载 #{request_id}] 正在处理中... ({elapsed}s)")
 
                         # 每 30 秒更新一次进度提示
                         if elapsed - last_progress_update >= 30:
@@ -1210,7 +1196,7 @@ class DiscordBot(discord.Client):
                 elapsed += check_interval
 
             # 超时 - 最后检查一次
-            self.log(f"[文件下载 #{request_id}] 监控超时 ({elapsed}秒)，最后检查一次")
+            log.log(f"[文件下载 #{request_id}] 监控超时 ({elapsed}秒)，最后检查一次")
             conn = sqlite3.connect(self.config.database_path)
             cursor = conn.cursor()
             cursor.execute("""
@@ -1223,7 +1209,7 @@ class DiscordBot(discord.Client):
 
             if db_result and db_result[0] == FileDownloadRequestStatus.COMPLETED.value:
                 # 实际上已经完成
-                self.log(f"[文件下载 #{request_id}] 超时检查时发现已完成")
+                log.log(f"[文件下载 #{request_id}] 超时检查时发现已完成")
                 downloaded_files = []
                 if db_result[1]:
                     try:
@@ -1257,7 +1243,7 @@ class DiscordBot(discord.Client):
                     await confirmation_msg.edit(content="", embed=embed)
             else:
                 # 真的超时了
-                self.log(f"[文件下载 #{request_id}] 真的超时")
+                log.log(f"[文件下载 #{request_id}] 真的超时")
                 embed = discord.Embed(
                     title="⏱️ 下载请求超时",
                     description=f"请求 #{request_id}\n\n文件下载请求超时（{max_wait_time}秒）\n可能原因：Bot 未运行或消息不存在。",
@@ -1267,7 +1253,7 @@ class DiscordBot(discord.Client):
                 await confirmation_msg.edit(content="", embed=embed)
 
         except Exception as e:
-            self.log(f"❌ 监控下载进度时出错: {e}")
+            log.log(f"❌ 监控下载进度时出错: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1335,7 +1321,7 @@ class DiscordBot(discord.Client):
             return count > 0
 
         except Exception as e:
-            self.log(f"⚠️ 检查 session 状态时出错: {e}")
+            log.log(f"⚠️ 检查 session 状态时出错: {e}")
             return False
 
     async def check_responses(self):
@@ -1373,7 +1359,7 @@ class DiscordBot(discord.Client):
                             else:
                                 channel = self.get_channel(channel_id)
                                 if not channel:
-                                    self.log(f"⚠️  外部消息 #{msg_id}: 找不到频道 {channel_id}")
+                                    log.log(f"⚠️  外部消息 #{msg_id}: 找不到频道 {channel_id}")
                                     continue
 
                             # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
@@ -1399,16 +1385,16 @@ class DiscordBot(discord.Client):
                                 "last_streaming_content": "",
                                 "sent_blocks": [],
                             }
-                            self.log(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
+                            log.log(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
 
                         except Exception as e:
-                            self.log(f"⚠️  外部消息 #{msg_id} 加载失败: {e}")
+                            log.log(f"⚠️  外部消息 #{msg_id} 加载失败: {e}")
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except Exception as e:
-                self.log(f"❌ 检查响应时出错: {e}")
+                log.log(f"❌ 检查响应时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -1417,7 +1403,7 @@ class DiscordBot(discord.Client):
         """定期检查流式响应更新并实时发送 Discord 消息"""
         await self.wait_until_ready()
 
-        self.log("🌊 流式响应检查任务已启动")
+        log.log("🌊 流式响应检查任务已启动")
 
         while not self.is_closed():
             try:
@@ -1495,7 +1481,7 @@ class DiscordBot(discord.Client):
                                             )
                                             sent_count += 1
                                         except Exception as e:
-                                            self.log(f"[表情包] 发送失败: {sticker_path} - {e}")
+                                            log.log(f"[表情包] 发送失败: {sticker_path} - {e}")
 
                                     # 只有当处理后文本不为空时才发送
                                     if processed_block and processed_block.strip():
@@ -1541,7 +1527,7 @@ class DiscordBot(discord.Client):
                             pending["last_streaming_content"] = streaming_response
 
             except Exception as e:
-                self.log(f"❌ 检查流式响应时出错: {e}")
+                log.log(f"❌ 检查流式响应时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -1550,7 +1536,7 @@ class DiscordBot(discord.Client):
         """定期检查并处理文件发送请求"""
         await self.wait_until_ready()
 
-        self.log("📁 文件发送检查任务已启动")
+        log.log("📁 文件发送检查任务已启动")
 
         while not self.is_closed():
             try:
@@ -1559,7 +1545,7 @@ class DiscordBot(discord.Client):
                 file_request = self.message_queue.get_next_file_request(channel_type="discord")
 
                 if file_request:
-                    self.log(f"📁 处理文件请求 #{file_request.id}")
+                    log.log(f"📁 处理文件请求 #{file_request.id}")
                     # 标记为处理中
                     self.message_queue.update_file_request_status(
                         file_request.id,
@@ -1612,7 +1598,7 @@ class DiscordBot(discord.Client):
                             FileRequestStatus.COMPLETED,
                             result=result
                         )
-                        self.log(f"✅ 文件请求 #{file_request.id} 处理完成")
+                        log.log(f"✅ 文件请求 #{file_request.id} 处理完成")
 
                     except Exception as e:
                         # 标记为失败
@@ -1625,13 +1611,13 @@ class DiscordBot(discord.Client):
                             FileRequestStatus.FAILED,
                             error=error_msg
                         )
-                        self.log(f"❌ 文件请求 #{file_request.id} 处理失败: {e}")
+                        log.log(f"❌ 文件请求 #{file_request.id} 处理失败: {e}")
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except Exception as e:
-                self.log(f"❌ 检查文件请求时出错: {e}")
+                log.log(f"❌ 检查文件请求时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -1640,7 +1626,7 @@ class DiscordBot(discord.Client):
         """定期检查并处理文件下载请求（支持私聊和频道）"""
         await self.wait_until_ready()
 
-        self.log("📥 文件下载检查任务已启动")
+        log.log("📥 文件下载检查任务已启动")
 
         while not self.is_closed():
             try:
@@ -1649,7 +1635,7 @@ class DiscordBot(discord.Client):
                 download_request = self.message_queue.get_next_file_download_request()
 
                 if download_request:
-                    self.log(f"📥 处理文件下载请求 #{download_request.id}")
+                    log.log(f"📥 处理文件下载请求 #{download_request.id}")
                     # 标记为处理中
                     self.message_queue.update_file_download_request_status(
                         download_request.id,
@@ -1704,7 +1690,7 @@ class DiscordBot(discord.Client):
                                 if mapped_filename:
                                     # 使用映射表中的文件名
                                     local_path = save_dir / mapped_filename
-                                    self.log(f"  [文件下载] 使用已映射文件名: {mapped_filename}")
+                                    log.log(f"  [文件下载] 使用已映射文件名: {mapped_filename}")
                                 else:
                                     # 处理文件名冲突
                                     local_path = save_dir / attachment.filename
@@ -1732,7 +1718,7 @@ class DiscordBot(discord.Client):
                                             "local_path": str(local_path),
                                             "size": attachment.size
                                         })
-                                        self.log(f"  ✓ 已下载: {attachment.filename} -> {local_path}")
+                                        log.log(f"  ✓ 已下载: {attachment.filename} -> {local_path}")
                                     else:
                                         raise ValueError(f"下载文件失败: {attachment.filename} (HTTP {resp.status})")
 
@@ -1748,7 +1734,7 @@ class DiscordBot(discord.Client):
                             FileDownloadRequestStatus.COMPLETED,
                             downloaded_files=result
                         )
-                        self.log(f"✅ 文件下载请求 #{download_request.id} 处理完成")
+                        log.log(f"✅ 文件下载请求 #{download_request.id} 处理完成")
 
                     except Exception as e:
                         # 标记为失败
@@ -1761,7 +1747,7 @@ class DiscordBot(discord.Client):
                             FileDownloadRequestStatus.FAILED,
                             error=error_msg
                         )
-                        self.log(f"❌ 文件下载请求 #{download_request.id} 处理失败: {e}")
+                        log.log(f"❌ 文件下载请求 #{download_request.id} 处理失败: {e}")
                         import traceback
                         traceback.print_exc()
 
@@ -1769,7 +1755,7 @@ class DiscordBot(discord.Client):
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except Exception as e:
-                self.log(f"❌ 检查文件下载请求时出错: {e}")
+                log.log(f"❌ 检查文件下载请求时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -1778,7 +1764,7 @@ class DiscordBot(discord.Client):
         """定期检查并处理消息发送请求"""
         await self.wait_until_ready()
 
-        self.log("💬 消息发送检查任务已启动")
+        log.log("💬 消息发送检查任务已启动")
 
         while not self.is_closed():
             try:
@@ -1787,7 +1773,7 @@ class DiscordBot(discord.Client):
                 message_request = self.message_queue.get_next_message_request()
 
                 if message_request:
-                    self.log(f"💬 处理消息请求 #{message_request.id}")
+                    log.log(f"💬 处理消息请求 #{message_request.id}")
                     # 标记为处理中
                     self.message_queue.update_message_request_status(
                         message_request.id,
@@ -1848,7 +1834,7 @@ class DiscordBot(discord.Client):
                             MessageRequestStatus.COMPLETED,
                             result=result
                         )
-                        self.log(f"✅ 消息请求 #{message_request.id} 处理完成")
+                        log.log(f"✅ 消息请求 #{message_request.id} 处理完成")
 
                     except Exception as e:
                         # 标记为失败
@@ -1861,13 +1847,13 @@ class DiscordBot(discord.Client):
                             MessageRequestStatus.FAILED,
                             error=error_msg
                         )
-                        self.log(f"❌ 消息请求 #{message_request.id} 处理失败: {e}")
+                        log.log(f"❌ 消息请求 #{message_request.id} 处理失败: {e}")
 
                 # 等待一段时间再检查
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except Exception as e:
-                self.log(f"❌ 检查消息请求时出错: {e}")
+                log.log(f"❌ 检查消息请求时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -1920,20 +1906,20 @@ class DiscordBot(discord.Client):
                     break
                 except Exception as e:
                     retry_count += 1
-                    self.log(f"⚠️ 维持 typing indicator 时出错 (第{retry_count}次): {e}")
+                    log.log(f"⚠️ 维持 typing indicator 时出错 (第{retry_count}次): {e}")
 
                     if retry_count >= max_retries:
-                        self.log(f"❌ 维持 typing indicator 失败，已达最大重试次数 ({max_retries})，停止尝试")
+                        log.log(f"❌ 维持 typing indicator 失败，已达最大重试次数 ({max_retries})，停止尝试")
                         break
 
-                    self.log(f"🔄 {retry_delay}秒后重试...")
+                    log.log(f"🔄 {retry_delay}秒后重试...")
                     await asyncio.sleep(retry_delay)
 
         except asyncio.CancelledError:
             # 任务被取消，正常退出
             pass
         except Exception as e:
-            self.log(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
+            log.log(f"❌ 维持 typing indicator 时发生未预期错误: {e}")
 
     def stop_typing_indicator(self, message_id):
         """
@@ -1954,7 +1940,7 @@ class DiscordBot(discord.Client):
 
             if task and not task.done():
                 task.cancel()  # 这会触发 _maintain_typing_indicator 中的 CancelledError
-                self.log(f"🛑 [消息 #{message_id}] 已停止 typing indicator")
+                log.log(f"🛑 [消息 #{message_id}] 已停止 typing indicator")
 
             # 更新状态为已停止
             msg_info["typing_active"] = False
@@ -2193,9 +2179,9 @@ class DiscordBot(discord.Client):
                                 if matching_files:
                                     sticker_paths.append(matching_files[0])
                                 else:
-                                    self.log(f"[表情包] 文件不存在: {filename}")
+                                    log.log(f"[表情包] 文件不存在: {filename}")
                             else:
-                                self.log(f"[表情包] 文件不存在: {filename}")
+                                log.log(f"[表情包] 文件不存在: {filename}")
 
                         # 更新当前文本为后缀，继续处理下一个表情包
                         current_text = suffix_text
@@ -2220,9 +2206,9 @@ class DiscordBot(discord.Client):
                                 if matching_files:
                                     sticker_paths.append(matching_files[0])
                                 else:
-                                    self.log(f"[表情包] 文件不存在: {filename}")
+                                    log.log(f"[表情包] 文件不存在: {filename}")
                             else:
-                                self.log(f"[表情包] 文件不存在: {filename}")
+                                log.log(f"[表情包] 文件不存在: {filename}")
 
                     # 移除表情包标记
                     line = sticker_pattern.sub('', line)
@@ -2296,9 +2282,9 @@ class DiscordBot(discord.Client):
                             if matching_files:
                                 sticker_paths.append(matching_files[0])
                             else:
-                                self.log(f"[表情包] 文件不存在: {filename}")
+                                log.log(f"[表情包] 文件不存在: {filename}")
                         else:
-                            self.log(f"[表情包] 文件不存在: {filename}")
+                            log.log(f"[表情包] 文件不存在: {filename}")
 
                 # 移除表情包标记
                 line = sticker_pattern.sub('', line)
@@ -2369,7 +2355,7 @@ class DiscordBot(discord.Client):
                             processed_tool_uses[msg_id] = list(range(len(tool_uses)))
 
                     except (json.JSONDecodeError, KeyError) as e:
-                        self.log(f"❌ [Bot] 解析工具调用失败: {e}")
+                        log.log(f"❌ [Bot] 解析工具调用失败: {e}")
                         pass
 
                 # 清理已完成消息的记录
@@ -2390,7 +2376,7 @@ class DiscordBot(discord.Client):
                 await asyncio.sleep(0.1)
 
             except Exception as e:
-                self.log(f"❌ 检查工具调用时出错: {e}")
+                log.log(f"❌ 检查工具调用时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -2399,7 +2385,7 @@ class DiscordBot(discord.Client):
         """检查并发送消息序列（统一的发送任务）"""
         await self.wait_until_ready()
 
-        self.log("🌊 消息序列检查任务已启动")
+        log.log("🌊 消息序列检查任务已启动")
 
         from datetime import datetime
 
@@ -2453,11 +2439,11 @@ class DiscordBot(discord.Client):
                     if not pending_sequences:
                         # 没有待发送的序列，检查是否完成
                         stats = self.message_queue.get_message_sequences_stats(message_id)
-                        self.log(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
+                        log.log(f"🔍 [消息 #{message_id}] 序列统计: total={stats['total']}, pending={stats['pending']}, sent={stats['sent']}")
 
                         # 检查 AI 响应是否已完成，且所有序列都已发送
                         if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
-                            self.log(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
+                            log.log(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
@@ -2482,12 +2468,12 @@ class DiscordBot(discord.Client):
                                 user = await self.fetch_user(user_id)
                             except discord.NotFound:
                                 # 用户不存在，标记消息为失败并清理
-                                self.log(f"❌ 消息 #{message_id} 发送失败: 用户不存在 (user_id={user_id})")
+                                log.log(f"❌ 消息 #{message_id} 发送失败: 用户不存在 (user_id={user_id})")
                                 self.message_queue.cleanup_message_sequences(message_id)
                                 self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"用户不存在: {user_id}")
                                 continue
                             except Exception as e:
-                                self.log(f"⚠️  获取用户失败: {user_id}, 错误: {e}")
+                                log.log(f"⚠️  获取用户失败: {user_id}, 错误: {e}")
                                 continue
                         if not user:
                             continue
@@ -2495,13 +2481,13 @@ class DiscordBot(discord.Client):
                             channel = await user.create_dm()
                         except discord.NotFound:
                             # 无法创建 DM（用户不存在），标记消息为失败
-                            self.log(f"❌ 消息 #{message_id} 发送失败: 无法创建私聊频道 (user_id={user_id})")
+                            log.log(f"❌ 消息 #{message_id} 发送失败: 无法创建私聊频道 (user_id={user_id})")
                             self.message_queue.cleanup_message_sequences(message_id)
                             self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"无法创建私聊频道: {user_id}")
                             continue
                         except discord.Forbidden:
                             # 没有权限创建 DM
-                            self.log(f"❌ 消息 #{message_id} 发送失败: 没有权限创建私聊频道 (user_id={user_id})")
+                            log.log(f"❌ 消息 #{message_id} 发送失败: 没有权限创建私聊频道 (user_id={user_id})")
                             self.message_queue.cleanup_message_sequences(message_id)
                             self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"没有权限创建私聊频道: {user_id}")
                             continue
@@ -2509,7 +2495,7 @@ class DiscordBot(discord.Client):
                         channel = self.get_channel(channel_id)
                         if not channel:
                             # 频道不存在，标记消息为失败并清理
-                            self.log(f"❌ 消息 #{message_id} 发送失败: 频道不存在 (channel_id={channel_id})")
+                            log.log(f"❌ 消息 #{message_id} 发送失败: 频道不存在 (channel_id={channel_id})")
                             self.message_queue.cleanup_message_sequences(message_id)
                             self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"频道不存在: {channel_id}")
                             continue
@@ -2536,7 +2522,7 @@ class DiscordBot(discord.Client):
                                         file = discord.File(sticker_path)
                                         await channel.send(file=file)
                                     except Exception as e:
-                                        self.log(f"[表情包] 发送失败: {sticker_path} - {e}")
+                                        log.log(f"[表情包] 发送失败: {sticker_path} - {e}")
 
                                 # 发送处理后的文本（如果不为空）
                                 if processed_text and processed_text.strip():
@@ -2785,25 +2771,25 @@ class DiscordBot(discord.Client):
 
                     except discord.NotFound as e:
                         # 频道/用户不存在，标记消息为失败并清理
-                        self.log(f"❌ 消息 #{message_id} 发送失败: 资源不存在 - {e}")
+                        log.log(f"❌ 消息 #{message_id} 发送失败: 资源不存在 - {e}")
                         self.message_queue.cleanup_message_sequences(message_id)
                         self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"资源不存在: {e}")
                         import traceback
                         traceback.print_exc()
                     except discord.Forbidden as e:
                         # 没有权限，标记消息为失败并清理
-                        self.log(f"❌ 消息 #{message_id} 发送失败: 没有权限 - {e}")
+                        log.log(f"❌ 消息 #{message_id} 发送失败: 没有权限 - {e}")
                         self.message_queue.cleanup_message_sequences(message_id)
                         self.message_queue.update_status(message_id, MessageStatus.FAILED, error=f"没有权限: {e}")
                         import traceback
                         traceback.print_exc()
                     except Exception as e:
-                        self.log(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
+                        log.log(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
                         import traceback
                         traceback.print_exc()
 
                 except Exception as e:
-                    self.log(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
+                    log.log(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
                     import traceback
                     traceback.print_exc()
 
@@ -2811,7 +2797,7 @@ class DiscordBot(discord.Client):
                 await asyncio.sleep(0.01)
 
             except Exception as e:
-                self.log(f"❌ 检查消息序列时出错: {e}")
+                log.log(f"❌ 检查消息序列时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -3119,9 +3105,9 @@ class DiscordBot(discord.Client):
                     channel_type='discord'
                 )
             else:
-                self.log(f"⚠️ [Bot] 发送卡片失败: 消息 #{message_id}, 工具 #{tool_use_index}, sent_message 为 None")
+                log.log(f"⚠️ [Bot] 发送卡片失败: 消息 #{message_id}, 工具 #{tool_use_index}, sent_message 为 None")
         except Exception as e:
-            self.log(f"❌ [Bot] 发送卡片异常: 消息 #{message_id}, 工具 #{tool_use_index}, 错误: {e}")
+            log.log(f"❌ [Bot] 发送卡片异常: 消息 #{message_id}, 工具 #{tool_use_index}, 错误: {e}")
             pass  # 静默失败，避免刷屏
 
     async def _update_tool_use_card(self, message_id: int, tool_use_index: int, success: bool):
@@ -3144,7 +3130,7 @@ class DiscordBot(discord.Client):
             if retry < max_retries - 1:  # 不是最后一次重试
                 await asyncio.sleep(1)  # 等待1秒后重试
             else:
-                self.log(f"❌ [Bot] 未找到卡片引用: 消息 #{message_id}, 工具 #{tool_use_index}，已达最大重试次数")
+                log.log(f"❌ [Bot] 未找到卡片引用: 消息 #{message_id}, 工具 #{tool_use_index}，已达最大重试次数")
                 return  # 达到最大重试次数，放弃
 
         try:
@@ -3210,7 +3196,7 @@ class DiscordBot(discord.Client):
                 await asyncio.sleep(1)
 
             except Exception as e:
-                self.log(f"❌ 检查工具执行结果时出错: {e}")
+                log.log(f"❌ 检查工具执行结果时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -3227,13 +3213,13 @@ def main():
         bot.run(config.discord_token)
 
     except FileNotFoundError as e:
-        self.log(f"❌ 配置错误: {e}")
+        log.log(f"❌ 配置错误: {e}")
         sys.exit(1)
     except ValueError as e:
-        self.log(f"❌ 配置错误: {e}")
+        log.log(f"❌ 配置错误: {e}")
         sys.exit(1)
     except Exception as e:
-        self.log(f"❌ 启动失败: {e}")
+        log.log(f"❌ 启动失败: {e}")
         sys.exit(1)
 
 

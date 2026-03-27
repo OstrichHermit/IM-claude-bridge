@@ -13,7 +13,10 @@ import sys
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from shared.message_queue import MessageQueue, FileRequest, FileRequestStatus, MessageRequest, MessageRequestStatus
+from shared.message_queue import MessageQueue
+from shared.logger import get_logger
+
+log = get_logger("MCPDiscordService", "mcp_server"), FileRequest, FileRequestStatus, MessageRequest, MessageRequestStatus
 from shared.config import Config
 
 
@@ -173,7 +176,7 @@ class DiscordService:
 
             # 添加到队列
             request_id = self.message_queue.add_file_request(file_request)
-            print(f"📁 文件请求已创建: #{request_id}")
+            log.log(f"📁 文件请求已创建: #{request_id}")
 
             # 等待处理完成
             completed_request = self.message_queue.get_file_request(request_id, timeout=timeout)

@@ -4,11 +4,12 @@ Context Token 持久化存储模块
 直接存储在 weixin_accounts.json 每个账号对象中
 """
 import json
-import logging
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from shared.logger import get_logger
+
+log = get_logger("ContextTokenStorage", "bridge")
 
 
 class ContextTokenStorage:
@@ -39,9 +40,9 @@ class ContextTokenStorage:
                                 token = account.get('context_token')
                                 if username and token:
                                     self._tokens[username] = token
-                logger.debug(f"从 {self.storage_file.name} 加载了 {len(self._tokens)} 个 context token")
+                log.log(f"从 {self.storage_file.name} 加载了 {len(self._tokens)} 个 context token")
         except Exception as e:
-            logger.warning(f"加载 context token 失败: {e}")
+            log.log(f"⚠️  加载 context token 失败: {e}")
             self._tokens = {}
 
     def _save(self):
@@ -65,9 +66,9 @@ class ContextTokenStorage:
 
             with open(self.storage_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.debug(f"已保存 {len(self._tokens)} 个 context token 到 {self.storage_file.name}")
+            log.log(f"已保存 {len(self._tokens)} 个 context token 到 {self.storage_file.name}")
         except Exception as e:
-            logger.error(f"保存 context token 失败: {e}")
+            log.log(f"⚠️  保存 context token 失败: {e}")
 
     def get(self, username: str) -> Optional[str]:
         """

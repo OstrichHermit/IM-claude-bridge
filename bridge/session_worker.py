@@ -7,11 +7,13 @@ import subprocess
 import sys
 import time
 import uuid
+import traceback
 from typing import Optional
 from pathlib import Path
 
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageStatus, MessageTag
+from shared.logger import get_logger
 from datetime import datetime
 
 
@@ -39,28 +41,14 @@ class SessionWorker:
         self.running = False  # 是否正在运行
         self.current_message_id: Optional[int] = None  # 当前正在处理的消息 ID
         self.last_activity_time: float = time.time()  # 最后活动时间
-
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "claude_bridge.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
+        self._log = get_logger(f"Worker-{session_key}", "bridge")
 
     async def start(self):
         """启动 worker 处理循环"""
         if not self.running:
             self.running = True
             self.task = asyncio.create_task(self._run())
-            self.log(f"✅ Worker 已启动: {self.session_key}")
+            self._log.log(f"✅ Worker 已启动: {self.session_key}")
 
     async def stop(self):
         """停止 worker"""
@@ -72,14 +60,14 @@ class SessionWorker:
             try:
                 await asyncio.wait_for(self.task, timeout=5.0)
             except asyncio.TimeoutError:
-                self.log(f"⚠️  Worker {self.session_key} 停止超时，强制取消")
+                self._log.log(f"⚠️  Worker {self.session_key} 停止超时，强制取消")
                 self.task.cancel()
                 try:
                     await self.task
                 except asyncio.CancelledError:
                     pass
 
-        self.log(f"🛑 Worker 已停止: {self.session_key}")
+        self._log.log(f"🛑 Worker 已停止: {self.session_key}")
 
     async def enqueue(self, message: Message):
         """
@@ -93,7 +81,7 @@ class SessionWorker:
 
     async def _run(self):
         """Worker 的主循环"""
-        self.log(f"🔄 Worker {self.session_key} 开始运行")
+        self._log.log(f"🔄 Worker {self.session_key} 开始运行")
 
         while self.running:
             try:
@@ -120,11 +108,10 @@ class SessionWorker:
                 # 任务被取消，正常退出
                 break
             except Exception as e:
-                self.log(f"❌ Worker {self.session_key} 处理消息时出错: {e}")
-                import traceback
-                traceback.print_exc()
+                self._log.log(f"❌ Worker {self.session_key} 处理消息时出错: {e}")
+                self._log.log(traceback.format_exc())
 
-        self.log(f"✅ Worker {self.session_key} 已退出")
+        self._log.log(f"✅ Worker {self.session_key} 已退出")
 
     async def _process_message(self, message: Message) -> bool:
         """
@@ -197,7 +184,7 @@ class SessionWorker:
                         MessageStatus.COMPLETED,
                         response=response
                     )
-                    self.log(f"[消息 #{message.id}] 处理成功（外部消息，已完成）")
+                    self._log.log(f"[消息 #{message.id}] 处理成功（外部消息，已完成）")
                 else:
                     # 正常消息：保持 PROCESSING 状态，等待 Discord Bot 发送
                     self.message_queue.update_status(
@@ -205,7 +192,7 @@ class SessionWorker:
                         MessageStatus.PROCESSING,  # 保持 PROCESSING 状态，等待 Discord Bot 发送
                         response=response
                     )
-                    self.log(f"[消息 #{message.id}] 处理成功")
+                    self._log.log(f"[消息 #{message.id}] 处理成功")
                 return True
             else:
                 # 响应为空
@@ -214,12 +201,12 @@ class SessionWorker:
                     MessageStatus.COMPLETED,
                     response="(Claude 没有返回响应)"
                 )
-                self.log(f"[消息 #{message.id}] 处理完成（无响应）")
+                self._log.log(f"[消息 #{message.id}] 处理完成（无响应）")
                 return True
 
         except Exception as e:
             error_msg = f"处理失败: {str(e)}"
-            self.log(f"❌ [消息 #{message.id}] {error_msg}")
+            self._log.log(f"❌ [消息 #{message.id}] {error_msg}")
 
             # 更新消息状态为失败
             self.message_queue.update_status(
@@ -305,7 +292,7 @@ class SessionWorker:
                     if session_id:
                         cmd_args.extend(['--session-id', session_id])
                     else:
-                        self.log(f"⚠️  警告：session_id 为空，将使用 Claude 默认会话")
+                        self._log.log(f"⚠️  警告：session_id 为空，将使用 Claude 默认会话")
 
                 cmd_args.append(prompt)
 
@@ -379,7 +366,7 @@ class SessionWorker:
                                 data = json.loads(line_str)
 
                                 if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
-                                    self.log(f"🚀 [消息 #{message_id}] AI 开始工作")
+                                    self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
                                     if message_id:
                                         self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
 
@@ -512,7 +499,7 @@ class SessionWorker:
                                 data = json.loads(line_str)
 
                                 if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
-                                    self.log(f"🚀 [消息 #{message_id}] AI 开始工作")
+                                    self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
                                     if message_id:
                                         self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
 
@@ -642,12 +629,12 @@ class SessionWorker:
                         process.terminate()
                         try:
                             returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
-                            self.log(f"✅ [消息 #{message_id}] 进程已优雅终止 (退出码: {returncode})")
+                            self._log.log(f"✅ [消息 #{message_id}] 进程已优雅终止 (退出码: {returncode})")
                         except asyncio.TimeoutError:
-                            self.log(f"⚠️ [消息 #{message_id}] 进程未在 5 秒内退出，强制终止...")
+                            self._log.log(f"⚠️ [消息 #{message_id}] 进程未在 5 秒内退出，强制终止...")
                             process.kill()
                             await process.wait()
-                            self.log(f"✅ [消息 #{message_id}] 进程已强制终止")
+                            self._log.log(f"✅ [消息 #{message_id}] 进程已强制终止")
 
                         if message_id:
                             partial_response = '\n'.join(response_lines).strip()
@@ -677,12 +664,12 @@ class SessionWorker:
 
                         # 如果有 stderr 输出且非空，打印警告（调试用）
                         if stderr_output:
-                            self.log(f"⚠️ Claude stderr: {stderr_output}")
+                            self._log.log(f"⚠️ Claude stderr: {stderr_output}")
 
                         if message_id and response:
                             self.message_queue.update_streaming_response(message_id, response)
 
-                        self.log(f"✅ Claude 响应成功 (长度: {len(response) if response else 0} 字符)")
+                        self._log.log(f"✅ Claude 响应成功 (长度: {len(response) if response else 0} 字符)")
                         return response if response else "(Claude 没有返回文本响应)"
                     else:
                         error_msg = f"Claude Code 返回错误码 {returncode}"
@@ -702,18 +689,18 @@ class SessionWorker:
                     f"请确保已安装 Claude Code 并在 PATH 中可访问\n"
                     f"安装指南: https://claude.ai/code"
                 )
-                self.log(f"❌ {error_msg}")
+                self._log.log(f"❌ {error_msg}")
                 raise Exception(error_msg)
 
             except Exception as e:
                 retries += 1
-                self.log(f"❌ 调用失败 (尝试 {retries}/{max_attempts}): {e}")
+                self._log.log(f"❌ 调用失败 (尝试 {retries}/{max_attempts}): {e}")
 
                 if retries >= max_attempts:
                     raise Exception(f"经过 {max_attempts} 次调用尝试后仍然失败: {str(e)}")
 
                 wait_time = 2 ** retries
-                self.log(f"⏳ {wait_time} 秒后重试...")
+                self._log.log(f"⏳ {wait_time} 秒后重试...")
                 await asyncio.sleep(wait_time)
 
         return None
