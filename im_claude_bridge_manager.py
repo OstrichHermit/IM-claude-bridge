@@ -259,7 +259,8 @@ class Manager:
                     # 延迟后再次检查
                     if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running() and self.is_web_server_running():
                         log.log("✅ 重启成功，移除重启标记和重置重试次数")
-                        self.restarting_file.unlink()
+                        if self.restarting_file.exists():
+                            self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
 
@@ -268,7 +269,8 @@ class Manager:
 
                     if retry_count >= self.MAX_RESTART_RETRIES:
                         log.log(f"❌ 重启连续失败 {self.MAX_RESTART_RETRIES} 次，放弃重启")
-                        self.restarting_file.unlink()
+                        if self.restarting_file.exists():
+                            self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
 

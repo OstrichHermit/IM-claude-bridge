@@ -29,6 +29,7 @@ start "" /b "%PYTHONW%" "%~dp0bot\discord_bot.py"
 start "" /b "%PYTHONW%" "%~dp0bridge\claude_bridge.py"
 start "" /b "%PYTHONW%" "%~dp0im_claude_bridge_manager.py" console
 start "" /b "%PYTHONW%" "%~dp0web\web_server.py"
+start "" /b "%PYTHONW%" "%~dp0mcp_server\server.py" --transport http --host 127.0.0.1 --port 3336
 
 for /f "delims=" %%i in ('python -c "import yaml; config = yaml.safe_load(open(r'%~dp0config\config.yaml', encoding='utf-8')); result = config.get('weixin', {}).get('enabled', False); print('1' if result else '0')"') do set WEIXIN_RESULT=%%i
 

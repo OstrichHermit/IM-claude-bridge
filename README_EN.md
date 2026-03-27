@@ -36,8 +36,8 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Execution history query
 
 **🎛️ Web Control Panel**
-- Real-time monitoring of component status (Discord Bot / Weixin Bot / Bridge / Manager)
-- Real-time log viewing (4 independent component log panels)
+- Real-time monitoring of component status (Discord Bot / Weixin Bot / Bridge / Manager / MCP Server)
+- Real-time log viewing (5 independent component log panels)
 - Dark/Light theme toggle
 - One-click restart/stop all services
 - Auto-reconnect WebSocket connections
@@ -224,9 +224,13 @@ Reply to a message with files and `@Bot` (no need for `@` in WeChat), Bot will e
 
 ## 🔌 MCP Server Integration
 
-Claude Code can send files to Discord via MCP protocol.
+Claude Code can send files to Discord/WeChat and manage scheduled tasks via MCP protocol.
 
-### MCP Server Configuration Method
+### Two Configuration Modes
+
+The MCP server supports two configuration modes: **Stdio mode** (automatically started by Claude Code) and **HTTP mode** (standalone, recommended).
+
+### Mode 1: Stdio Mode (Auto-started by Claude Code)
 
 **Config file location**: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -250,6 +254,43 @@ Claude Code can send files to Discord via MCP protocol.
     }
   }
 }
+```
+
+### Mode 2: HTTP Mode (Standalone, Recommended)
+
+In HTTP mode, the MCP server runs as a background service and can be monitored via the Web interface.
+
+**Config file location**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Add MCP server**:
+```json
+{
+  "mcpServers": {
+    "im-claude-bridge": {
+      "type": "http",
+      "url": "http://127.0.0.1:3336/mcp"
+    }
+  }
+}
+```
+
+**Start MCP Server**:
+
+The MCP server is automatically started with `start.bat` / `restart.bat`. You can also start it manually:
+
+```bash
+# Start MCP server (HTTP mode)
+python mcp_server\server.py --transport http --host 127.0.0.1 --port 3336
+```
+
+**Web Interface Monitoring**:
+
+Visit http://localhost:8000 to monitor MCP Server status and logs in real-time.
+
+**Stop MCP Server**:
+
+```bash
+# Use stop.bat or manually terminate the process
 ```
 
 ### MCP Tools

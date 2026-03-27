@@ -133,7 +133,7 @@ def get_component_status(component: str) -> Dict:
         "claude_bridge": "claude_bridge.py",
         "manager": "im_claude_bridge_manager.py",
         "web_server": "web_server.py",
-        "mcp_server": "mcp_server.py",
+        "mcp_server": "mcp_server",
     }
     pattern = patterns.get(component)
     if not pattern:
@@ -454,6 +454,14 @@ DASHBOARD_HTML = """
                 </div>
                 <div class="status-pid" id="web_server_pid"></div>
             </div>
+            <div class="status-card" data-component="mcp_server">
+                <h3>MCP Server</h3>
+                <div class="status-indicator">
+                    <div class="status-dot" id="mcp_server_dot"></div>
+                    <span class="status-text" id="mcp_server_status">--</span>
+                </div>
+                <div class="status-pid" id="mcp_server_pid"></div>
+            </div>
         </div>
 
         <!-- 控制面板 -->
@@ -496,6 +504,7 @@ DASHBOARD_HTML = """
             <button class="tab" onclick="switchTab('discord_bot')">Discord</button>
             <button class="tab" onclick="switchTab('weixin_bot')">Weixin</button>
             <button class="tab" onclick="switchTab('claude_bridge')">Bridge</button>
+            <button class="tab" onclick="switchTab('mcp_server')">MCP</button>
         </div>
         <div class="log-viewer" id="logViewer"></div>
     </div>
