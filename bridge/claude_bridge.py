@@ -5,7 +5,7 @@ Claude Code 桥接服务
 import asyncio
 import sys
 import time
-from datetime import datetime
+import traceback
 from pathlib import Path
 from typing import Dict
 
@@ -13,8 +13,11 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
+from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
 from bridge.session_worker import SessionWorker
+
+log = get_logger("ClaudeBridge", "bridge")
 
 
 class ClaudeBridge:
@@ -26,25 +29,10 @@ class ClaudeBridge:
         self.message_queue = MessageQueue(config.database_path)
         self.running = False
 
-        # 日志文件设置
-        self.log_file = Path(__file__).parent.parent / "logs" / "claude_bridge.log"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
         # 🔥 并发架构：Worker Pool
         self.session_workers: Dict[str, SessionWorker] = {}  # {session_key: SessionWorker}
         self.max_concurrent_sessions = config.max_concurrent_sessions
         self.worker_idle_timeout = config.worker_idle_timeout
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     async def cleanup_pending_messages(self):
         """清理上次崩溃时留下的 PENDING 消息（避免重启后重复处理）"""
@@ -58,7 +46,7 @@ class ClaudeBridge:
             pending_count = cursor.fetchone()[0]
 
             if pending_count > 0:
-                self.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
+                log.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
 
                 # 将 PENDING 状态的消息标记为 SKIPPED
                 cursor.execute("""
@@ -71,14 +59,14 @@ class ClaudeBridge:
 
                 affected = cursor.rowcount
                 conn.commit()
-                self.log(f"✅ 已跳过 {affected} 条旧消息")
+                log.log(f"✅ 已跳过 {affected} 条旧消息")
             else:
-                self.log("✓ 没有发现 PENDING 状态的消息")
+                log.log("✓ 没有发现 PENDING 状态的消息")
 
             conn.close()
 
         except Exception as e:
-            self.log(f"⚠️ 清理 PENDING 消息时出错: {e}")
+            log.log(f"⚠️ 清理 PENDING 消息时出错: {e}")
 
     async def run(self):
         """
@@ -90,11 +78,11 @@ class ClaudeBridge:
         - Worker Manager：清理空闲的 Worker，释放资源
         """
         self.running = True
-        self.log("🚀 Claude Code 桥接服务已启动（并发架构）")
-        self.log(f"📥 轮询间隔: {self.config.poll_interval}ms")
-        self.log(f"⏱️  超时时间: {self.config.claude_timeout}秒")
-        self.log(f"🔄 最大尝试次数: {self.config.max_attempts}次")
-        self.log(f"⚡ 最大并发 session 数: {self.max_concurrent_sessions}")
+        log.log("🚀 Claude Code 桥接服务已启动（并发架构）")
+        log.log(f"📥 轮询间隔: {self.config.poll_interval}ms")
+        log.log(f"⏱️  超时时间: {self.config.claude_timeout}秒")
+        log.log(f"🔄 最大尝试次数: {self.config.max_attempts}次")
+        log.log(f"⚡ 最大并发 session 数: {self.max_concurrent_sessions}")
 
         # 启动时清理旧的 PENDING 消息
         await self.cleanup_pending_messages()
@@ -103,21 +91,21 @@ class ClaudeBridge:
         scheduler_task = asyncio.create_task(self._scheduler_loop())
         worker_manager_task = asyncio.create_task(self._worker_manager_loop())
 
-        self.log("✅ 并发架构已启动")
+        log.log("✅ 并发架构已启动")
 
         # 等待任务完成（或收到停止信号）
         try:
             await asyncio.gather(scheduler_task, worker_manager_task)
         except asyncio.CancelledError:
-            self.log("⚠️  收到取消信号，正在停止...")
+            log.log("⚠️  收到取消信号，正在停止...")
             self.running = False
         except Exception as e:
-            self.log(f"❌ 主循环错误: {e}")
+            log.log(f"❌ 主循环错误: {e}")
         finally:
             # 清理所有 Workers
             await self._cleanup_all_workers()
 
-        self.log("✓ Claude Code 桥接服务已停止")
+        log.log("✓ Claude Code 桥接服务已停止")
 
     async def _scheduler_loop(self):
         """
@@ -128,7 +116,7 @@ class ClaudeBridge:
         2. 按 session_key 分组
         3. 分配消息到对应的 Worker
         """
-        self.log("📋 主调度器已启动")
+        log.log("📋 主调度器已启动")
 
         while self.running:
             try:
@@ -138,7 +126,7 @@ class ClaudeBridge:
                 if messages_by_session:
                     # 只在有消息时才输出日志
                     total_messages = sum(len(msgs) for msgs in messages_by_session.values())
-                    self.log(f"📦 扫描到 {total_messages} 条 PENDING 消息，涉及 {len(messages_by_session)} 个 session")
+                    log.log(f"📦 扫描到 {total_messages} 条 PENDING 消息，涉及 {len(messages_by_session)} 个 session")
 
                     # 2. 为每个 session 分配消息
                     for session_key, messages in messages_by_session.items():
@@ -154,24 +142,23 @@ class ClaudeBridge:
                             for message in messages:
                                 await worker.enqueue(message)
 
-                            self.log(f"  📌 [{session_key}]: 已分配 {len(messages)} 条消息（状态已更新为 QUEUED）")
+                            log.log(f"  📌 [{session_key}]: 已分配 {len(messages)} 条消息（状态已更新为 QUEUED）")
 
                         except Exception as e:
-                            self.log(f"❌ 分配消息到 Worker [{session_key}] 失败: {e}")
+                            log.log(f"❌ 分配消息到 Worker [{session_key}] 失败: {e}")
 
                 # 3. 没有消息时静默等待
                 await asyncio.sleep(self.config.poll_interval / 1000)
 
             except asyncio.CancelledError:
-                self.log("⚠️  调度器收到取消信号")
+                log.log("⚠️  调度器收到取消信号")
                 break
             except Exception as e:
-                self.log(f"❌ 调度器错误: {e}")
-                import traceback
-                traceback.print_exc()
+                log.log(f"❌ 调度器错误: {e}")
+                log.log(traceback.format_exc())
                 await asyncio.sleep(5)  # 出错后等待一段时间
 
-        self.log("✓ 主调度器已退出")
+        log.log("✓ 主调度器已退出")
 
     async def _get_or_create_worker(self, session_key: str) -> SessionWorker:
         """
@@ -190,7 +177,7 @@ class ClaudeBridge:
         # 检查并发限制
         if self.max_concurrent_sessions > 0:
             while len(self.session_workers) >= self.max_concurrent_sessions:
-                self.log(f"⚠️  已达到最大并发数 ({self.max_concurrent_sessions})，等待空闲 Worker...")
+                log.log(f"⚠️  已达到最大并发数 ({self.max_concurrent_sessions})，等待空闲 Worker...")
                 await self._wait_for_worker_slot()
 
         # 创建新 Worker
@@ -198,7 +185,7 @@ class ClaudeBridge:
         await worker.start()
         self.session_workers[session_key] = worker
 
-        self.log(f"✅ Worker 已创建: {session_key} (当前 Worker 数: {len(self.session_workers)})")
+        log.log(f"✅ Worker 已创建: {session_key} (当前 Worker 数: {len(self.session_workers)})")
 
         return worker
 
@@ -215,7 +202,7 @@ class ClaudeBridge:
         - 定期清理空闲的 Worker
         - 监控 Worker 状态
         """
-        self.log("🔧 Worker 管理器已启动")
+        log.log("🔧 Worker 管理器已启动")
 
         while self.running:
             try:
@@ -226,15 +213,14 @@ class ClaudeBridge:
                 await asyncio.sleep(60)
 
             except asyncio.CancelledError:
-                self.log("⚠️  Worker 管理器收到取消信号")
+                log.log("⚠️  Worker 管理器收到取消信号")
                 break
             except Exception as e:
-                self.log(f"❌ Worker 管理器错误: {e}")
-                import traceback
-                traceback.print_exc()
+                log.log(f"❌ Worker 管理器错误: {e}")
+                log.log(traceback.format_exc())
                 await asyncio.sleep(5)
 
-        self.log("✓ Worker 管理器已退出")
+        log.log("✓ Worker 管理器已退出")
 
     async def _cleanup_idle_workers(self):
         """清理空闲的 Worker"""
@@ -251,23 +237,23 @@ class ClaudeBridge:
             try:
                 worker = self.session_workers.pop(session_key)
                 await worker.stop()
-                self.log(f"🧹 Worker 已清理: {session_key} (空闲超时)")
+                log.log(f"🧹 Worker 已清理: {session_key} (空闲超时)")
             except Exception as e:
-                self.log(f"❌ 清理 Worker [{session_key}] 失败: {e}")
+                log.log(f"❌ 清理 Worker [{session_key}] 失败: {e}")
 
     async def _cleanup_all_workers(self):
         """清理所有 Worker（停止服务时调用）"""
-        self.log("🧹 正在清理所有 Workers...")
+        log.log("🧹 正在清理所有 Workers...")
 
         for session_key, worker in list(self.session_workers.items()):
             try:
                 await worker.stop()
-                self.log(f"✅ Worker 已停止: {session_key}")
+                log.log(f"✅ Worker 已停止: {session_key}")
             except Exception as e:
-                self.log(f"❌ 停止 Worker [{session_key}] 失败: {e}")
+                log.log(f"❌ 停止 Worker [{session_key}] 失败: {e}")
 
         self.session_workers.clear()
-        self.log("✅ 所有 Workers 已清理")
+        log.log("✅ 所有 Workers 已清理")
 
 
 def main():

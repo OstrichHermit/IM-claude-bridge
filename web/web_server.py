@@ -23,33 +23,23 @@ from fastapi.middleware.cors import CORSMiddleware
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from shared.logger import get_logger, LOG_DIR, cleanup_logs
+
+log = get_logger("WebServer", "manager")
+
 
 # ============================================================================
 # 日志配置
 # ============================================================================
 
-LOG_DIR = PROJECT_ROOT / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-
+# 组件名 → 日志文件路径的映射（用于 Web API 端点）
 LOG_FILES = {
     "discord_bot": LOG_DIR / "discord_bot.log",
     "weixin_bot": LOG_DIR / "weixin_bot.log",
     "claude_bridge": LOG_DIR / "claude_bridge.log",
     "manager": LOG_DIR / "manager.log",
-    "web_server": LOG_DIR / "web_server.log",
+    "mcp_server": LOG_DIR / "mcp_server.log",
 }
-
-
-def log(message: str):
-    """写入 web_server 日志"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_line = f"[{timestamp}] {message}\n"
-    print(log_line.strip())
-    try:
-        with open(LOG_FILES["web_server"], "a", encoding="utf-8") as f:
-            f.write(log_line)
-    except Exception as e:
-        print(f"⚠️  写入日志失败: {e}")
 
 
 # ============================================================================
@@ -131,7 +121,7 @@ def find_process_by_commandline(pattern: str) -> Optional[int]:
                     if pid_str.isdigit():
                         return int(pid_str)
     except Exception as e:
-        log(f"⚠️  查找进程失败 ({pattern}): {e}")
+        log.log(f"⚠️  查找进程失败 ({pattern}): {e}")
     return None
 
 
@@ -237,13 +227,13 @@ async def control_action(action: str, component: str = "all"):
 
     if action == "stop":
         script_path = script_dir / "stop.bat"
-        log("🛑 收到停止请求")
+        log.log("🛑 收到停止请求")
     elif action == "restart":
         script_path = script_dir / "restart.bat"
-        log("🔄 收到重启请求")
+        log.log("🔄 收到重启请求")
     elif action == "start":
         script_path = script_dir / "start.bat"
-        log("🚀 收到启动请求")
+        log.log("🚀 收到启动请求")
     else:
         raise HTTPException(status_code=400, detail="Invalid action")
 
@@ -258,7 +248,7 @@ async def control_action(action: str, component: str = "all"):
         )
         return {"success": True, "action": action, "message": f"{action.capitalize()} command executed"}
     except Exception as e:
-        log(f"❌ 控制命令执行失败: {e}")
+        log.log(f"❌ 控制命令执行失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -299,9 +289,9 @@ async def websocket_log(websocket: WebSocket, component: str):
                         await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
-        log(f"WebSocket 客户端断开: {component}")
+        log.log(f"WebSocket 客户端断开: {component}")
     except Exception as e:
-        log(f"WebSocket 错误 ({component}): {e}")
+        log.log(f"WebSocket 错误 ({component}): {e}")
     finally:
         manager_ws.disconnect(websocket, f"logs_{component}")
 
@@ -329,7 +319,7 @@ async def websocket_status(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        log(f"Status WebSocket 错误: {e}")
+        log.log(f"Status WebSocket 错误: {e}")
     finally:
         manager_ws.disconnect(websocket, "status")
 
@@ -693,9 +683,11 @@ DASHBOARD_HTML = """
 
 def run_server(host: str = "0.0.0.0", port: int = 8088):
     """启动 Web 服务器"""
-    log(f"🚀 Web 服务器启动中: http://{host}:{port}")
-    log(f"📁 项目目录: {PROJECT_ROOT}")
-    log(f"📁 日志目录: {LOG_DIR}")
+    # 启动时清理日志（保留最近1000行）
+    cleanup_logs()
+    log.log(f"🚀 Web 服务器启动中: http://{host}:{port}")
+    log.log(f"📁 项目目录: {PROJECT_ROOT}")
+    log.log(f"📁 日志目录: {LOG_DIR}")
 
     try:
         uvicorn.run(
@@ -707,9 +699,9 @@ def run_server(host: str = "0.0.0.0", port: int = 8088):
             use_colors=False
         )
     except Exception as e:
-        log(f"❌ Web 服务器启动失败: {e}")
+        log.log(f"❌ Web 服务器启动失败: {e}")
         import traceback
-        log(f"❌ 错误详情: {traceback.format_exc()}")
+        log.log(f"❌ 错误详情: {traceback.format_exc()}")
         raise
 
 

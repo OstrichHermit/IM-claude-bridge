@@ -7,7 +7,11 @@ import time
 import os
 import sys
 from pathlib import Path
-from datetime import datetime
+
+sys.path.insert(0, str(Path(__file__).parent))
+from shared.logger import get_logger, cleanup_logs
+
+log = get_logger("Manager", "manager")
 
 
 class Manager:
@@ -21,10 +25,13 @@ class Manager:
         self.stop_file = self.project_dir / ".manager.stop"
         self.restarting_file = self.project_dir / ".manager.restarting"
         self.retry_count_file = self.project_dir / ".manager.retry_count"
-        self.log_file = self.project_dir / "logs" / "manager.log"
 
         # 确保日志目录存在
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        from shared.logger import LOG_DIR
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 启动时清理日志（保留最近1000行）
+        cleanup_logs()
 
         # 启动时清空所有标记
         self.clear_all_flags()
@@ -49,19 +56,7 @@ class Manager:
             flags_cleared.append("重试次数")
 
         if flags_cleared:
-            self.log(f"🧹 已清空标记: {', '.join(flags_cleared)}")
-
-    def log(self, message):
-        """写入日志"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-
-        try:
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
+            log.log(f"🧹 已清空标记: {', '.join(flags_cleared)}")
 
     def find_process_by_commandline(self, pattern):
         """通过命令行参数查找进程 PID（支持 python.exe 和 pythonw.exe）"""
@@ -102,7 +97,7 @@ class Manager:
                         if pid_str.isdigit():
                             return int(pid_str)
         except Exception as e:
-            self.log(f"⚠️  查找进程失败 ({pattern}): {e}")
+            log.log(f"⚠️  查找进程失败 ({pattern}): {e}")
 
         return None
 
@@ -144,17 +139,17 @@ class Manager:
 
     def start_all(self):
         """使用 start.bat 启动所有服务"""
-        self.log("🚀 使用 start.bat 启动所有服务...")
+        log.log("🚀 使用 start.bat 启动所有服务...")
 
         # 删除停止标记
         if self.stop_file.exists():
             self.stop_file.unlink()
-            self.log("🗑️  已删除停止标记")
+            log.log("🗑️  已删除停止标记")
 
         start_script = self.project_dir / "start.bat"
 
         if not start_script.exists():
-            self.log(f"❌ 找不到 start.bat: {start_script}")
+            log.log(f"❌ 找不到 start.bat: {start_script}")
             return False
 
         try:
@@ -164,21 +159,21 @@ class Manager:
                 cwd=self.project_dir,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
-            self.log("✅ start.bat 已执行")
+            log.log("✅ start.bat 已执行")
             return True
 
         except Exception as e:
-            self.log(f"❌ 执行 start.bat 失败: {e}")
+            log.log(f"❌ 执行 start.bat 失败: {e}")
             return False
 
     def stop_all(self):
         """停止所有服务"""
-        self.log("🛑 停止所有服务...")
+        log.log("🛑 停止所有服务...")
 
         stop_script = self.project_dir / "stop.bat"
 
         if not stop_script.exists():
-            self.log(f"❌ 找不到 stop.bat: {stop_script}")
+            log.log(f"❌ 找不到 stop.bat: {stop_script}")
             return False
 
         try:
@@ -187,26 +182,26 @@ class Manager:
                 cwd=self.project_dir,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
-            self.log("✅ stop.bat 已执行")
+            log.log("✅ stop.bat 已执行")
             return True
 
         except Exception as e:
-            self.log(f"❌ 执行 stop.bat 失败: {e}")
+            log.log(f"❌ 执行 stop.bat 失败: {e}")
             return False
 
     def restart_all(self):
         """重启所有服务（创建重启标记）"""
-        self.log("🔄 重启所有服务...")
+        log.log("🔄 重启所有服务...")
 
         # 创建重启标记
         self.restarting_file.touch()
-        self.log("📝 已创建重启标记")
+        log.log("📝 已创建重启标记")
 
         # 调用 restart.bat
         restart_script = self.project_dir / "restart.bat"
 
         if not restart_script.exists():
-            self.log(f"❌ 找不到 restart.bat: {restart_script}")
+            log.log(f"❌ 找不到 restart.bat: {restart_script}")
             self.restarting_file.unlink()
             return False
 
@@ -217,19 +212,19 @@ class Manager:
                 cwd=self.project_dir,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
-            self.log("✅ restart.bat 已执行")
+            log.log("✅ restart.bat 已执行")
             return True
 
         except Exception as e:
-            self.log(f"❌ 执行 restart.bat 失败: {e}")
+            log.log(f"❌ 执行 restart.bat 失败: {e}")
             self.restarting_file.unlink()
             return False
 
     def monitor_loop(self):
         """监控循环（智能重启逻辑）"""
-        self.log("🔍 守护进程启动，开始监控...")
-        self.log(f"📂 项目目录: {self.project_dir}")
-        self.log(f"📋 日志文件: {self.log_file}")
+        log.log("🔍 守护进程启动，开始监控...")
+        log.log(f"📂 项目目录: {self.project_dir}")
+        log.log(f"📋 日志文件: {log.log_file}")
 
         # 初始检查并报告状态
         bot_running = self.is_bot_running()
@@ -238,32 +233,32 @@ class Manager:
         web_server_running = self.is_web_server_running()
 
         if bot_running and weixin_bot_running and bridge_running:
-            self.log("✅ 初始检查: 所有服务运行正常")
+            log.log("✅ 初始检查: 所有服务运行正常")
         else:
             if not bot_running:
-                self.log("⚠️  初始检查: Discord Bot 未运行")
+                log.log("⚠️  初始检查: Discord Bot 未运行")
             if not weixin_bot_running:
-                self.log("⚠️  初始检查: 微信 Bot 未运行")
+                log.log("⚠️  初始检查: 微信 Bot 未运行")
             if not bridge_running:
-                self.log("⚠️  初始检查: Claude Bridge 未运行")
+                log.log("⚠️  初始检查: Claude Bridge 未运行")
             if not web_server_running:
-                self.log("⚠️  初始检查: Web Server 未运行")
+                log.log("⚠️  初始检查: Web Server 未运行")
 
         while True:
             try:
                 # 检查停止标记
                 if self.stop_file.exists():
-                    self.log("📋 检测到停止标记，守护进程退出")
+                    log.log("📋 检测到停止标记，守护进程退出")
                     break
 
                 # 检查重启标记
                 if self.restarting_file.exists():
-                    self.log("🔄 检测到重启标记，延迟 30 秒后查询...")
+                    log.log("🔄 检测到重启标记，延迟 30 秒后查询...")
                     time.sleep(30)
 
                     # 延迟后再次检查
                     if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running() and self.is_web_server_running():
-                        self.log("✅ 重启成功，移除重启标记和重置重试次数")
+                        log.log("✅ 重启成功，移除重启标记和重置重试次数")
                         self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
@@ -272,16 +267,16 @@ class Manager:
                     retry_count = self.get_retry_count()
 
                     if retry_count >= self.MAX_RESTART_RETRIES:
-                        self.log(f"❌ 重启连续失败 {self.MAX_RESTART_RETRIES} 次，放弃重启")
+                        log.log(f"❌ 重启连续失败 {self.MAX_RESTART_RETRIES} 次，放弃重启")
                         self.restarting_file.unlink()
                         self.reset_retry_count()
                         continue
 
                     # 执行重启操作
-                    self.log(f"⚠️  进程未恢复，尝试手动重启（第 {retry_count + 1}/{self.MAX_RESTART_RETRIES} 次）")
+                    log.log(f"⚠️  进程未恢复，尝试手动重启（第 {retry_count + 1}/{self.MAX_RESTART_RETRIES} 次）")
 
                     # 统一使用 restart.bat
-                    self.log(f"[第 {retry_count + 1} 次] 执行 restart.bat...")
+                    log.log(f"[第 {retry_count + 1} 次] 执行 restart.bat...")
                     subprocess.Popen(
                         ["cmd", "/c", str(self.project_dir / "restart.bat")],
                         cwd=self.project_dir,
@@ -291,7 +286,7 @@ class Manager:
                     # 增加重试次数
                     retry_count += 1
                     self.set_retry_count(retry_count)
-                    self.log(f"📊 重试次数: {retry_count}/{self.MAX_RESTART_RETRIES}")
+                    log.log(f"📊 重试次数: {retry_count}/{self.MAX_RESTART_RETRIES}")
 
                     # 延迟后继续（给予重启时间）
                     time.sleep(30)
@@ -310,41 +305,41 @@ class Manager:
                 elif not bot_running or not weixin_bot_running or not bridge_running or not web_server_running:
                     # 发现进程挂了，创建重启标记并触发重启
                     if not bot_running:
-                        self.log("⚠️  Discord Bot 未运行，触发重启...")
+                        log.log("⚠️  Discord Bot 未运行，触发重启...")
                     if not weixin_bot_running:
-                        self.log("⚠️  微信 Bot 未运行，触发重启...")
+                        log.log("⚠️  微信 Bot 未运行，触发重启...")
                     if not bridge_running:
-                        self.log("⚠️  Claude Bridge 未运行，触发重启...")
+                        log.log("⚠️  Claude Bridge 未运行，触发重启...")
                     if not web_server_running:
-                        self.log("⚠️  Web Server 未运行，触发重启...")
+                        log.log("⚠️  Web Server 未运行，触发重启...")
 
                     # 创建重启标记
                     self.restarting_file.touch()
-                    self.log("📝 已创建重启标记")
+                    log.log("📝 已创建重启标记")
 
                 # 等待 10 秒
                 time.sleep(10)
 
             except KeyboardInterrupt:
-                self.log("\n⚠️  收到中断信号，正在退出...")
+                log.log("\n⚠️  收到中断信号，正在退出...")
                 break
             except Exception as e:
-                self.log(f"❌ 监控循环错误: {e}")
+                log.log(f"❌ 监控循环错误: {e}")
                 time.sleep(5)
 
-        self.log("👋 守护进程已退出")
+        log.log("👋 守护进程已退出")
 
     def show_logs(self):
         """显示日志（类似 tail -f）"""
-        if not self.log_file.exists():
-            print(f"📋 日志文件不存在: {self.log_file}")
+        if not log.log_file.exists():
+            print(f"📋 日志文件不存在: {log.log_file}")
             return
 
-        print(f"📋 实时查看日志: {self.log_file}")
+        print(f"📋 实时查看日志: {log.log_file}")
         print("按 Ctrl+C 退出\n")
 
         try:
-            with open(self.log_file, "r", encoding="utf-8") as f:
+            with open(log.log_file, "r", encoding="utf-8") as f:
                 # 跳到文件末尾
                 f.seek(0, 2)
 
@@ -391,7 +386,7 @@ def main():
         # 清理可能存在的旧重启标记
         if manager.restarting_file.exists():
             manager.restarting_file.unlink()
-            manager.log("🗑️  已清理旧的重启标记")
+            log.log("🗑️  已清理旧的重启标记")
 
         manager.monitor_loop()
 

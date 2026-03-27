@@ -5,7 +5,6 @@
 import asyncio
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import zlib
@@ -14,6 +13,7 @@ import zlib
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.config import Config
+from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.message_queue import MessageTag as MessageTagEnum
 from shared.context_token_storage import ContextTokenStorage
@@ -21,28 +21,17 @@ from bot.weixin_client import WeixinClient, WeixinAccount
 from bot.weixin_qr_login import WeixinAccountManager
 from bot.weixin_media import WeixinMediaHandler, WeixinFileMapping, MediaType
 
+log = get_logger("WeixinBot", "weixin")
+
 
 class WeixinBot:
     """微信 Bot 类"""
-
-    def log(self, message):
-        """同时输出到控制台和日志文件"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_line = f"[{timestamp}] {message}\n"
-        print(log_line.strip())
-        try:
-            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(log_line)
-        except Exception as e:
-            print(f"⚠️  写入日志失败: {e}")
 
     def __init__(self, config: Config, message_queue: MessageQueue):
         """初始化 Bot"""
         self.config = config
         self.message_queue = message_queue
         self.running = False
-        self.log_file = "logs/weixin_bot.log"
         self.accounts: List[WeixinAccount] = []
         self.clients: Dict[str, WeixinClient] = {}
         self.polling_tasks = []
@@ -79,7 +68,7 @@ class WeixinBot:
         # 账号管理
         self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
         self._load_accounts()
-        self.log(f"微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
+        log.log(f"微信 Bot 初始化完成，共 {len(self.accounts)} 个账号")
 
         # 加载用户信息（从账号配置中）
         self._load_users()
@@ -93,7 +82,7 @@ class WeixinBot:
     def _load_accounts(self):
         """加载已保存的账号"""
         self.accounts = self.account_manager.load_accounts()
-        self.log(f"Loaded {len(self.accounts)} accounts")
+        log.log(f"Loaded {len(self.accounts)} accounts")
 
     def _load_users(self):
         """从账号配置中加载用户信息"""
@@ -118,19 +107,19 @@ class WeixinBot:
             # username -> user_id（用于消息处理）
             self.username_to_userid[account.username] = account.user_id
 
-        self.log(f"已加载 {len(self.accounts)} 个用户信息")
+        log.log(f"已加载 {len(self.accounts)} 个用户信息")
 
     async def run(self):
         """启动 Bot"""
         if not self.accounts:
-            self.log("⚠️  未配置微信账号，请先使用 scripts/login_weixin.py 扫码登录")
+            log.log("⚠️  未配置微信账号，请先使用 scripts/login_weixin.py 扫码登录")
             return
 
         self.running = True
-        self.log("🚀 微信 Bot 启动中...")
+        log.log("🚀 微信 Bot 启动中...")
 
         # 清理数据库中的旧消息序列（避免重复处理）
-        self.log("🧹 清理旧的消息序列和工具调用结果...")
+        log.log("🧹 清理旧的消息序列和工具调用结果...")
         import sqlite3
         try:
             conn = sqlite3.connect(self.config.database_path)
@@ -182,15 +171,15 @@ class WeixinBot:
             conn.close()
 
             if deleted_count > 0:
-                self.log(f"✅ 已清理 {deleted_count} 条旧的消息序列")
+                log.log(f"✅ 已清理 {deleted_count} 条旧的消息序列")
             if deleted_tools_count > 0:
-                self.log(f"✅ 已清理 {deleted_tools_count} 条旧的工具调用结果")
+                log.log(f"✅ 已清理 {deleted_tools_count} 条旧的工具调用结果")
             if updated_messages_count > 0:
-                self.log(f"✅ 已取消 {updated_messages_count} 条旧的处理中消息")
+                log.log(f"✅ 已取消 {updated_messages_count} 条旧的处理中消息")
             if deleted_count == 0 and deleted_tools_count == 0 and updated_messages_count == 0:
-                self.log("✓ 没有需要清理的旧数据")
+                log.log("✓ 没有需要清理的旧数据")
         except Exception as e:
-            self.log(f"❌ 清理旧数据时出错: {e}")
+            log.log(f"❌ 清理旧数据时出错: {e}")
 
         # 为每个账号启动长轮询任务
         for account in self.accounts:
@@ -206,7 +195,7 @@ class WeixinBot:
         # 启动工具执行结果检查任务
         self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
 
-        self.log(f"✅ 微信 Bot 已启动，{len(self.accounts)} 个账号正在监听")
+        log.log(f"✅ 微信 Bot 已启动，{len(self.accounts)} 个账号正在监听")
 
         # 等待所有任务完成
         await asyncio.gather(
@@ -215,11 +204,11 @@ class WeixinBot:
             self.sequence_check_task,
             self.tool_result_check_task
         )
-        self.log("✓ 微信 Bot 已停止")
+        log.log("✓ 微信 Bot 已停止")
 
     async def stop(self):
         """停止 Bot"""
-        self.log("🛑 微信 Bot 正在停止...")
+        log.log("🛑 微信 Bot 正在停止...")
         self.running = False
 
         # 停止所有 typing indicator
@@ -244,11 +233,11 @@ class WeixinBot:
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
             return_exceptions=True
         )
-        self.log("微信 Bot 已停止")
+        log.log("微信 Bot 已停止")
 
     async def _polling_loop(self, account: WeixinAccount):
         """长轮询循环"""
-        self.log(f"🔄 账号 {account.bot_id} 开始长轮询")
+        log.log(f"🔄 账号 {account.bot_id} 开始长轮询")
 
         # 创建客户端
         async with WeixinClient(account) as client:
@@ -257,13 +246,13 @@ class WeixinBot:
             # 测试连接
             try:
                 if not await client.test_connection():
-                    self.log(f"❌ 账号 {account.bot_id} 连接测试失败")
+                    log.log(f"❌ 账号 {account.bot_id} 连接测试失败")
                     return
             except Exception as e:
-                self.log(f"❌ 账号 {account.bot_id} 连接测试失败: {e}")
+                log.log(f"❌ 账号 {account.bot_id} 连接测试失败: {e}")
                 return
 
-            self.log(f"✅ 账号 {account.bot_id} 连接成功")
+            log.log(f"✅ 账号 {account.bot_id} 连接成功")
 
             while self.running:
                 try:
@@ -280,7 +269,7 @@ class WeixinBot:
                     # 长轮询超时是正常的
                     continue
                 except Exception as e:
-                    self.log(f"❌ 账号 {account.bot_id} 轮询错误: {e}")
+                    log.log(f"❌ 账号 {account.bot_id} 轮询错误: {e}")
                     await asyncio.sleep(5)
 
     async def _send_to_weixin(self, client: WeixinClient, msg: Message):
@@ -425,23 +414,23 @@ class WeixinBot:
                                 await self._send_file_to_weixin(client, target_user, file_path, context_token, user_id_int)
                                 sent_count += 1
                             except Exception as e:
-                                self.log(f"❌ 发送文件 {file_path} 失败: {e}")
+                                log.log(f"❌ 发送文件 {file_path} 失败: {e}")
                                 failed_count += 1
 
                         # 只有至少有一个文件成功发送才标记为完成
                         if sent_count > 0:
                             self.message_queue.update_file_request_status(file_request.id, FileRequestStatus.COMPLETED)
-                            self.log(f"✅ [文件请求] 成功发送 {sent_count}/{len(file_paths)} 个文件")
+                            log.log(f"✅ [文件请求] 成功发送 {sent_count}/{len(file_paths)} 个文件")
                         else:
                             self.message_queue.update_file_request_status(
                                 file_request.id,
                                 FileRequestStatus.FAILED,
                                 error=f"所有 {len(file_paths)} 个文件发送失败"
                             )
-                            self.log(f"❌ [文件请求] 所有文件发送失败")
+                            log.log(f"❌ [文件请求] 所有文件发送失败")
 
                 except Exception as e:
-                        self.log(f"❌ 处理文件请求失败: {e}")
+                        log.log(f"❌ 处理文件请求失败: {e}")
                         self.message_queue.update_file_request_status(
                             file_request.id,
                             FileRequestStatus.FAILED,
@@ -452,7 +441,7 @@ class WeixinBot:
                 await asyncio.sleep(self.config.queue_send_interval)
 
             except Exception as e:
-                self.log(f"❌ 检查文件请求错误: {e}")
+                log.log(f"❌ 检查文件请求错误: {e}")
                 await asyncio.sleep(1)
 
     async def check_message_sequences(self):
@@ -502,6 +491,7 @@ class WeixinBot:
 
                     # 检查是否需要启动 typing indicator（AI started 但点 A 失败的情况）
                     if message_id not in self.pending_messages:
+                        log.log(f"📨 [消息 #{message_id}] 已加载外部消息: {username}")
                         msg_status = self.message_queue.get_message_status(message_id)
                         if msg_status == MessageStatus.AI_STARTED:
                             # AI started 但 typing indicator 还没启动，立即启动
@@ -547,7 +537,7 @@ class WeixinBot:
                             continue
 
                         if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
-                            self.log(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
+                            log.log(f"✅ [消息 #{message_id}] 所有序列已发送，AI 响应已完成")
                             # 1. 停止正在输入状态
                             await self.stop_typing_indicator(message_id)
                             # 2. 清理数据库相关序列
@@ -669,10 +659,10 @@ class WeixinBot:
                                         text=text.strip(),
                                         context_token=context_token
                                     )
-                                    self.log(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
+                                    log.log(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
                                 except Exception as send_error:
                                     # 发送失败
-                                    self.log(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
+                                    log.log(f"❌ [消息 #{message_id}] 发送失败: {send_error}")
                                     # 标记序列为已发送，避免无限重试
                                     self.message_queue.mark_sequence_sent(seq_id)
                                     # 继续下一条消息
@@ -703,18 +693,18 @@ class WeixinBot:
                         await asyncio.sleep(self.config.queue_send_interval)
 
                     except Exception as e:
-                        self.log(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
+                        log.log(f"❌ 发送序列项失败: 消息#{message_id}, 序列#{seq_index}, 错误: {e}")
                         # 标记为已发送，避免无限重试
                         self.message_queue.mark_sequence_sent(seq_id)
 
                 except Exception as e:
-                    self.log(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
+                    log.log(f"❌ 处理消息序列失败: 消息#{message_id}, 错误: {e}")
 
                 # 极小延迟，避免无消息时CPU空转
                 await asyncio.sleep(0.01)
 
             except Exception as e:
-                self.log(f"❌ 检查消息序列时出错: {e}")
+                log.log(f"❌ 检查消息序列时出错: {e}")
                 await asyncio.sleep(5)
 
     async def check_tool_use_results(self):
@@ -922,15 +912,15 @@ class WeixinBot:
                                 text=notification_text,
                                 context_token=context_token
                             )
-                            self.log(f"🔧 [消息 #{message_id}] 已发送工具调用通知: {tool_name} - {'成功' if success else '失败'}")
+                            log.log(f"🔧 [消息 #{message_id}] 已发送工具调用通知: {tool_name} - {'成功' if success else '失败'}")
                         except Exception as send_error:
-                            self.log(f"❌ [消息 #{message_id}] 发送工具调用通知失败: {send_error}")
+                            log.log(f"❌ [消息 #{message_id}] 发送工具调用通知失败: {send_error}")
                             # 标记为已处理，避免无限重试
                             self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
                             continue
 
                     except Exception as e:
-                        self.log(f"❌ 发送工具调用通知失败: 消息#{message_id}, 工具#{tool_use_index}, 错误: {e}")
+                        log.log(f"❌ 发送工具调用通知失败: 消息#{message_id}, 工具#{tool_use_index}, 错误: {e}")
 
                     # 标记为已处理
                     self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
@@ -939,7 +929,7 @@ class WeixinBot:
                 await asyncio.sleep(1)
 
             except Exception as e:
-                self.log(f"❌ 检查工具执行结果时出错: {e}")
+                log.log(f"❌ 检查工具执行结果时出错: {e}")
                 await asyncio.sleep(5)
 
     async def _send_file_to_weixin(self, client: WeixinClient, to_user_id: str, file_path: str, context_token: str, user_id: int):
@@ -985,7 +975,7 @@ class WeixinBot:
                         target_wxid = acc.get("wxid")
                         break
         except Exception as e:
-            self.log(f"❌ 读取账号配置失败: {e}")
+            log.log(f"❌ 读取账号配置失败: {e}")
 
         if not target_wxid:
             raise Exception(f"未找到用户 wxid: user_id={user_id}")
@@ -1049,7 +1039,7 @@ class WeixinBot:
         }
 
         # 发送媒体消息
-        self.log(f"📤 [文件发送] to_user={target_wxid}, type={message_type}, file={file_name}, size={file_size}")
+        log.log(f"📤 [文件发送] to_user={target_wxid}, type={message_type}, file={file_name}, size={file_size}")
         result = await client.send_media_message(
             to_user_id=target_wxid,
             media_type=message_type,
@@ -1058,7 +1048,7 @@ class WeixinBot:
             file_name=file_name,
             filesize=file_size
         )
-        self.log(f"✅ [文件发送] 成功: {file_name}")
+        log.log(f"✅ [文件发送] 成功: {file_name}")
 
     async def _handle_message(self, msg: dict, account_id: str):
         """处理单条消息"""
@@ -1090,9 +1080,9 @@ class WeixinBot:
             if not content:
                 return
 
-            self.log(f"📨 [{from_user_id}] 收到消息: {content[:50]}...")
+            log.log(f"📨 [{from_user_id}] 收到消息: {content[:50]}...")
             if ref_files:
-                self.log(f"📎 引用了 {len(ref_files)} 个文件")
+                log.log(f"📎 引用了 {len(ref_files)} 个文件")
 
             # 检查是否是命令
             content_stripped = content.strip()
@@ -1181,7 +1171,7 @@ class WeixinBot:
                 self.start_typing_indicator(message_id, from_user_id, account_id)
 
         except Exception as e:
-            self.log(f"❌ 处理消息失败: {e}")
+            log.log(f"❌ 处理消息失败: {e}")
 
     async def _parse_message_content(self, msg: dict) -> tuple[str | None, list[dict]]:
         """解析消息内容
@@ -1228,7 +1218,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        self.log(f"📎 图片已下载: {filename} ({file_size} bytes)")
+                        log.log(f"📎 图片已下载: {filename} ({file_size} bytes)")
                     # 图片消息不返回内容，不发送给 AI
 
                 # 语音消息（不处理）
@@ -1248,7 +1238,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        self.log(f"📎 文件已下载: {filename} ({file_size} bytes)")
+                        log.log(f"📎 文件已下载: {filename} ({file_size} bytes)")
                     # 文件消息不返回内容，不发送给 AI
 
                 # 视频消息（只下载保存，不加入返回列表）
@@ -1264,7 +1254,7 @@ class WeixinBot:
                         file_size = os.path.getsize(filepath)
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
-                        self.log(f"📎 视频已下载: {filename} ({file_size} bytes)")
+                        log.log(f"📎 视频已下载: {filename} ({file_size} bytes)")
                     # 视频消息不返回内容，不发送给 AI
 
             # 如果只有媒体文件没有文字，返回 None（不发送给 AI）
@@ -1274,7 +1264,7 @@ class WeixinBot:
             return "\n".join(content_parts), ref_files
 
         except Exception as e:
-            self.log(f"❌ 解析消息内容失败: {e}")
+            log.log(f"❌ 解析消息内容失败: {e}")
             return None, []
 
     def _parse_ref_message_and_lookup(self, ref_msg: dict, from_user_id: str) -> tuple[str, list[dict]]:
@@ -1446,9 +1436,9 @@ class WeixinBot:
                 f"新 Session ID: {new_session_id[:8]}...\n\n"
                 f"下次对话将使用新的会话 ID 创建全新上下文。"
             )
-            self.log(f"[会话重置] 用户 {from_user_id} 重置了私聊会话")
-            self.log(f"[会话重置] Session Key: {session_key}")
-            self.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
+            log.log(f"[会话重置] 用户 {from_user_id} 重置了私聊会话")
+            log.log(f"[会话重置] Session Key: {session_key}")
+            log.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
         else:
             msg = (
                 f"⚠️ 没有活跃会话\n\n"
@@ -1504,7 +1494,7 @@ class WeixinBot:
 
                 msg = "🛑 正在停止服务\n\n服务将在几秒钟后停止。"
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
-                self.log(f"[停止命令] 用户 {from_user_id} 确认停止服务")
+                log.log(f"[停止命令] 用户 {from_user_id} 确认停止服务")
 
                 # 执行停止脚本
                 try:
@@ -1517,7 +1507,7 @@ class WeixinBot:
                             cwd=script_dir,
                             creationflags=subprocess.CREATE_NEW_CONSOLE
                         )
-                        self.log(f"✅ 停止命令已执行: python im_claude_bridge_manager.py stop")
+                        log.log(f"✅ 停止命令已执行: python im_claude_bridge_manager.py stop")
                     else:
                         msg = f"❌ 文件未找到\n\n找不到 im_claude_bridge_manager.py 文件"
                         await self._send_direct_message(from_user_id, account_bot_id, msg)
@@ -1525,7 +1515,7 @@ class WeixinBot:
                 except Exception as e:
                     msg = f"❌ 停止失败\n\n错误: {str(e)}"
                     await self._send_direct_message(from_user_id, account_bot_id, msg)
-                    self.log(f"❌ 执行停止命令时出错: {e}")
+                    log.log(f"❌ 执行停止命令时出错: {e}")
 
                 return
 
@@ -1546,7 +1536,7 @@ class WeixinBot:
 
         msg = "🔄 正在重启服务\n\n请稍候，服务将在几秒钟后重新启动。"
         await self._send_direct_message(from_user_id, account_bot_id, msg)
-        self.log(f"[重启命令] 用户 {from_user_id} 触发了服务重启")
+        log.log(f"[重启命令] 用户 {from_user_id} 触发了服务重启")
 
         try:
             script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1558,7 +1548,7 @@ class WeixinBot:
                     cwd=script_dir,
                     creationflags=subprocess.CREATE_NEW_CONSOLE
                 )
-                self.log(f"✅ 重启命令已执行: python im_claude_bridge_manager.py restart")
+                log.log(f"✅ 重启命令已执行: python im_claude_bridge_manager.py restart")
             else:
                 msg = "❌ 文件未找到\n\n找不到 im_claude_bridge_manager.py 文件"
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
@@ -1566,7 +1556,7 @@ class WeixinBot:
         except Exception as e:
             msg = f"❌ 重启失败\n\n错误: {str(e)}"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
-            self.log(f"❌ 执行重启命令时出错: {e}")
+            log.log(f"❌ 执行重启命令时出错: {e}")
 
     async def _cmd_abort(self, from_user_id: str, account_bot_id: str):
         """中止当前正在处理的响应"""
@@ -1592,7 +1582,7 @@ class WeixinBot:
                 f"Claude 响应将在几秒内停止..."
             )
             await self._send_direct_message(from_user_id, account_bot_id, msg)
-            self.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}")
+            log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}")
         else:
             msg = "❌ 中止请求失败\n\n中止请求失败，请稍后重试。"
             await self._send_direct_message(from_user_id, account_bot_id, msg)

@@ -25,11 +25,13 @@ from fastmcp import FastMCP
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.logger import get_logger
+
+log = get_logger("MCPServer", "mcp_server")
+
 from mcp_server.tools import (
     _send_file_to_discord,
-    _send_multiple_files_to_discord
-)
-from mcp_server.tools import (
+    _send_multiple_files_to_discord,
     _send_file_to_weixin,
     _send_multiple_files_to_weixin
 )
@@ -564,43 +566,43 @@ def run_server(
         host: HTTP模式的监听地址，默认 0.0.0.0
         port: HTTP模式的监听端口，默认 3334（避免与 TrendRadar 冲突）
     """
-    print()
-    print("=" * 60)
-    print("  Discord Bridge MCP Server (基于消息队列)")
-    print("=" * 60)
-    print(f"  传输模式: {transport.upper()}")
+    log.log("")
+    log.log("=" * 60)
+    log.log("  Discord Bridge MCP Server (基于消息队列)")
+    log.log("=" * 60)
+    log.log(f"  传输模式: {transport.upper()}")
 
     if transport == 'stdio':
-        print("  协议: MCP over stdio (标准输入输出)")
+        log.log("  协议: MCP over stdio (标准输入输出)")
     elif transport == 'http':
-        print(f"  协议: MCP over HTTP")
-        print(f"  服务器监听: {host}:{port}")
+        log.log(f"  协议: MCP over HTTP")
+        log.log(f"  服务器监听: {host}:{port}")
 
-    print()
-    print("  已注册的工具:")
-    print("    Discord:")
-    print("      1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
-    print("      2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
-    print("    微信:")
-    print("      3. send_file_to_weixin           - 发送文件到微信（支持私聊/群聊）")
-    print("      4. send_multiple_files_to_weixin  - 批量发送文件到微信（最多9个，支持私聊/群聊）")
-    print("    定时任务:")
-    print("      5. add_cron                     - 添加定时任务")
-    print("      6. list_cron                    - 列出所有定时任务")
-    print("      7. delete_cron                  - 删除定时任务")
-    print("      8. toggle_cron                  - 启用/禁用定时任务")
-    print("      9. get_cron_info                - 获取定时任务详情")
-    print("     10. update_cron                  - 更新定时任务")
-    print("    其他:")
-    print("     11. get_current_time             - 获取当前时间（支持多时区）")
-    print()
-    print("  架构说明:")
-    print("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")
-    print("    - 无需创建新的客户端")
-    print("    - 需要确保对应的 Bot 正在运行")
-    print("    - 定时任务由 Discord Bot 调度执行")
-    print("=" * 60)
-    print()
+    log.log("")
+    log.log("  已注册的工具:")
+    log.log("    Discord:")
+    log.log("      1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
+    log.log("      2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
+    log.log("    微信:")
+    log.log("      3. send_file_to_weixin           - 发送文件到微信（支持私聊/群聊）")
+    log.log("      4. send_multiple_files_to_weixin  - 批量发送文件到微信（最多9个，支持私聊/群聊）")
+    log.log("    定时任务:")
+    log.log("      5. add_cron                     - 添加定时任务")
+    log.log("      6. list_cron                    - 列出所有定时任务")
+    log.log("      7. delete_cron                  - 删除定时任务")
+    log.log("      8. toggle_cron                  - 启用/禁用定时任务")
+    log.log("      9. get_cron_info                - 获取定时任务详情")
+    log.log("     10. update_cron                  - 更新定时任务")
+    log.log("    其他:")
+    log.log("     11. get_current_time             - 获取当前时间（支持多时区）")
+    log.log("")
+    log.log("  架构说明:")
+    log.log("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")
+    log.log("    - 无需创建新的客户端")
+    log.log("    - 需要确保对应的 Bot 正在运行")
+    log.log("    - 定时任务由 Discord Bot 调度执行")
+    log.log("=" * 60)
+    log.log("")
 
     # 根据传输模式运行服务器
     if transport == 'stdio':

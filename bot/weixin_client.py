@@ -10,11 +10,15 @@ import base64
 import struct
 import os
 import uuid
+import sys
 from typing import Optional, Dict, List, Any
-import logging
+from pathlib import Path
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.logger import get_logger
+
+log = get_logger("WeixinClient", "weixin")
 
 
 # Message types
@@ -140,7 +144,7 @@ class WeixinClient:
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    logger.error(f"getUpdates HTTP {resp.status}: {error_text}")
+                    log.log(f"getUpdates HTTP {resp.status}: {error_text}")
                     raise Exception(f"HTTP {resp.status}: {error_text}")
 
                 # 微信 API 返回 octet-stream 但内容是 JSON
@@ -148,17 +152,17 @@ class WeixinClient:
                 try:
                     data = json.loads(raw_data.decode('utf-8'))
                 except json.JSONDecodeError:
-                    logger.error(f"Failed to decode getUpdates response: {raw_data[:200]}")
+                    log.log(f"Failed to decode getUpdates response: {raw_data[:200]}")
                     raise Exception(f"无法解析响应: Content-Type=application/octet-stream")
 
                 # 详细日志：记录返回的数据
-                logger.debug(f"getUpdates response: ret={data.get('ret')}, msgs count={len(data.get('msgs', []))}")
+                # log.log(f"getUpdates response: ret={data.get('ret')}, msgs count={len(data.get('msgs', []))}")
 
                 ret = data.get("ret")
                 if ret is not None and ret != 0:
                     errcode = data.get("errcode")
                     errmsg = data.get("errmsg", "未知错误")
-                    logger.error(f"getUpdates error: {errcode} - {errmsg}")
+                    log.log(f"getUpdates error: {errcode} - {errmsg}")
                     raise Exception(f"API Error {errcode}: {errmsg}")
 
                 # 更新游标
@@ -176,10 +180,10 @@ class WeixinClient:
 
         except asyncio.TimeoutError:
             # 长轮询超时是正常的
-            logger.debug("getUpdates timeout (normal)")
+            # log.log("getUpdates timeout (normal)")
             raise
         except aiohttp.ClientError as e:
-            logger.error(f"getUpdates network error: {e}")
+            log.log(f"getUpdates network error: {e}")
             raise
 
     async def send_message(
@@ -242,7 +246,7 @@ class WeixinClient:
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    logger.error(f"sendMessage HTTP {resp.status}: {error_text}")
+                    log.log(f"sendMessage HTTP {resp.status}: {error_text}")
                     raise Exception(f"HTTP {resp.status}: {error_text}")
 
                 # 微信 API 返回 octet-stream 但内容是 JSON
@@ -250,12 +254,12 @@ class WeixinClient:
                 try:
                     data = json.loads(raw_data.decode('utf-8'))
                 except json.JSONDecodeError:
-                    logger.error(f"Failed to decode sendMessage response: {raw_data[:200]}")
+                    log.log(f"Failed to decode sendMessage response: {raw_data[:200]}")
                     raise Exception(f"无法解析响应: Content-Type=application/octet-stream")
 
                 # 详细日志：记录返回的数据
-                logger.debug(f"sendMessage response: ret={data.get('ret')}, errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
-                logger.debug(f"Full API response: {data}")
+                log.log(f"sendMessage response: ret={data.get('ret')}, errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
+                log.log(f"Full API response: {data}")
 
                 # 检查返回码
                 ret = data.get("ret")
@@ -265,10 +269,10 @@ class WeixinClient:
 
                     # ret=-2 是 context_token 过期（10条消息限制或24小时超时）
                     if ret == -2:
-                        logger.warning(f"⚠️  已达到本条消息回复次数上限 (context_token 过期，ret=-2)")
+                        log.log(f"⚠️  已达到本条消息回复次数上限 (context_token 过期，ret=-2)")
                     else:
-                        logger.error(f"sendMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
-                    logger.error(f"Full API response: {data}")
+                        log.log(f"sendMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
+                    log.log(f"Full API response: {data}")
 
                     raise Exception(f"API Error {errcode}: {errmsg}")
 
@@ -276,7 +280,7 @@ class WeixinClient:
                 return {"message_id": client_id}
 
         except aiohttp.ClientError as e:
-            logger.error(f"sendMessage network error: {e}")
+            log.log(f"sendMessage network error: {e}")
             raise
 
     async def test_connection(self) -> bool:
@@ -293,7 +297,7 @@ class WeixinClient:
             # 超时说明连接正常（只是没有消息）
             return True
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
+            log.log(f"Connection test failed: {e}")
             return False
 
     async def get_upload_url(
@@ -348,7 +352,7 @@ class WeixinClient:
         ) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
-                logger.error(f"getUploadUrl HTTP {resp.status}: {error_text}")
+                log.log(f"getUploadUrl HTTP {resp.status}: {error_text}")
                 raise Exception(f"HTTP {resp.status}: {error_text}")
 
             raw_data = await resp.read()
@@ -358,7 +362,7 @@ class WeixinClient:
             if ret is not None and ret != 0:
                 errcode = data.get("errcode")
                 errmsg = data.get("errmsg", "未知错误")
-                logger.error(f"getUploadUrl error: {errcode} - {errmsg}")
+                log.log(f"getUploadUrl error: {errcode} - {errmsg}")
                 raise Exception(f"API Error {errcode}: {errmsg}")
 
             return data
@@ -402,8 +406,8 @@ class WeixinClient:
         # 使用账号配置中的 cdn_base_url
         cdn_url = f"{self.account.cdn_base_url}/upload?encrypted_query_param={quote(upload_param)}&filekey={quote(filekey)}"
 
-        logger.debug(f"CDN upload URL: {cdn_url}")
-        logger.debug(f"Ciphertext size: {len(ciphertext)} bytes")
+        log.log(f"CDN upload URL: {cdn_url}")
+        log.log(f"Ciphertext size: {len(ciphertext)} bytes")
 
         # 构建请求头
         headers = {
@@ -425,7 +429,7 @@ class WeixinClient:
                     if resp.status != 200:
                         error_text = await resp.text()
                         error_msg = resp.headers.get("x-error-message", error_text)
-                        logger.error(f"CDN upload HTTP {resp.status}: {error_msg}")
+                        log.log(f"CDN upload HTTP {resp.status}: {error_msg}")
 
                         # 4xx 错误不重试
                         if 400 <= resp.status < 500:
@@ -434,7 +438,7 @@ class WeixinClient:
                         # 5xx 错误重试
                         last_error = Exception(f"CDN upload server error: {error_msg}")
                         if attempt < max_retries:
-                            logger.warning(f"CDN upload attempt {attempt} failed, retrying...")
+                            log.log(f"CDN upload attempt {attempt} failed, retrying...")
                             await asyncio.sleep(2 ** attempt)  # 指数退避
                             continue
                         else:
@@ -443,19 +447,19 @@ class WeixinClient:
                     # 从响应头获取下载参数
                     download_param = resp.headers.get("x-encrypted-param")
                     if not download_param:
-                        logger.error("CDN response missing x-encrypted-param header")
+                        log.log("CDN response missing x-encrypted-param header")
                         if attempt < max_retries:
-                            logger.warning(f"CDN upload attempt {attempt} missing param, retrying...")
+                            log.log(f"CDN upload attempt {attempt} missing param, retrying...")
                             await asyncio.sleep(1)
                             continue
                         else:
                             raise Exception("CDN upload response missing x-encrypted-param header")
 
-                    logger.debug(f"CDN upload success on attempt {attempt}, got download_param: {download_param[:20]}...")
+                    log.log(f"CDN upload success on attempt {attempt}, got download_param: {download_param[:20]}...")
                     return download_param
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                logger.error(f"CDN upload attempt {attempt} network error: {e}")
+                log.log(f"CDN upload attempt {attempt} network error: {e}")
                 last_error = e
                 if attempt < max_retries:
                     await asyncio.sleep(2 ** attempt)  # 指数退避
@@ -566,7 +570,7 @@ class WeixinClient:
         ) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
-                logger.error(f"sendMediaMessage HTTP {resp.status}: {error_text}")
+                log.log(f"sendMediaMessage HTTP {resp.status}: {error_text}")
                 raise Exception(f"HTTP {resp.status}: {error_text}")
 
             raw_data = await resp.read()
@@ -576,7 +580,7 @@ class WeixinClient:
             if ret is not None and ret != 0:
                 errcode = data.get("errcode")
                 errmsg = data.get("errmsg") or data.get("msg") or "未知错误"
-                logger.error(f"sendMediaMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
+                log.log(f"sendMediaMessage error: ret={ret}, errcode={errcode}, errmsg={errmsg}")
                 raise Exception(f"API Error {errcode}: {errmsg}")
 
             return {"message_id": client_id}
@@ -611,7 +615,7 @@ class WeixinClient:
         ) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
-                logger.error(f"getConfig HTTP {resp.status}: {error_text}")
+                log.log(f"getConfig HTTP {resp.status}: {error_text}")
                 raise Exception(f"HTTP {resp.status}: {error_text}")
 
             raw_data = await resp.read()
@@ -621,7 +625,7 @@ class WeixinClient:
             if ret is not None and ret != 0:
                 errcode = data.get("errcode")
                 errmsg = data.get("errmsg", "未知错误")
-                logger.error(f"getConfig error: {errcode} - {errmsg}")
+                log.log(f"getConfig error: {errcode} - {errmsg}")
                 raise Exception(f"API Error {errcode}: {errmsg}")
 
             return data
@@ -659,7 +663,7 @@ class WeixinClient:
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    logger.error(f"sendTyping HTTP {resp.status}: {error_text}")
+                    log.log(f"sendTyping HTTP {resp.status}: {error_text}")
                     raise Exception(f"HTTP {resp.status}: {error_text}")
 
                 raw_data = await resp.read()
@@ -669,11 +673,11 @@ class WeixinClient:
                 if ret is not None and ret != 0:
                     errcode = data.get("errcode")
                     errmsg = data.get("errmsg", "未知错误")
-                    logger.error(f"sendTyping error: {errcode} - {errmsg}")
+                    log.log(f"sendTyping error: {errcode} - {errmsg}")
                     raise Exception(f"API Error {errcode}: {errmsg}")
 
                 return data
 
         except aiohttp.ClientError as e:
-            logger.error(f"sendTyping network error: {e}")
+            log.log(f"sendTyping network error: {e}")
             raise
