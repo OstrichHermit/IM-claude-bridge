@@ -99,7 +99,7 @@
         }
 
         .app-title {
-            font-size: 1.3rem;
+            font-size: 1rem;
             font-weight: 600;
             color: var(--text-secondary);
             text-align: center;
@@ -214,7 +214,7 @@
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
             font-size: 0.75rem;
             color: var(--text-tertiary);
         }
@@ -495,6 +495,39 @@
         <div class="component-list">
             <div class="component-item">
                 <div>
+                    <div class="component-name">Web Server</div>
+                    <div class="component-pid" id="web_server_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot running" id="web_server_dot"></div>
+                    <span class="status-text" id="web_server_status">运行中</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Manager</div>
+                    <div class="component-pid" id="manager_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="manager_dot"></div>
+                    <span class="status-text" id="manager_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
+                    <div class="component-name">Mcp Server</div>
+                    <div class="component-pid" id="mcp_server_pid"></div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot" id="mcp_server_dot"></div>
+                    <span class="status-text" id="mcp_server_status">--</span>
+                </div>
+            </div>
+
+            <div class="component-item">
+                <div>
                     <div class="component-name">Discord Bot</div>
                     <div class="component-pid" id="discord_bot_pid"></div>
                 </div>
@@ -523,28 +556,6 @@
                 <div class="status-badge">
                     <div class="status-dot" id="claude_bridge_dot"></div>
                     <span class="status-text" id="claude_bridge_status">--</span>
-                </div>
-            </div>
-
-            <div class="component-item">
-                <div>
-                    <div class="component-name">Manager</div>
-                    <div class="component-pid" id="manager_pid"></div>
-                </div>
-                <div class="status-badge">
-                    <div class="status-dot" id="manager_dot"></div>
-                    <span class="status-text" id="manager_status">--</span>
-                </div>
-            </div>
-
-            <div class="component-item">
-                <div>
-                    <div class="component-name">Web Server</div>
-                    <div class="component-pid" id="web_server_pid"></div>
-                </div>
-                <div class="status-badge">
-                    <div class="status-dot running" id="web_server_dot"></div>
-                    <span class="status-text" id="web_server_status">运行中</span>
                 </div>
             </div>
         </div>
@@ -742,7 +753,7 @@
             const dot = document.getElementById('connectionDot');
             const text = document.getElementById('connectionText');
             dot.className = `connection-dot ${connected ? '' : 'disconnected'}`;
-            text.textContent = connected ? '已连接' : '重连中...';
+            text.textContent = connected ? '已连接' : '重连中';
         }
 
         // 更新日志状态点

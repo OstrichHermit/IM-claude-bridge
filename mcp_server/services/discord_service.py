@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import MessageQueue
 from shared.logger import get_logger
 
-log = get_logger("MCPDiscordService", "mcp_server"), FileRequest, FileRequestStatus, MessageRequest, MessageRequestStatus
+log = get_logger("MCPDiscordService", "mcp_server")
+from shared.message_queue import FileRequest, FileRequestStatus, MessageRequest, MessageRequestStatus
 from shared.config import Config
 
 

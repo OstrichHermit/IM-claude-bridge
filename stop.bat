@@ -20,3 +20,7 @@ wmic process where "name='pythonw.exe' and commandline like '%%web_server.py%%'"
 REM Terminate Manager
 wmic process where "name='python.exe' and commandline like '%%im_claude_bridge_manager.py%%'" delete >nul 2>&1
 wmic process where "name='pythonw.exe' and commandline like '%%im_claude_bridge_manager.py%%'" delete >nul 2>&1
+
+REM Terminate MCP Server
+wmic process where "name='python.exe' and commandline like '%%mcp_server%%'" delete >nul 2>&1
+wmic process where "name='pythonw.exe' and commandline like '%%mcp_server%%'" delete >nul 2>&1

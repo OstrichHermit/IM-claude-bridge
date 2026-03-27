@@ -36,8 +36,8 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - 执行历史记录查询
 
 **🎛️ Web 控制界面**
-- 实时监控各组件运行状态（Discord Bot / Weixin Bot / Bridge / Manager）
-- 实时查看日志输出（4 个组件独立日志面板）
+- 实时监控各组件运行状态（Discord Bot / Weixin Bot / Bridge / Manager / MCP Server）
+- 实时查看日志输出（5 个组件独立日志面板）
 - 深色/浅色主题切换
 - 一键重启/停止所有服务
 - 自动重连 WebSocket 连接
@@ -224,9 +224,13 @@ file_download:
 
 ## 🔌 MCP 服务器集成
 
-Claude Code 可通过 MCP 协议发送文件到 Discord。
+Claude Code 可通过 MCP 协议发送文件到 Discord/微信，并管理定时任务。
 
-### MCP 服务器配置方法
+### 两种配置模式
+
+MCP 服务器支持两种配置模式：**Stdio 模式**（由 Claude Code 自动启动）和 **HTTP 模式**（独立运行，推荐）。
+
+### 模式一：Stdio 模式（Claude Code 自动启动）
 
 **配置文件位置**：`%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -250,6 +254,43 @@ Claude Code 可通过 MCP 协议发送文件到 Discord。
     }
   }
 }
+```
+
+### 模式二：HTTP 模式（独立运行，推荐）
+
+HTTP 模式下，MCP 服务器作为后台服务运行，可通过 Web 界面监控状态。
+
+**配置文件位置**：`%APPDATA%\Claude\claude_desktop_config.json`
+
+**添加 MCP 服务器**：
+```json
+{
+  "mcpServers": {
+    "im-claude-bridge": {
+      "type": "http",
+      "url": "http://127.0.0.1:3336/mcp"
+    }
+  }
+}
+```
+
+**启动 MCP 服务器**：
+
+MCP 服务器会随 `start.bat` / `restart.bat` 自动启动，也可用以下命令手动启动：
+
+```bash
+# 启动 MCP 服务器（HTTP 模式）
+python mcp_server\server.py --transport http --host 127.0.0.1 --port 3336
+```
+
+**Web 界面监控**：
+
+访问 http://localhost:8000 可实时监控 MCP Server 状态和日志。
+
+**停止 MCP 服务器**：
+
+```bash
+# 使用 stop.bat 或手动终止进程
 ```
 
 ### MCP 工具
