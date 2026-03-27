@@ -1190,6 +1190,8 @@ class WeixinBot:
             (文本内容, 引用的文件列表)
         """
         try:
+            # 获取消息 ID，用于文件命名
+            message_id = msg.get("message_id", "")
             item_list = msg.get("item_list", [])
             if not item_list:
                 return None, []
