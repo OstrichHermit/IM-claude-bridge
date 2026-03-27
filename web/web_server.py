@@ -133,6 +133,7 @@ def get_component_status(component: str) -> Dict:
         "claude_bridge": "claude_bridge.py",
         "manager": "im_claude_bridge_manager.py",
         "web_server": "web_server.py",
+        "mcp_server": "mcp_server.py",
     }
     pattern = patterns.get(component)
     if not pattern:
@@ -166,7 +167,7 @@ def read_last_lines(log_file: Path, lines: int = 100) -> List[str]:
 @app.get("/api/status")
 async def get_status():
     """获取所有组件状态"""
-    components = ["discord_bot", "weixin_bot", "claude_bridge", "manager", "web_server"]
+    components = ["discord_bot", "weixin_bot", "claude_bridge", "manager", "web_server", "mcp_server"]
     status = {}
     for comp in components:
         status[comp] = get_component_status(comp)
@@ -304,7 +305,7 @@ async def websocket_status(websocket: WebSocket):
         await websocket.send_json({"type": "connected", "channel": "status"})
 
         while True:
-            components = ["discord_bot", "weixin_bot", "claude_bridge", "manager", "web_server"]
+            components = ["discord_bot", "weixin_bot", "claude_bridge", "manager", "web_server", "mcp_server"]
             status = {}
             for comp in components:
                 status[comp] = get_component_status(comp)

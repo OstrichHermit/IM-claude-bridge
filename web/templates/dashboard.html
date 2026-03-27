@@ -87,7 +87,7 @@
 
         /* 左侧边栏 */
         .sidebar {
-            width: 260px;
+            width: 200px;
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
             padding: 24px 16px;
@@ -321,8 +321,8 @@
 
         .log-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
             flex: 1;
             min-height: 0;
             height: 100%;
@@ -590,6 +590,20 @@
             <div class="log-panel">
                 <div class="log-header">
                     <span class="log-title">
+                        <span class="log-status-dot" id="log_mcp_server_dot"></span>
+                        Mcp
+                    </span>
+                    <div class="log-actions">
+                        <button class="log-btn" onclick="clearLog('mcp_server')">清空</button>
+                        <button class="log-btn" onclick="scrollToBottom('mcp_server')">底部</button>
+                    </div>
+                </div>
+                <div class="log-content" id="log_mcp_server"></div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-header">
+                    <span class="log-title">
                         <span class="log-status-dot" id="log_discord_bot_dot"></span>
                         Discord
                     </span>
@@ -632,7 +646,7 @@
     </div>
 
     <script>
-        const components = ['manager', 'discord_bot', 'weixin_bot', 'claude_bridge'];
+        const components = ['manager', 'mcp_server', 'discord_bot', 'weixin_bot', 'claude_bridge'];
         let wsStatus = null;
         let wsLogs = {};
         const maxLogLines = 200;
