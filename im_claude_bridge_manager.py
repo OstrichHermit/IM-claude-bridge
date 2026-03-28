@@ -117,6 +117,10 @@ class Manager:
         """检查 Web Server 是否运行"""
         return self.find_process_by_commandline("web_server.py") is not None
 
+    def is_mcp_server_running(self):
+        """检查 MCP Server 是否运行"""
+        return self.find_process_by_commandline("mcp_server") is not None
+
     def get_retry_count(self):
         """获取当前重试次数"""
         if self.retry_count_file.exists():
@@ -231,8 +235,9 @@ class Manager:
         weixin_bot_running = self.is_weixin_bot_running()
         bridge_running = self.is_bridge_running()
         web_server_running = self.is_web_server_running()
+        mcp_server_running = self.is_mcp_server_running()
 
-        if bot_running and weixin_bot_running and bridge_running:
+        if bot_running and weixin_bot_running and bridge_running and web_server_running and mcp_server_running:
             log.log("✅ 初始检查: 所有服务运行正常")
         else:
             if not bot_running:
@@ -243,6 +248,8 @@ class Manager:
                 log.log("⚠️  初始检查: Claude Bridge 未运行")
             if not web_server_running:
                 log.log("⚠️  初始检查: Web Server 未运行")
+            if not mcp_server_running:
+                log.log("⚠️  初始检查: MCP Server 未运行")
 
         while True:
             try:
@@ -257,7 +264,7 @@ class Manager:
                     time.sleep(30)
 
                     # 延迟后再次检查
-                    if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running() and self.is_web_server_running():
+                    if self.is_bot_running() and self.is_weixin_bot_running() and self.is_bridge_running() and self.is_web_server_running() and self.is_mcp_server_running():
                         log.log("✅ 重启成功，移除重启标记和重置重试次数")
                         if self.restarting_file.exists():
                             self.restarting_file.unlink()
@@ -299,12 +306,13 @@ class Manager:
                 weixin_bot_running = self.is_weixin_bot_running()
                 bridge_running = self.is_bridge_running()
                 web_server_running = self.is_web_server_running()
+                mcp_server_running = self.is_mcp_server_running()
 
-                if bot_running and weixin_bot_running and bridge_running and web_server_running:
+                if bot_running and weixin_bot_running and bridge_running and web_server_running and mcp_server_running:
                     # 所有进程正常，重置重试次数
                     if self.retry_count_file.exists():
                         self.reset_retry_count()
-                elif not bot_running or not weixin_bot_running or not bridge_running or not web_server_running:
+                elif not bot_running or not weixin_bot_running or not bridge_running or not web_server_running or not mcp_server_running:
                     # 发现进程挂了，创建重启标记并触发重启
                     if not bot_running:
                         log.log("⚠️  Discord Bot 未运行，触发重启...")
@@ -314,6 +322,8 @@ class Manager:
                         log.log("⚠️  Claude Bridge 未运行，触发重启...")
                     if not web_server_running:
                         log.log("⚠️  Web Server 未运行，触发重启...")
+                    if not mcp_server_running:
+                        log.log("⚠️  MCP Server 未运行，触发重启...")
 
                     # 创建重启标记
                     self.restarting_file.touch()
