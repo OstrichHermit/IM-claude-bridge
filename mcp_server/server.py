@@ -16,9 +16,19 @@ Discord Bridge MCP Server - 基于消息队列的架构
     Discord 用户/频道
 """
 import asyncio
+import io
+import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
+
+# pythonw.exe 下 sys.stdout/stderr 为 None，会导致 Uvicorn 日志格式化崩溃
+# 兜底处理：替换为 devnull 避免 AttributeError: 'NoneType' object has no attribute 'isatty'
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
 
 from fastmcp import FastMCP
 
@@ -28,6 +38,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.logger import get_logger
 
 log = get_logger("MCPServer", "mcp_server")
+
+
+# 捕获 pythonw.exe 中丢失的未处理异常
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    """全局异常钩子：把未捕获的异常写入日志文件"""
+    tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    log.log(f"❌ 未捕获的异常（进程即将退出）:\n{tb_text}")
+
+sys.excepthook = _global_excepthook
 
 from mcp_server.tools import (
     _send_file_to_discord,
@@ -604,22 +623,45 @@ def run_server(
     log.log("=" * 60)
     log.log("")
 
+    # 捕获 asyncio 中未处理的异常
+    def _async_exception_handler(loop, context):
+        """asyncio 异常处理器：把未处理的异步异常写入日志"""
+        exception = context.get('exception')
+        message = context.get('message', '')
+        if exception:
+            tb_text = ''.join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            log.log(f"❌ asyncio 未处理异常: {message}\n{tb_text}")
+        else:
+            log.log(f"❌ asyncio 错误: {message}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        loop.set_exception_handler(_async_exception_handler)
+    except RuntimeError:
+        pass
+
     # 根据传输模式运行服务器
-    if transport == 'stdio':
-        mcp.run(transport='stdio')
-    elif transport == 'http':
-        mcp.run(
-            transport='http',
-            host=host,
-            port=port,
-            path='/mcp'
-        )
-    else:
-        raise ValueError(f"不支持的传输模式: {transport}")
+    try:
+        if transport == 'stdio':
+            mcp.run(transport='stdio')
+        elif transport == 'http':
+            mcp.run(
+                transport='http',
+                host=host,
+                port=port,
+                path='/mcp'
+            )
+        else:
+            raise ValueError(f"不支持的传输模式: {transport}")
+    except Exception as e:
+        tb_text = traceback.format_exc()
+        log.log(f"❌ MCP Server 运行时崩溃:\n{tb_text}")
+        raise
 
 
 if __name__ == '__main__':
     import argparse
+    import traceback
 
     parser = argparse.ArgumentParser(
         description='Discord Bridge MCP Server - Discord 文件消息发送工具（基于消息队列）',
@@ -653,8 +695,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    run_server(
-        transport=args.transport,
-        host=args.host,
-        port=args.port
-    )
+    try:
+        run_server(
+            transport=args.transport,
+            host=args.host,
+            port=args.port
+        )
+    except Exception as e:
+        tb_text = traceback.format_exc()
+        log.log(f"❌ MCP Server 启动失败:\n{tb_text}")
+        sys.exit(1)
