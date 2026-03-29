@@ -295,7 +295,7 @@ class DiscordBot(discord.Client):
 
         # 创建启动成功消息
         embed = discord.Embed(
-            title="🚀 Discord Claude Bridge 启动成功",
+            title="🚀 IM Claude Bridge 启动成功",
             description="桥接系统已就绪，可以开始使用！",
             color=discord.Color.green()
         )
