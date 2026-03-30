@@ -257,9 +257,9 @@ class WeixinClient:
                     log.log(f"Failed to decode sendMessage response: {raw_data[:200]}")
                     raise Exception(f"无法解析响应: Content-Type=application/octet-stream")
 
-                # 详细日志：记录返回的数据
-                log.log(f"sendMessage response: ret={data.get('ret')}, errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
-                log.log(f"Full API response: {data}")
+                # 详细日志：记录返回的数据（注释掉，正常发送时返回空 {} 太吵）
+                # log.log(f"sendMessage response: ret={data.get('ret')}, errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
+                # log.log(f"Full API response: {data}")
 
                 # 检查返回码
                 ret = data.get("ret")
