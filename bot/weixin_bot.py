@@ -1034,7 +1034,7 @@ class WeixinBot:
         import base64
         media_info = {
             "encrypt_query_param": download_param,
-            "aes_key": base64.b64encode(aeskey).decode('utf-8'),
+            "aes_key": base64.b64encode(aeskey.hex().encode('utf-8')).decode('utf-8'),
             "filesize_ciphertext": filesize
         }
 
