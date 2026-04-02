@@ -169,14 +169,14 @@ mcp_server:
   # 传输模式：stdio 或 http
   transport: "http"
   # HTTP 模式监听地址（仅 http 模式生效）
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   # HTTP 模式监听端口（仅 http 模式生效）
   port: 3334
 
 # Web 服务器配置
 web_server:
   # HTTP 监听地址
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   # HTTP 监听端口
   port: 8088
 
