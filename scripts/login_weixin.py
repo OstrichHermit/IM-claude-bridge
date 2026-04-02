@@ -130,7 +130,7 @@ async def main():
             print("📝 请配置用户信息")
             print("=" * 50)
 
-            username = input("\n请输入用户名（如：鸵鸟居士）: ").strip()
+            username = input("\n请输入用户名（如：用户名）: ").strip()
             if not username:
                 print("⚠️  用户名不能为空，使用默认值：微信用户")
                 username = "微信用户"

@@ -75,7 +75,7 @@ class ContextTokenStorage:
         获取用户的 context token
 
         Args:
-            username: 用户名（如"鸵鸟居士"）
+            username: 用户名（如"用户名"）
 
         Returns:
             token 字符串，如果不存在则返回 None

@@ -120,7 +120,7 @@ class WeixinService:
         """将微信用户ID转换为固定的整数ID
 
         支持多种输入格式：
-        - 用户名（如"鸵鸟居士"）
+        - 用户名（如"用户名"）
         - wxid（如"wxid_xxxxxxxxxxxx@im.wechat"）
         - 整数 user_id 字符串（如"USER_WEIXIN_ID"）
 

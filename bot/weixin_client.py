@@ -42,7 +42,7 @@ class WeixinAccount:
     bot_token: str
     base_url: str
     wxid: str  # 原始微信ID（字符串）
-    username: str  # 用户名（如"鸵鸟居士"）
+    username: str  # 用户名（如"用户名"）
     user_id: int  # 整数ID
     # CDN base URL（用于文件上传）
     cdn_base_url: str = "https://novac2c.cdn.weixin.qq.com/c2c"

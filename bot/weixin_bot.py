@@ -38,7 +38,7 @@ class WeixinBot:
         self.sequence_check_task = None
 
         # Context Token 持久化存储（用户 -> 最新 context_token）
-        # 这里的键已经是解析后的纯净用户名（如 "鸵鸟居士"）
+        # 这里的键已经是解析后的纯净用户名（如 "用户名"）
         self.context_tokens = ContextTokenStorage(config.weixin_accounts_file)
 
         # 整数 ID 到用户名的映射（用于文件发送）
@@ -280,7 +280,7 @@ class WeixinBot:
         if not context_token:
             raise Exception(f"context_token is required but missing for user {msg.username}")
 
-        # 注意：这里的 msg.username 已经是 "鸵鸟居士" 了
+        # 注意：这里的 msg.username 已经是 "用户名" 了
         # 直接传给 client，由 client 底层自动还原为微信 ID
         result = await client.send_message(
             to_user_id=msg.username,
@@ -564,7 +564,7 @@ class WeixinBot:
                     to_user_id = username  # 默认使用原始 username
 
                     if username in self.username_to_wxid:
-                        # username 是配置的用户名（如 "鸵鸟居士"）
+                        # username 是配置的用户名（如 "用户名"）
                         # 从用户名获取对应的 wxid
                         target_wxid = self.username_to_wxid.get(username)
                         # 找到包含该 wxid 的账号
@@ -754,7 +754,7 @@ class WeixinBot:
                         to_user_id = username  # 默认使用原始 username
 
                         if username in self.username_to_wxid:
-                            # username 是配置的用户名（如 "鸵鸟居士"）
+                            # username 是配置的用户名（如 "用户名"）
                             # 从用户名获取对应的 wxid
                             target_wxid = self.username_to_wxid.get(username)
                             # 找到包含该 wxid 的账号
@@ -1120,7 +1120,7 @@ class WeixinBot:
                 discord_channel_id=user_id_int,  # 用发送者 ID 作为频道 ID
                 discord_message_id=int(msg.get("message_id", 0)),
                 discord_user_id=user_id_int,
-                username=from_user_id,  # 这里直接存 "鸵鸟居士"
+                username=from_user_id,  # 这里直接存 "用户名"
                 is_dm=True,  # 微信都是私聊
                 is_external=False,
                 tag=MessageTag.DEFAULT.value,
@@ -1672,7 +1672,7 @@ class WeixinBot:
 
         Args:
             message_id: 消息记录在数据库中的唯一 ID
-            from_user_id: 用户名（如"鸵鸟居士"）
+            from_user_id: 用户名（如"用户名"）
             account_bot_id: 微信账号 bot_id
         """
         client = self.clients.get(account_bot_id)

@@ -200,7 +200,7 @@ async def add_cron(
         add_cron(
             cron_expr="0 9 * * *",
             content="发送今日报告",
-            username="鸵鸟居士",
+            username="用户名",
             user_id="USER_DISCORD_ID",
             channel_type="discord",
             tag="task",
@@ -211,7 +211,7 @@ async def add_cron(
         add_cron(
             cron_expr="0 9 * * *",
             content="发送今日报告",
-            username="鸵鸟居士",
+            username="用户名",
             user_id="USER_WEIXIN_ID",
             channel_type="weixin",
             tag="task",
@@ -222,7 +222,7 @@ async def add_cron(
         add_cron(
             cron_expr="0 20 * * *",
             content="该开会啦",
-            username="鸵鸟居士",
+            username="用户名",
             user_id="USER_DISCORD_ID",
             tag="reminder",
             description="会议提醒",

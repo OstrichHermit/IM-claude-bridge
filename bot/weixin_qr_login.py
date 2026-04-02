@@ -32,7 +32,7 @@ class LoginResult:
         """转换为 WeixinAccount
 
         Args:
-            username: 用户名（如"鸵鸟居士"）
+            username: 用户名（如"用户名"）
         """
         if not self.success:
             return None
