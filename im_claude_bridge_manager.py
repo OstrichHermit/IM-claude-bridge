@@ -367,65 +367,25 @@ class Manager:
 
 def main():
     """主函数"""
-    if len(sys.argv) < 2:
-        print("Discord Bridge Manager - Windows 守护程序")
-        print()
-        print("用法:")
-        print("  python im_claude_bridge_manager.py console    # 在独立窗口启动监控控制台（推荐）")
-        print("  python im_claude_bridge_manager.py start      # 启动监控控制台（独立窗口）")
-        print("  python im_claude_bridge_manager.py start-all  # 启动所有服务")
-        print("  python im_claude_bridge_manager.py stop       # 停止所有服务")
-        print("  python im_claude_bridge_manager.py restart    # 重启所有服务")
-        print("  python im_claude_bridge_manager.py logs       # 查看日志")
-        sys.exit(1)
-
-    command = sys.argv[1].lower()
     manager = Manager()
 
-    if command == "console" or command == "start":
-        # 在独立窗口中启动监控循环
-        print()
-        print("=" * 50)
-        print("  IM Claude Bridge Manager Console")
-        print("=" * 50)
-        print()
-        print("🔄 监控控制台正在运行，日志实时显示")
-        print("💡 按 Ctrl+C 退出控制台（不会停止服务）")
-        print("💡 在其他窗口使用 'manager.bat stop' 停止所有服务")
-        print("💡 在其他窗口使用 'manager.bat start-all' 启动所有服务")
-        print()
+    print()
+    print("=" * 50)
+    print("  IM Claude Bridge Manager Console")
+    print("=" * 50)
+    print()
+    print("🔄 监控控制台正在运行，日志实时显示")
+    print("💡 按 Ctrl+C 退出控制台（不会停止服务）")
+    print("💡 在其他窗口使用 'manager.bat stop' 停止所有服务")
+    print("💡 在其他窗口使用 'manager.bat start-all' 启动所有服务")
+    print()
 
-        # 清理可能存在的旧重启标记
-        if manager.restarting_file.exists():
-            manager.restarting_file.unlink()
-            log.log("🗑️  已清理旧的重启标记")
+    # 清理可能存在的旧重启标记
+    if manager.restarting_file.exists():
+        manager.restarting_file.unlink()
+        log.log("🗑️  已清理旧的重启标记")
 
-        manager.monitor_loop()
-
-    elif command == "start-all":
-        # 启动所有服务
-        if manager.start_all():
-            print("\n✅ 所有服务已启动")
-        else:
-            print("\n❌ 启动失败")
-            sys.exit(1)
-
-    elif command == "stop":
-        # 停止服务
-        manager.stop_all()
-
-    elif command == "restart":
-        # 重启服务
-        manager.restart_all()
-
-    elif command == "logs":
-        # 查看日志
-        manager.show_logs()
-
-    else:
-        print(f"❌ 未知命令: {command}")
-        print("可用命令: start, stop, restart, logs")
-        sys.exit(1)
+    manager.monitor_loop()
 
 
 if __name__ == "__main__":

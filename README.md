@@ -114,7 +114,7 @@ start.bat
 
 > Manager 守护进程会自动启动并监控所有服务（Discord Bot + Weixin Bot + Bridge + Web Server）
 
-启动后访问 **Web 控制界面**：http://localhost:8000
+启动后访问 **Web 控制界面**：http://localhost:8088（默认值，可在 `config.yaml` 中修改）
 
 在 Web 界面中你可以：
 - 实时查看各组件运行状态和 PID
@@ -226,37 +226,7 @@ file_download:
 
 Claude Code 可通过 MCP 协议发送文件到 Discord/微信，并管理定时任务。
 
-### 两种配置模式
-
-MCP 服务器支持两种配置模式：**Stdio 模式**（由 Claude Code 自动启动）和 **HTTP 模式**（独立运行，推荐）。
-
-### 模式一：Stdio 模式（Claude Code 自动启动）
-
-**配置文件位置**：`%APPDATA%\Claude\claude_desktop_config.json`
-
-**添加 MCP 服务器**：
-```json
-{
-  "mcpServers": {
-    "im-claude-bridge":  {
-      "type":  "stdio",
-      "command":  "cmd",
-      "args":  [
-        "/c",
-        "cd",
-        "/d",
-        "D:\\AgentWorkspace\\IM-claude-bridge",
-        "\u0026\u0026",
-        "python",
-        "-m",
-        "mcp_server.server"
-      ]
-    }
-  }
-}
-```
-
-### 模式二：HTTP 模式（独立运行，推荐）
+### HTTP 模式（独立运行，推荐）
 
 HTTP 模式下，MCP 服务器作为后台服务运行，可通过 Web 界面监控状态。
 
@@ -274,24 +244,9 @@ HTTP 模式下，MCP 服务器作为后台服务运行，可通过 Web 界面监
 }
 ```
 
-**启动 MCP 服务器**：
-
-MCP 服务器会随 `start.bat` / `restart.bat` 自动启动，也可用以下命令手动启动：
-
-```bash
-# 启动 MCP 服务器（HTTP 模式）
-python mcp_server\server.py --transport http --host 127.0.0.1 --port 3336
-```
-
 **Web 界面监控**：
 
-访问 http://localhost:8000 可实时监控 MCP Server 状态和日志。
-
-**停止 MCP 服务器**：
-
-```bash
-# 使用 stop.bat 或手动终止进程
-```
+MCP 服务器会随 `start.bat` / `restart.bat` 自动启动，访问 Web 控制界面可实时监控 MCP Server 状态和日志。
 
 ### MCP 工具
 
@@ -388,9 +343,9 @@ weixin:
 
 ### Web 界面无法访问
 
-1. 检查 Web Server 是否运行：访问 http://localhost:8000
+1. 检查 Web Server 是否运行：访问 Web 控制界面
 2. 查看服务状态：在 Web 界面左侧查看各组件状态
-3. 检查端口占用：确保 8000 端口未被占用
+3. 检查端口占用，确保端口未被占用
 
 ### Bot 无响应
 

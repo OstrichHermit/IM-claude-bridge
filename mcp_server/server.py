@@ -36,6 +36,7 @@ from fastmcp import FastMCP
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.logger import get_logger
+from shared.config import Config
 
 log = get_logger("MCPServer", "mcp_server")
 
@@ -573,18 +574,28 @@ async def send_multiple_files_to_weixin(
 # ==================== 启动入口 ====================
 
 def run_server(
-    transport: str = 'stdio',
-    host: str = '0.0.0.0',
-    port: int = 3334
+    transport: str = None,
+    host: str = None,
+    port: int = None
 ):
     """
     启动 MCP 服务器
 
     Args:
-        transport: 传输模式，'stdio' 或 'http'
-        host: HTTP模式的监听地址，默认 0.0.0.0
-        port: HTTP模式的监听端口，默认 3334（避免与 TrendRadar 冲突）
+        transport: 传输模式，'stdio' 或 'http'，默认从配置文件读取
+        host: HTTP模式的监听地址，默认从配置文件读取
+        port: HTTP模式的监听端口，默认从配置文件读取
     """
+    # 从配置文件读取默认值
+    config = Config()
+
+    if transport is None:
+        transport = config.mcp_transport
+    if host is None:
+        host = config.mcp_host
+    if port is None:
+        port = config.mcp_port
+
     log.log("")
     log.log("=" * 60)
     log.log("  Discord Bridge MCP Server (基于消息队列)")
@@ -663,34 +674,49 @@ if __name__ == '__main__':
     import argparse
     import traceback
 
+    # 从配置文件获取默认值
+    try:
+        config = Config()
+        default_transport = config.mcp_transport
+        default_host = config.mcp_host
+        default_port = config.mcp_port
+    except Exception:
+        # 配置读取失败时使用硬编码默认值
+        default_transport = 'http'
+        default_host = '0.0.0.0'
+        default_port = 3334
+
     parser = argparse.ArgumentParser(
         description='Discord Bridge MCP Server - Discord 文件消息发送工具（基于消息队列）',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 示例:
   # 使用 stdio 模式（推荐，用于 Claude Code）
   python server.py
 
   # 使用 HTTP 模式（用于调试）
   python server.py --transport http --host 0.0.0.0 --port 3334
+
+  # 从配置文件读取（默认行为）
+  python server.py
         """
     )
     parser.add_argument(
         '--transport',
         choices=['stdio', 'http'],
-        default='stdio',
-        help='传输模式：stdio (默认) 或 http'
+        default=default_transport,
+        help=f'传输模式：stdio (默认) 或 http（默认从配置文件读取）'
     )
     parser.add_argument(
         '--host',
-        default='0.0.0.0',
-        help='HTTP模式的监听地址，默认 0.0.0.0'
+        default=default_host,
+        help=f'HTTP模式的监听地址（默认从配置文件读取，当前: {default_host}）'
     )
     parser.add_argument(
         '--port',
         type=int,
-        default=3334,
-        help='HTTP模式的监听端口，默认 3334'
+        default=default_port,
+        help=f'HTTP模式的监听端口（默认从配置文件读取，当前: {default_port}）'
     )
 
     args = parser.parse_args()

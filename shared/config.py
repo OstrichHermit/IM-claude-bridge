@@ -261,3 +261,30 @@ class Config:
             project_root = Path(__file__).parent.parent
             mapping_file = project_root / mapping_file
         return str(mapping_file)
+
+    # MCP 服务器配置
+
+    @property
+    def mcp_transport(self) -> str:
+        """获取 MCP 服务器传输模式（stdio 或 http）"""
+        return self._config.get('mcp_server', {}).get('transport', 'http')
+
+    @property
+    def mcp_host(self) -> str:
+        """获取 MCP 服务器 HTTP 模式监听地址"""
+        return self._config.get('mcp_server', {}).get('host', '0.0.0.0')
+
+    @property
+    def mcp_port(self) -> int:
+        """获取 MCP 服务器 HTTP 模式监听端口"""
+        return self._config.get('mcp_server', {}).get('port', 3334)
+
+    @property
+    def web_server_host(self) -> str:
+        """获取 Web 服务器监听地址"""
+        return self._config.get('web_server', {}).get('host', '0.0.0.0')
+
+    @property
+    def web_server_port(self) -> int:
+        """获取 Web 服务器监听端口"""
+        return self._config.get('web_server', {}).get('port', 8088)

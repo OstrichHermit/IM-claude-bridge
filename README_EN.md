@@ -114,7 +114,7 @@ start.bat
 
 > Manager daemon will automatically start and monitor all services (Discord Bot + Weixin Bot + Bridge + Web Server)
 
-After starting, visit the **Web Control Panel** at: http://localhost:8000
+After starting, visit the **Web Control Panel** (default address: http://localhost:8088, can be modified in `config.yaml`)
 
 In the Web Panel you can:
 - View real-time status and PID of each component
@@ -125,7 +125,7 @@ In the Web Panel you can:
 
 ### 5. Usage
 
-#### 5.1 Basic Chat
+### 5.1 Basic Chat
 
 In Discord, `@Bot` and send a message:
 
@@ -141,7 +141,7 @@ Please help me analyze this code
 
 The bot will receive messages and display that it is typing, and then stop when the response is complete.
 
-#### 5.2 Slash Commands
+### 5.2 Slash Commands
 
 - `/new` - Reset session, start new conversation context
 - `/status` - View system status (session ID, database statistics, etc.)
@@ -152,7 +152,7 @@ The bot will receive messages and display that it is typing, and then stop when 
 **Discord Context Menus** (Right-click on message):
 - **Download Attachments** - Right-click a message with attachments → Apps → Download Attachments
 
-#### 5.3 Discord Stickers
+### 5.3 Discord Stickers
 
 Bot supports automatic image sticker sending to make conversations more lively and natural.
 
@@ -176,7 +176,7 @@ Bot supports automatic image sticker sending to make conversations more lively a
 - Format: `meaning-content.extension`
 - Example: `开心-森贝儿贵宾犬起飞.gif` (happy-Sanbei pug taking off.gif)
 
-#### 5.4 File Operations
+### 5.4 File Operations
 
 **Configure default download directory** (in `config.yaml`):
 ```yaml
@@ -226,37 +226,7 @@ Reply to a message with files and `@Bot` (no need for `@` in WeChat), Bot will e
 
 Claude Code can send files to Discord/WeChat and manage scheduled tasks via MCP protocol.
 
-### Two Configuration Modes
-
-The MCP server supports two configuration modes: **Stdio mode** (automatically started by Claude Code) and **HTTP mode** (standalone, recommended).
-
-### Mode 1: Stdio Mode (Auto-started by Claude Code)
-
-**Config file location**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-**Add MCP server**:
-```json
-{
-  "mcpServers": {
-    "im-claude-bridge":  {
-      "type":  "stdio",
-      "command":  "cmd",
-      "args":  [
-        "/c",
-        "cd",
-        "/d",
-        "D:\\AgentWorkspace\\IM-claude-bridge",
-        "\u0026\u0026",
-        "python",
-        "-m",
-        "mcp_server.server"
-      ]
-    }
-  }
-}
-```
-
-### Mode 2: HTTP Mode (Standalone, Recommended)
+### HTTP Mode (Standalone, Recommended)
 
 In HTTP mode, the MCP server runs as a background service and can be monitored via the Web interface.
 
@@ -274,24 +244,9 @@ In HTTP mode, the MCP server runs as a background service and can be monitored v
 }
 ```
 
-**Start MCP Server**:
-
-The MCP server is automatically started with `start.bat` / `restart.bat`. You can also start it manually:
-
-```bash
-# Start MCP server (HTTP mode)
-python mcp_server\server.py --transport http --host 127.0.0.1 --port 3336
-```
-
 **Web Interface Monitoring**:
 
-Visit http://localhost:8000 to monitor MCP Server status and logs in real-time.
-
-**Stop MCP Server**:
-
-```bash
-# Use stop.bat or manually terminate the process
-```
+MCP server starts automatically with `start.bat` / `restart.bat`. Visit Web Control Panel to monitor MCP Server status and logs in real-time.
 
 ### MCP Tools
 
@@ -388,9 +343,9 @@ WeChat Bot will automatically start together with Discord Bot, both running inde
 
 ### Web Panel Not Accessible
 
-1. Check if Web Server is running: Visit http://localhost:8000
+1. Check if Web Server is running: Visit Web Control Panel
 2. Check service status: View component status in the left sidebar of Web Panel
-3. Check port availability: Ensure port 8000 is not occupied
+3. Check port availability: Ensure the configured port is not occupied
 
 ### Bot Not Responding
 

@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.logger import get_logger, LOG_DIR, cleanup_logs
+from shared.config import Config
 
 log = get_logger("WebServer", "manager")
 
@@ -356,8 +357,15 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "web" / "static"))
 # 启动服务器
 # ============================================================================
 
-def run_server(host: str = "0.0.0.0", port: int = 8088):
+def run_server(host: str = None, port: int = None):
     """启动 Web 服务器"""
+    # 从配置文件读取默认值
+    config = Config()
+    if host is None:
+        host = config.web_server_host
+    if port is None:
+        port = config.web_server_port
+
     # 启动时清理日志（保留最近1000行）
     cleanup_logs()
     log.log(f"🚀 Web 服务器启动中: http://{host}:{port}")
@@ -381,4 +389,21 @@ def run_server(host: str = "0.0.0.0", port: int = 8088):
 
 
 if __name__ == "__main__":
-    run_server()
+    import argparse
+
+    # 从配置文件获取默认值
+    try:
+        config = Config()
+        default_host = config.web_server_host
+        default_port = config.web_server_port
+    except Exception:
+        default_host = "0.0.0.0"
+        default_port = 8088
+
+    parser = argparse.ArgumentParser(description='IM-Claude-Bridge Web Server')
+    parser.add_argument('--host', default=default_host, help=f'监听地址（默认: {default_host}）')
+    parser.add_argument('--port', type=int, default=default_port, help=f'监听端口（默认: {default_port}）')
+
+    args = parser.parse_args()
+
+    run_server(host=args.host, port=args.port)
