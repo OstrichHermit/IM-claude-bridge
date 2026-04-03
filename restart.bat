@@ -5,24 +5,14 @@ REM Find Python executable
 for /f "delims=" %%i in ('py -3 -c "import sys;print(sys.executable.replace('\\python.exe','\\pythonw.exe'))" 2^>nul') do set PYTHONW=%%i
 if not defined PYTHONW set PYTHONW=pythonw.exe
 
-wmic process where "name='python.exe' and commandline like '%%discord_bot.py%%'" delete >nul 2>&1
-wmic process where "name='pythonw.exe' and commandline like '%%discord_bot.py%%'" delete >nul 2>&1
-wmic process where "name='python.exe' and commandline like '%%claude_bridge.py%%'" delete >nul 2>&1
-wmic process where "name='pythonw.exe' and commandline like '%%claude_bridge.py%%'" delete >nul 2>&1
-wmic process where "name='python.exe' and commandline like '%%weixin_bot.py%%'" delete >nul 2>&1
-wmic process where "name='pythonw.exe' and commandline like '%%weixin_bot.py%%'" delete >nul 2>&1
-wmic process where "name='python.exe' and commandline like '%%web_server.py%%'" delete >nul 2>&1
-wmic process where "name='pythonw.exe' and commandline like '%%web_server.py%%'" delete >nul 2>&1
-wmic process where "name='python.exe' and commandline like '%%mcp_server%%'" delete >nul 2>&1
-wmic process where "name='pythonw.exe' and commandline like '%%mcp_server%%'" delete >nul 2>&1
+REM Kill all IM-claude-bridge related Python processes (exclude manager and web_server)
+python "%~dp0scripts\kill_bridge.py" im_claude_bridge_manager web_server >nul 2>&1
 
 timeout /t 2 /nobreak >nul
 
 start "" /b "%PYTHONW%" "%~dp0bot\discord_bot.py"
 timeout /t 1 /nobreak >nul
 start "" /b "%PYTHONW%" "%~dp0bridge\claude_bridge.py"
-timeout /t 1 /nobreak >nul
-start "" /b "%PYTHONW%" "%~dp0web\web_server.py"
 timeout /t 1 /nobreak >nul
 start "" /b "%PYTHONW%" "%~dp0mcp_server\server.py"
 
@@ -31,4 +21,3 @@ for /f "delims=" %%i in ('python -c "import yaml; config = yaml.safe_load(open(r
 if "%WEIXIN_RESULT%"=="1" (
     start "" /b "%PYTHONW%" "%~dp0bot\weixin_bot.py"
 )
-

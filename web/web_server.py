@@ -166,7 +166,7 @@ def read_last_lines(log_file: Path, lines: int = 100) -> List[str]:
         return []
 
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
             return [line.strip() for line in all_lines[-lines:]]
     except Exception as e:
@@ -292,7 +292,7 @@ async def websocket_log(websocket: WebSocket, component: str):
 
         # 持续监控新内容
         if log_file.exists():
-            with open(log_file, "r", encoding="utf-8") as f:
+            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
                 # 跳到文件末尾
                 f.seek(0, 2)
                 while True:
