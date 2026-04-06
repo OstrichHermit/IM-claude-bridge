@@ -604,8 +604,17 @@ class DiscordBot(discord.Client):
                     await interaction.response.send_message("❌ 您没有权限执行此操作", ephemeral=True)
                     return
 
-            # 查找正在处理的消息（只获取 Discord 频道的消息）
-            processing_messages = self.message_queue.get_processing_messages(channel_type=ChannelType.DISCORD.value)
+            # 查找正在处理的消息（匹配发送命令的频道或私聊）
+            if interaction.channel.type == discord.ChannelType.private:
+                processing_messages = self.message_queue.get_processing_messages(
+                    channel_type=ChannelType.DISCORD.value,
+                    user_id=interaction.user.id
+                )
+            else:
+                processing_messages = self.message_queue.get_processing_messages(
+                    channel_type=ChannelType.DISCORD.value,
+                    channel_id=interaction.channel.id
+                )
 
             if not processing_messages:
                 embed = discord.Embed(

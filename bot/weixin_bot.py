@@ -1560,8 +1560,11 @@ class WeixinBot:
 
     async def _cmd_abort(self, from_user_id: str, account_bot_id: str):
         """中止当前正在处理的响应"""
-        # 查找正在处理的消息（只获取微信频道的消息）
-        processing_messages = self.message_queue.get_processing_messages(channel_type=ChannelType.WEIXIN.value)
+        # 查找正在处理的消息（匹配发送命令的私聊或群聊）
+        processing_messages = self.message_queue.get_processing_messages(
+            channel_type=ChannelType.WEIXIN.value,
+            user_id=from_user_id
+        )
 
         if not processing_messages:
             msg = "⚠️ 没有正在处理的响应\n\n当前没有正在处理的 Claude 响应。"

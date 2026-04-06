@@ -1115,11 +1115,13 @@ class MessageQueue:
             MessageStatus.SKIPPED
         )
 
-    def get_processing_messages(self, channel_type: str = None) -> List[Message]:
+    def get_processing_messages(self, channel_type: str = None, channel_id: int = None, user_id: int = None) -> List[Message]:
         """获取正在处理的消息
 
         Args:
             channel_type: 频道类型过滤（discord/weixin），None 表示获取所有频道
+            channel_id: 频道 ID 过滤，用于匹配特定频道的消息
+            user_id: 用户 ID 过滤，用于匹配特定用户的私聊消息
 
         Returns:
             正在处理的消息列表
@@ -1128,26 +1130,31 @@ class MessageQueue:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        conditions = ["status IN (?, ?)"]
+        params = [MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value]
+
         if channel_type:
-            cursor.execute("""
-                SELECT id, direction, content, status,
-                       discord_channel_id, discord_message_id,
-                       discord_user_id, username,
-                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, streaming_response, created_at, updated_at
-                FROM messages
-                WHERE status IN (?, ?) AND channel_type = ?
-                ORDER BY created_at DESC
-            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value, channel_type))
-        else:
-            cursor.execute("""
-                SELECT id, direction, content, status,
-                       discord_channel_id, discord_message_id,
-                       discord_user_id, username,
-                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, streaming_response, created_at, updated_at
-                FROM messages
-                WHERE status IN (?, ?)
-                ORDER BY created_at DESC
-            """, (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value))
+            conditions.append("channel_type = ?")
+            params.append(channel_type)
+
+        if channel_id:
+            conditions.append("discord_channel_id = ?")
+            params.append(channel_id)
+
+        if user_id:
+            conditions.append("discord_user_id = ?")
+            params.append(user_id)
+
+        query = f"""
+            SELECT id, direction, content, status,
+                   discord_channel_id, discord_message_id,
+                   discord_user_id, username,
+                   response, error, is_dm, is_external, tag, channel_type, context_token, attachments, streaming_response, created_at, updated_at
+            FROM messages
+            WHERE {' AND '.join(conditions)}
+            ORDER BY created_at DESC
+        """
+        cursor.execute(query, params)
 
         rows = cursor.fetchall()
         conn.close()
