@@ -86,7 +86,7 @@ def cleanup_logs(max_lines: int = 1000):
         if not log_path.exists():
             continue
         try:
-            with open(log_path, "r", encoding="utf-8") as f:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
             if len(lines) > max_lines:
                 kept = lines[-max_lines:]

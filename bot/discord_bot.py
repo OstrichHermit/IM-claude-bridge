@@ -490,24 +490,23 @@ class DiscordBot(discord.Client):
 
                     try:
                         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                        manager_script = os.path.join(script_dir, 'im_claude_bridge_manager.py')
+                        stop_script = os.path.join(script_dir, 'stop.bat')
 
-                        if os.path.exists(manager_script):
-                            # 在后台执行 manager stop
+                        if os.path.exists(stop_script):
                             subprocess.Popen(
-                                ["python", manager_script, "stop"],
+                                ["cmd", "/c", stop_script],
                                 cwd=script_dir,
-                                creationflags=subprocess.CREATE_NEW_CONSOLE
+                                creationflags=subprocess.CREATE_NO_WINDOW
                             )
-                            log.log(f"✅ 停止命令已执行: python im_claude_bridge_manager.py stop")
+                            log.log(f"✅ 停止命令已执行: stop.bat")
                         else:
                             embed = discord.Embed(
                                 title="❌ 文件未找到",
-                                description="找不到 im_claude_bridge_manager.py 文件",
+                                description="找不到 stop.bat 文件",
                                 color=discord.Color.red()
                             )
                             await interaction.followup.send(embed=embed)
-                            log.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
+                            log.log(f"⚠️  stop.bat 不存在: {stop_script}")
 
                     except Exception as e:
                         embed = discord.Embed(
@@ -558,31 +557,31 @@ class DiscordBot(discord.Client):
             await interaction.response.send_message(embed=embed)
             log.log(f"[重启命令] 用户 {interaction.user.display_name} 触发了服务重启")
 
-            # 执行重启脚本（通过 manager）
+            # 执行重启脚本（直接调用 restart.bat，与 Web 界面行为一致）
             import subprocess
             import os
 
             try:
                 # 获取项目根目录
                 script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                manager_script = os.path.join(script_dir, 'im_claude_bridge_manager.py')
+                restart_script = os.path.join(script_dir, 'restart.bat')
 
-                if os.path.exists(manager_script):
-                    # 在后台执行 manager restart
+                if os.path.exists(restart_script):
+                    # 在后台无窗口执行 restart.bat
                     subprocess.Popen(
-                        ["python", manager_script, "restart"],
+                        ["cmd", "/c", restart_script],
                         cwd=script_dir,
-                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                        creationflags=subprocess.CREATE_NO_WINDOW
                     )
-                    log.log(f"✅ 重启命令已执行: python im_claude_bridge_manager.py restart")
+                    log.log(f"✅ 重启命令已执行: restart.bat")
                 else:
                     embed = discord.Embed(
                         title="❌ 文件未找到",
-                        description="找不到 im_claude_bridge_manager.py 文件",
+                        description="找不到 restart.bat 文件",
                         color=discord.Color.red()
                     )
                     await interaction.followup.send(embed=embed)
-                    log.log(f"⚠️  im_claude_bridge_manager.py 不存在: {manager_script}")
+                    log.log(f"⚠️  restart.bat 不存在: {restart_script}")
 
             except Exception as e:
                 embed = discord.Embed(
