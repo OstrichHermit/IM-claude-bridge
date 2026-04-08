@@ -237,9 +237,6 @@ class WeixinClient:
 
         headers = self._build_headers()
 
-        # 调试日志：记录发送参数
-        log.log(f"🔍 [发送调试] to={real_user_id}, token={'有' if context_token else '无'}({context_token[:20] if context_token else ''}...), bot_id={self.account.bot_id[:20]}...")
-
         try:
             async with self.session.post(
                 url,
