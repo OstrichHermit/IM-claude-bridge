@@ -320,11 +320,26 @@ To use WeChat support, follow these steps:
 
 #### 1. WeChat QR Code Login
 
+**Method 1: Interactive Login (for first-time account setup)**
+
 ```bash
 python scripts/login_weixin.py
 ```
 
 Scan the QR code in the terminal to log in to WeChat. You can run this command multiple times to add multiple WeChat accounts.
+
+**Method 2: Quick Re-login (when existing account token expires)**
+
+```bash
+# Step 1: Get QR code link
+python scripts/get_weixin_qrcode.py
+
+# Step 2: After scanning the QR code, poll login status and update config
+python scripts/poll_weixin_login.py <qrcode_id> <username>
+# Example: python scripts/poll_weixin_login.py 51c0f8844acb0552fe6a3741545802fb 猪猪大王
+```
+
+Specifying `username` will automatically update the bot_id and bot_token for that user in `weixin_accounts.json`, preserving the existing username, user_id and other settings. Without `username`, it only prints the login result.
 
 #### 2. Enable WeChat Bot
 

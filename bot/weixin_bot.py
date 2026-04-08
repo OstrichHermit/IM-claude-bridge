@@ -489,32 +489,67 @@ class WeixinBot:
 
                 try:
 
-                    # 检查是否需要启动 typing indicator（AI started 但点 A 失败的情况）
+                    # 根据用户名选择正确的账号（提前解析，和 Discord bot 一致：发现消息就启动 typing）
+                    target_account = None
+                    to_user_id = username  # 默认使用原始 username
+
+                    if self.accounts and username in self.username_to_wxid:
+                        target_wxid = self.username_to_wxid.get(username)
+                        for account in self.accounts:
+                            if account.wxid == target_wxid:
+                                target_account = account
+                                break
+                        to_user_id = username
+                    elif self.accounts and len(self.accounts) == 1:
+                        target_account = self.accounts[0]
+                        to_user_id = username
+                    elif self.accounts and self.context_tokens.get(username) is not None:
+                        target_account = self.accounts[0]
+                        to_user_id = username
+
+                    # 发现外部消息：立即占位 + 尝试启动 typing indicator（和 Discord bot 一致的逻辑）
                     if message_id not in self.pending_messages:
                         log.log(f"📨 [消息 #{message_id}] 已加载外部消息: {username}")
-                        msg_status = self.message_queue.get_message_status(message_id)
-                        if msg_status == MessageStatus.AI_STARTED:
-                            # AI started 但 typing indicator 还没启动，立即启动
-                            # 查找对应的账号
-                            for account in self.accounts:
-                                if account.bot_id in self.clients:
-                                    client = self.clients.get(account.bot_id)
-                                    if client and username in self.typing_tickets:
-                                        wxid = self.username_to_wxid.get(username, username)
-                                        typing_ticket = self.typing_tickets.get(username)
-                                        if typing_ticket:
-                                            stop_event = asyncio.Event()
-                                            typing_task = asyncio.create_task(
-                                                self._maintain_typing_indicator(client, wxid, typing_ticket, stop_event)
-                                            )
-                                            self.pending_messages[message_id] = {
-                                                "typing_task": typing_task,
-                                                "typing_stop_event": stop_event,
-                                                "typing_active": True,
-                                                "from_user_id": username,
-                                                "account_bot_id": account.bot_id
-                                            }
-                                            break
+
+                        # 尝试立即启动 typing indicator
+                        typing_task = None
+                        typing_stop_event = None
+                        typing_active = False
+                        account_bot_id = None
+
+                        if target_account:
+                            client = self.clients.get(target_account.bot_id)
+                            wxid = self.username_to_wxid.get(username, username)
+                            typing_ticket = self.typing_tickets.get(username)
+                            # 优先从持久化缓存取 context_token（和发送序列时的逻辑一致）
+                            effective_context_token = self.context_tokens.get(username) or msg_context_token or ""
+                            if not typing_ticket and client and effective_context_token:
+                                # 尝试通过 get_config 获取 typing_ticket
+                                try:
+                                    config_result = await client.get_config(
+                                        ilink_user_id=wxid,
+                                        context_token=effective_context_token
+                                    )
+                                    typing_ticket = config_result.get("typing_ticket", "")
+                                    if typing_ticket:
+                                        self.typing_tickets[username] = typing_ticket
+                                except Exception:
+                                    pass
+                            if typing_ticket and client:
+                                typing_stop_event = asyncio.Event()
+                                typing_task = asyncio.create_task(
+                                    self._maintain_typing_indicator(client, wxid, typing_ticket, typing_stop_event)
+                                )
+                                typing_active = True
+                                account_bot_id = target_account.bot_id
+
+                        self.pending_messages[message_id] = {
+                            "typing_task": typing_task,
+                            "typing_stop_event": typing_stop_event,
+                            "typing_active": typing_active,
+                            "from_user_id": username,
+                            "account_bot_id": account_bot_id
+                        }
 
                     # 初始化消息状态
                     if message_id not in message_states:
@@ -555,40 +590,25 @@ class WeixinBot:
                             await asyncio.sleep(0.1)
                         continue
 
-                    # 根据用户名选择正确的账号
-                    if not self.accounts:
-                        continue
-
-                    # 检查 username 是配置的用户名还是原始 wxid
-                    target_account = None
-                    to_user_id = username  # 默认使用原始 username
-
-                    if username in self.username_to_wxid:
-                        # username 是配置的用户名（如 "用户名"）
-                        # 从用户名获取对应的 wxid
-                        target_wxid = self.username_to_wxid.get(username)
-                        # 找到包含该 wxid 的账号
-                        for account in self.accounts:
-                            if account.wxid == target_wxid:
-                                target_account = account
-                                break
-                        # 使用配置的用户名（send_message 会自动转换为 wxid）
-                        to_user_id = username
-                    elif len(self.accounts) == 1:
-                        # 只有一个账号，直接使用它
-                        target_account = self.accounts[0]
-                        # username 是原始 wxid（外部联系人），直接使用
-                        to_user_id = username
-                    else:
-                        # 多个账号，无法确定使用哪个
-                        # 检查是否有 context_token，如果有则使用第一个有 token 的账号
-                        if self.context_tokens.get(username) is not None:
-                            # 有 context_token，使用第一个账号
+                    # 确保有可用的账号（提前解析可能失败时的兜底逻辑）
+                    if not target_account:
+                        if not self.accounts:
+                            continue
+                        if username in self.username_to_wxid:
+                            target_wxid = self.username_to_wxid.get(username)
+                            for account in self.accounts:
+                                if account.wxid == target_wxid:
+                                    target_account = account
+                                    break
+                            if target_account:
+                                to_user_id = username
+                        if not target_account and len(self.accounts) == 1:
                             target_account = self.accounts[0]
                             to_user_id = username
-                        else:
-                            # 没有 context_token，跳过这条消息（可能是旧消息）
-                            # 清理这些消息序列，避免重复处理
+                        if not target_account and self.context_tokens.get(username) is not None:
+                            target_account = self.accounts[0]
+                            to_user_id = username
+                        if not target_account:
                             self.message_queue.cleanup_message_sequences(message_id)
                             continue
 
@@ -633,8 +653,9 @@ class WeixinBot:
                                     except Exception as e:
                                         pass
 
-                                # 确保 typing indicator 已启动（AI started 时触发）
-                                if message_id not in self.pending_messages:
+                                # 确保 typing indicator 已启动（后备：如果前面因为缺少 typing_ticket 没启动）
+                                pending_info = self.pending_messages.get(message_id)
+                                if pending_info and not pending_info.get("typing_active"):
                                     typing_ticket = self.typing_tickets.get(username)
                                     if typing_ticket:
                                         wxid = self.username_to_wxid.get(username, username)

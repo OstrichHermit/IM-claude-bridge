@@ -320,11 +320,26 @@ weixin:
 
 #### 1. 微信扫码登录
 
+**方式一：交互式登录（首次添加账号）**
+
 ```bash
 python scripts/login_weixin.py
 ```
 
 在终端扫描二维码登录微信。可以多次执行此命令添加多个微信账号。
+
+**方式二：快速重新登录（已有账号 token 失效时）**
+
+```bash
+# 第一步：获取二维码链接
+python scripts/get_weixin_qrcode.py
+
+# 第二步：用微信扫描二维码后，轮询登录状态并更新配置
+python scripts/poll_weixin_login.py <qrcode_id> <username>
+# 示例：python scripts/poll_weixin_login.py 51c0f8844acb0552fe6a3741545802fb 猪猪大王
+```
+
+指定 `username` 会自动更新 `weixin_accounts.json` 中对应用户的 bot_id 和 bot_token，保留原有的用户名、user_id 等配置。不指定 `username` 则仅打印登录信息。
 
 #### 2. 启用微信 Bot
 
