@@ -118,6 +118,11 @@ class Config:
         return str(stickers_dir)
 
     @property
+    def mention_required(self) -> bool:
+        """获取是否需要 @机器人 才能触发对话"""
+        return self._config.get('discord', {}).get('mention_required', True)
+
+    @property
     def default_download_directory(self) -> str:
         """获取默认文件下载目录"""
         download_dir = self._config.get('file_download', {}).get('default_directory', './downloads')
@@ -288,3 +293,34 @@ class Config:
     def web_server_port(self) -> int:
         """获取 Web 服务器监听端口"""
         return self._config.get('web_server', {}).get('port', 8088)
+
+    def update_discord_mention_required(self, value: bool):
+        """更新 Discord mention_required 配置并持久化到文件"""
+        # 更新内存中的配置
+        if 'discord' not in self._config:
+            self._config['discord'] = {}
+        self._config['discord']['mention_required'] = value
+
+        # 持久化到配置文件
+        # 读取文件原始内容，找到 discord 段并更新 mention_required
+        import re
+        with open(self.config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        if re.search(r'mention_required:', content):
+            # 已存在，更新值
+            content = re.sub(
+                r'mention_required:\s*\w+',
+                f'mention_required: {str(value).lower()}',
+                content
+            )
+        else:
+            # 不存在，在 discord 段的 stickers_path 之后添加
+            content = re.sub(
+                r'(stickers_path:\s*[^\n]+)',
+                f'\\1\n  # 是否需要 @机器人 才能触发对话\n  # true = 需要 @（默认），false = 不需要 @，任何消息都会触发\n  mention_required: {str(value).lower()}',
+                content
+            )
+
+        with open(self.config_path, 'w', encoding='utf-8') as f:
+            f.write(content)

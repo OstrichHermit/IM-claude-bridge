@@ -13,6 +13,10 @@ discord:
   # 用于 <:文件名.扩展名> 格式的表情包自动发送
   # 支持相对路径和绝对路径，相对路径基于项目根目录
   stickers_path: "./stickers"
+  # 是否需要 @机器人 才能触发对话
+  # true = 需要 @（默认），false = 不需要 @，任何消息都会触发
+  # 可通过 /mention 斜杠命令实时切换
+  mention_required: true
 
 # Claude Code 桥接配置
 claude:

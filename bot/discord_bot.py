@@ -308,7 +308,11 @@ class DiscordBot(discord.Client):
         )
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
+
+        mention_status = "需要 @" if self.config.mention_required else "不需要 @"
+        embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
+
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -447,6 +451,9 @@ class DiscordBot(discord.Client):
             embed.add_field(name="当前会话", value=session_info, inline=False)
 
             embed.add_field(name="工作目录", value=f"`{working_dir}`", inline=False)
+
+            mention_status = "需要 @" if self.config.mention_required else "不需要 @"
+            embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
 
             await interaction.response.send_message(embed=embed)
 
@@ -648,6 +655,40 @@ class DiscordBot(discord.Client):
                 )
                 await interaction.response.send_message(embed=embed)
 
+        @self.tree.command(name="mention", description="切换是否需要 @")
+        async def mention_command(interaction: discord.Interaction):
+            """切换 mention_required 设置"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    await interaction.response.send_message(
+                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
+                        ephemeral=True
+                    )
+                    return
+
+            # 切换设置
+            current = self.config.mention_required
+            new_value = not current
+            self.config.update_discord_mention_required(new_value)
+
+            # 构建响应
+            status_text = "需要 @" if new_value else "不需要 @"
+            desc = f"已切换为：**{status_text}**\n"
+            if new_value:
+                desc += "现在需要 @机器人 才能触发对话"
+            else:
+                desc += "现在**不需要** @机器人，任何消息都会触发对话"
+
+            embed = discord.Embed(
+                title="💬 对话模式",
+                description=desc,
+                color=discord.Color.green()
+            )
+
+            await interaction.response.send_message(embed=embed)
+            log.log(f"[Mention命令] 用户 {interaction.user.display_name} 切换 mention_required 为 {new_value}")
+
         @self.tree.context_menu(name="下载附件")
         async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
             """右键消息下载附件（上下文菜单）"""
@@ -759,7 +800,7 @@ class DiscordBot(discord.Client):
         """Bot 准备就绪"""
         log.log(f"✓ Bot 已准备就绪!")
         log.log(f"✓ 在 {len(self.guilds)} 个服务器中")
-        log.log(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort")
+        log.log(f"✓ 斜杠命令: /new, /status, /stop, /restart, /abort, /mention")
         log.log(f"✓ 上下文菜单: 下载附件")
 
         # 发送启动通知
@@ -771,9 +812,10 @@ class DiscordBot(discord.Client):
         if message.author == self.user:
             return
 
-        # 检查是否被提及
-        if self.user not in message.mentions:
-            return
+        # 检查是否需要 @提及
+        if self.config.mention_required:
+            if self.user not in message.mentions:
+                return
 
         # 检查频道权限（仅对频道消息生效，私聊不受限）
         if not isinstance(message.channel, discord.DMChannel):

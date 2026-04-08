@@ -44,7 +44,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 
 **🎯 服务管理**
 - Windows 守护进程（自动监控重启）
-- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`）
+- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`、`/mention`）
 - 上下文菜单（右键消息下载附件）
 - 消息队列系统（SQLite 持久化）
 - **并行 Bot 架构**（Discord Bot 和微信 Bot 独立运行）
@@ -146,6 +146,7 @@ Bot 会接收消息并显示正在输入，并在响应完成后停止。
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
 - `/abort` - 中止当前正在处理的输出
+- `/mention` - 切换是否需要 @机器人 才能触发对话
 - `/restart` - 重启服务
 - `/stop` - 停止服务
 
@@ -277,6 +278,7 @@ discord:
   token: "YOUR_DISCORD_BOT_TOKEN"  # Discord Bot Token
   allowed_channels: []                # 允许的频道（空 = 所有）
   allowed_users: []                   # 允许的用户（空 = 所有）
+  mention_required: true              # 是否需要 @机器人 才能触发对话（可通过 /mention 实时切换）
 
 claude:
   executable: "claude"                 # Claude Code CLI 命令
