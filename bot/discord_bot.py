@@ -453,7 +453,7 @@ class DiscordBot(discord.Client):
             embed.add_field(name="工作目录", value=f"`{working_dir}`", inline=False)
 
             mention_status = "需要 @" if self.config.mention_required else "不需要 @"
-            embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
+            embed.add_field(name="对话模式", value=mention_status, inline=False)
 
             await interaction.response.send_message(embed=embed)
 
