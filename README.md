@@ -146,7 +146,7 @@ Bot 会接收消息并显示正在输入，并在响应完成后停止。
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
 - `/abort` - 中止当前正在处理的输出
-- `/mention` - 切换是否需要 @机器人 才能触发对话
+- `/mention` - 切换当前频道是否需要 @机器人 才能触发对话（每个频道独立管理）
 - `/restart` - 重启服务
 - `/stop` - 停止服务
 
@@ -278,7 +278,7 @@ discord:
   token: "YOUR_DISCORD_BOT_TOKEN"  # Discord Bot Token
   allowed_channels: []                # 允许的频道（空 = 所有）
   allowed_users: []                   # 允许的用户（空 = 所有）
-  mention_required: true              # 是否需要 @机器人 才能触发对话（可通过 /mention 实时切换）
+  mention_required: true              # 新频道的默认设置（可通过 /mention 按频道独立切换）
 
 claude:
   executable: "claude"                 # Claude Code CLI 命令

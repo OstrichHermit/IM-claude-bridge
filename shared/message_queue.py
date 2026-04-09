@@ -337,6 +337,15 @@ class MessageQueue:
             )
         """)
 
+        # 创建频道设置表（mention_required 按频道独立管理）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS channel_settings (
+                channel_id TEXT PRIMARY KEY,
+                mention_required BOOLEAN NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # 兼容性处理：为旧数据库添加 session_created 字段
         try:
             cursor.execute("ALTER TABLE sessions ADD COLUMN session_created BOOLEAN DEFAULT 0")
@@ -1279,6 +1288,69 @@ class MessageQueue:
         conn.close()
 
         return deleted_count
+
+    # ========== 频道设置管理（mention_required 按频道独立管理） ==========
+
+    def get_channel_mention_required(self, channel_id: int, default: bool = True) -> bool:
+        """获取指定频道的 mention_required 设置
+
+        Args:
+            channel_id: 频道 ID
+            default: 频道未配置时的默认值
+
+        Returns:
+            该频道的 mention_required 值，未配置时返回 default
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT mention_required FROM channel_settings WHERE channel_id = ?",
+            (str(channel_id),)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row is None:
+            return default
+        return bool(row[0])
+
+    def set_channel_mention_required(self, channel_id: int, value: bool):
+        """设置指定频道的 mention_required 值
+
+        Args:
+            channel_id: 频道 ID
+            value: 是否需要 @
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO channel_settings (channel_id, mention_required, updated_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(channel_id) DO UPDATE SET
+                   mention_required = excluded.mention_required,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (str(channel_id), int(value))
+        )
+        conn.commit()
+        conn.close()
+
+    def remove_channel_mention_required(self, channel_id: int):
+        """删除指定频道的 mention_required 设置（恢复全局默认）
+
+        Args:
+            channel_id: 频道 ID
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM channel_settings WHERE channel_id = ?",
+            (str(channel_id),)
+        )
+        conn.commit()
+        conn.close()
 
     def get_or_create_session(
         self,

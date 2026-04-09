@@ -146,7 +146,7 @@ The bot will receive messages and display that it is typing, and then stop when 
 - `/new` - Reset session, start new conversation context
 - `/status` - View system status (session ID, database statistics, etc.)
 - `/abort` - Abort current ongoing output
-- `/mention` - Toggle whether @mention is required to trigger a conversation
+- `/mention` - Toggle whether @mention is required for the current channel (per-channel setting)
 - `/restart` - Restart service
 - `/stop` - Stop service
 
@@ -278,7 +278,7 @@ discord:
   token: "YOUR_DISCORD_BOT_TOKEN"  # Discord Bot Token
   allowed_channels: []                # Allowed channels (empty = all)
   allowed_users: []                   # Allowed users (empty = all)
-  mention_required: true              # Whether @mention is required to trigger (can be toggled via /mention)
+  mention_required: true              # Default for new channels (can be toggled per-channel via /mention)
 
 claude:
   executable: "claude"                 # Claude Code CLI command
