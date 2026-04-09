@@ -506,6 +506,16 @@ class WeixinBot:
                     elif self.accounts and self.context_tokens.get(username) is not None:
                         target_account = self.accounts[0]
                         to_user_id = username
+                    elif self.accounts and user_id and user_id in self.userid_to_user:
+                        user_info = self.userid_to_user[user_id]
+                        resolved_username = user_info['username']
+                        target_wxid = user_info['wxid']
+                        for account in self.accounts:
+                            if account.wxid == target_wxid:
+                                target_account = account
+                                to_user_id = resolved_username
+                                username = resolved_username  # 修正 username，确保后续 context_token 等查找正确
+                                break
 
                     # 发现外部消息：立即占位 + 尝试启动 typing indicator（和 Discord bot 一致的逻辑）
                     if message_id not in self.pending_messages:
@@ -608,7 +618,18 @@ class WeixinBot:
                         if not target_account and self.context_tokens.get(username) is not None:
                             target_account = self.accounts[0]
                             to_user_id = username
+                        if not target_account and user_id and user_id in self.userid_to_user:
+                            user_info = self.userid_to_user[user_id]
+                            resolved_username = user_info['username']
+                            target_wxid = user_info['wxid']
+                            for account in self.accounts:
+                                if account.wxid == target_wxid:
+                                    target_account = account
+                                    to_user_id = resolved_username
+                                    username = resolved_username  # 修正 username，确保后续 context_token 等查找正确
+                                    break
                         if not target_account:
+                            log.log(f"⚠️ [消息 #{message_id}] 无法解析目标账号: username={username}, user_id={user_id}，消息序列已清理")
                             self.message_queue.cleanup_message_sequences(message_id)
                             continue
 
