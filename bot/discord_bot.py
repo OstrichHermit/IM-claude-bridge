@@ -307,10 +307,14 @@ class DiscordBot(discord.Client):
             inline=False
         )
 
-        embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
-
         mention_default = "需要 @" if self.config.mention_required else "不需要 @"
-        embed.add_field(name="💬 对话模式（默认）", value=f"{mention_default}\n使用 `/mention` 在各频道独立设置", inline=False)
+        embed.add_field(
+            name=f"💬 对话模式：{mention_default}",
+            value="每个频道和每个用户的私聊都使用独立的对话模式\n在具体频道或私聊中使用 `/mention` 进行对话模式设置",
+            inline=False
+        )
+
+        embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
         embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
