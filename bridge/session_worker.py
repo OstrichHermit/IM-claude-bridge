@@ -3,6 +3,7 @@ Session Worker - 每个 session 的独立消息处理器
 负责串行处理同一个 session 的消息
 """
 import asyncio
+import re
 import subprocess
 import sys
 import time
@@ -432,26 +433,52 @@ class SessionWorker:
                                                     # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
                                                     text_parts = text.split('\n\n')
                                                     for part in text_parts:
-                                                        if part.strip():  # 跳过空文本
-                                                            self.message_queue.add_message_sequence(
-                                                                message_id,
-                                                                sequence_index,
-                                                                block_index,
-                                                                'text',
-                                                                {'text': part.strip()}
-                                                            )
-                                                            sequence_index += 1
+                                                        if part.strip():
+                                                            # 解析表情包并按位置拆分
+                                                            segments = self._parse_sticker_segments(part.strip())
+                                                            for segment in segments:
+                                                                if segment["type"] == "text" and segment["content"].strip():
+                                                                    self.message_queue.add_message_sequence(
+                                                                        message_id,
+                                                                        sequence_index,
+                                                                        block_index,
+                                                                        'text',
+                                                                        {'text': segment["content"].strip()}
+                                                                    )
+                                                                    sequence_index += 1
+                                                                elif segment["type"] == "sticker":
+                                                                    self.message_queue.add_message_sequence(
+                                                                        message_id,
+                                                                        sequence_index,
+                                                                        block_index,
+                                                                        'sticker',
+                                                                        {'file_path': segment["file_path"]}
+                                                                    )
+                                                                    sequence_index += 1
                                                 else:
                                                     # 未启用分割：将整个文本作为一个序列项
-                                                    if text.strip():  # 跳过空文本
-                                                        self.message_queue.add_message_sequence(
-                                                            message_id,
-                                                            sequence_index,
-                                                            block_index,
-                                                            'text',
-                                                            {'text': text.strip()}
-                                                        )
-                                                        sequence_index += 1
+                                                    if text.strip():
+                                                        # 解析表情包并按位置拆分
+                                                        segments = self._parse_sticker_segments(text.strip())
+                                                        for segment in segments:
+                                                            if segment["type"] == "text" and segment["content"].strip():
+                                                                self.message_queue.add_message_sequence(
+                                                                    message_id,
+                                                                    sequence_index,
+                                                                    block_index,
+                                                                    'text',
+                                                                    {'text': segment["content"].strip()}
+                                                                )
+                                                                sequence_index += 1
+                                                            elif segment["type"] == "sticker":
+                                                                self.message_queue.add_message_sequence(
+                                                                    message_id,
+                                                                    sequence_index,
+                                                                    block_index,
+                                                                    'sticker',
+                                                                    {'file_path': segment["file_path"]}
+                                                                )
+                                                                sequence_index += 1
 
                                                 # 收集文本用于流式响应
                                                 response_lines.append(text)
@@ -565,26 +592,52 @@ class SessionWorker:
                                                     # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
                                                     text_parts = text.split('\n\n')
                                                     for part in text_parts:
-                                                        if part.strip():  # 跳过空文本
-                                                            self.message_queue.add_message_sequence(
-                                                                message_id,
-                                                                sequence_index,
-                                                                block_index,
-                                                                'text',
-                                                                {'text': part.strip()}
-                                                            )
-                                                            sequence_index += 1
+                                                        if part.strip():
+                                                            # 解析表情包并按位置拆分
+                                                            segments = self._parse_sticker_segments(part.strip())
+                                                            for segment in segments:
+                                                                if segment["type"] == "text" and segment["content"].strip():
+                                                                    self.message_queue.add_message_sequence(
+                                                                        message_id,
+                                                                        sequence_index,
+                                                                        block_index,
+                                                                        'text',
+                                                                        {'text': segment["content"].strip()}
+                                                                    )
+                                                                    sequence_index += 1
+                                                                elif segment["type"] == "sticker":
+                                                                    self.message_queue.add_message_sequence(
+                                                                        message_id,
+                                                                        sequence_index,
+                                                                        block_index,
+                                                                        'sticker',
+                                                                        {'file_path': segment["file_path"]}
+                                                                    )
+                                                                    sequence_index += 1
                                                 else:
                                                     # 未启用分割：将整个文本作为一个序列项
-                                                    if text.strip():  # 跳过空文本
-                                                        self.message_queue.add_message_sequence(
-                                                            message_id,
-                                                            sequence_index,
-                                                            block_index,
-                                                            'text',
-                                                            {'text': text.strip()}
-                                                        )
-                                                        sequence_index += 1
+                                                    if text.strip():
+                                                        # 解析表情包并按位置拆分
+                                                        segments = self._parse_sticker_segments(text.strip())
+                                                        for segment in segments:
+                                                            if segment["type"] == "text" and segment["content"].strip():
+                                                                self.message_queue.add_message_sequence(
+                                                                    message_id,
+                                                                    sequence_index,
+                                                                    block_index,
+                                                                    'text',
+                                                                    {'text': segment["content"].strip()}
+                                                                )
+                                                                sequence_index += 1
+                                                            elif segment["type"] == "sticker":
+                                                                self.message_queue.add_message_sequence(
+                                                                    message_id,
+                                                                    sequence_index,
+                                                                    block_index,
+                                                                    'sticker',
+                                                                    {'file_path': segment["file_path"]}
+                                                                )
+                                                                sequence_index += 1
 
                                                 # 收集文本用于流式响应
                                                 response_lines.append(text)
@@ -825,3 +878,99 @@ class SessionWorker:
             "last_activity_time": self.last_activity_time,
             "idle_time": time.time() - self.last_activity_time
         }
+
+    def _parse_sticker_segments(self, text: str) -> list:
+        """解析文本中的表情包标记，按位置拆分为有序段列表
+
+        例如输入 "文本1<:开心-森贝儿贵宾犬起飞.gif>文本2"
+        返回 [
+            {"type": "text", "content": "文本1"},
+            {"type": "sticker", "file_path": "D:\\...\\stickers\\开心-森贝儿贵宾犬起飞.gif"},
+            {"type": "text", "content": "文本2"}
+        ]
+
+        实现要点：
+        - 使用正则 <:([^>]+\\.(png|jpg|jpeg|gif))> 匹配表情包标记
+        - 跳过代码块（``` 包裹的内容），避免误处理示例代码中的标记
+        - 先精确匹配文件，再模糊匹配（含义-*.*）
+        - 匹配失败时保留原始标记文本作为普通文本
+        - 连续的文本段合并为一个 text 段
+        """
+        sticker_dir = Path(self.config.stickers_path)
+        sticker_pattern = re.compile(r'<:([^>]+\.(png|jpg|jpeg|gif))>')
+
+        # 将文本按代码块分割，标记哪些部分是代码块
+        parts = []
+        code_block_pattern = re.compile(r'(```.*?```)', re.DOTALL)
+        last_end = 0
+
+        for match in code_block_pattern.finditer(text):
+            # 代码块之前的普通文本
+            if match.start() > last_end:
+                parts.append((text[last_end:match.start()], False))
+            # 代码块本身
+            parts.append((match.group(), True))
+            last_end = match.end()
+
+        # 尾部剩余文本
+        if last_end < len(text):
+            parts.append((text[last_end:], False))
+
+        segments = []
+
+        for part_text, is_code_block in parts:
+            if is_code_block:
+                # 代码块整体作为文本段
+                segments.append({"type": "text", "content": part_text})
+            else:
+                # 在非代码块中解析表情包标记
+                last_pos = 0
+                for match in sticker_pattern.finditer(part_text):
+                    marker = match.group()
+                    filename = match.group(1)
+
+                    # 标记之前的文本
+                    if match.start() > last_pos:
+                        segments.append({"type": "text", "content": part_text[last_pos:match.start()]})
+
+                    # 尝试精确匹配
+                    exact_path = sticker_dir / filename
+                    if exact_path.exists():
+                        segments.append({"type": "sticker", "file_path": str(exact_path)})
+                        self._log.log(f"🖼️ 表情包精确匹配: {filename}")
+                    else:
+                        # 模糊匹配：如果文件名包含 '-'，取 '-' 前的部分作为含义
+                        matched = False
+                        if '-' in filename:
+                            meaning = filename.split('-', 1)[0]
+                            # 用 glob 匹配 "含义-*.*"（保留原始扩展名选项）
+                            pattern = f"{meaning}-*.*"
+                            matches = list(sticker_dir.glob(pattern))
+                            if matches:
+                                segments.append({"type": "sticker", "file_path": str(matches[0])})
+                                self._log.log(f"🖼️ 表情包模糊匹配: {filename} -> {matches[0].name}")
+                                matched = True
+
+                        if not matched:
+                            # 匹配失败，保留原始标记文本
+                            self._log.log(f"⚠️ 表情包未找到: {filename}，保留原始标记")
+                            segments.append({"type": "text", "content": marker})
+
+                    last_pos = match.end()
+
+                # 剩余文本
+                if last_pos < len(part_text):
+                    segments.append({"type": "text", "content": part_text[last_pos:]})
+
+        # 合并连续的文本段
+        merged = []
+        for seg in segments:
+            if merged and seg["type"] == "text" and merged[-1]["type"] == "text":
+                merged[-1]["content"] += seg["content"]
+            else:
+                merged.append(seg)
+
+        if not merged:
+            merged = [{"type": "text", "content": text}]
+
+        return merged

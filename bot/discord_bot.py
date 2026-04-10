@@ -6,6 +6,7 @@ Discord Bot 主程序
 import discord
 from discord import app_commands
 import asyncio
+import os
 import sys
 import json
 from pathlib import Path
@@ -1018,8 +1019,6 @@ class DiscordBot(discord.Client):
             log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
 
             # 不发送确认消息，直接启动 typing indicator
-            from bot.streaming_queue import StreamingMessageQueue
-
             typing_task = asyncio.create_task(
                 self._maintain_typing_indicator(message.channel)
             )
@@ -1033,16 +1032,6 @@ class DiscordBot(discord.Client):
                 "notified_processing": False,
                 "typing_task": typing_task,
                 "typing_active": True,
-                "streaming_queue": StreamingMessageQueue(
-                    message.channel,
-                    self.config.queue_send_interval
-                ),
-                "last_streaming_content": "",
-                "sent_blocks": [],
-                # Content block 顺序追踪
-                "content_blocks": [],  # 从数据库加载的 content block 顺序
-                "current_text_block_index": 0,  # 当前文本块索引（在所有 text 类型的 content block 中）
-                "text_block_item_indices": {},  # {text_block_index: item_count}
             }
             log.log(f"[消息 #{message_id}] 已启动 typing indicator")
 
@@ -1169,8 +1158,6 @@ class DiscordBot(discord.Client):
                 log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的附件引用消息 ({'私聊' if is_dm else '频道'})")
 
                 # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
-                from bot.streaming_queue import StreamingMessageQueue
-
                 typing_task = asyncio.create_task(
                     self._maintain_typing_indicator(message.channel)
                 )
@@ -1184,12 +1171,6 @@ class DiscordBot(discord.Client):
                     "notified_processing": False,
                     "typing_task": typing_task,
                     "typing_active": True,
-                    "streaming_queue": StreamingMessageQueue(
-                        message.channel,
-                        self.config.queue_send_interval
-                    ),
-                    "last_streaming_content": "",
-                    "sent_blocks": [],
                 }
                 log.log(f"[消息 #{message_id}] 已启动 typing indicator")
 
@@ -1465,8 +1446,6 @@ class DiscordBot(discord.Client):
                                     continue
 
                             # 直接回复模式（固定启用）：不发送确认消息，直接启动 typing indicator
-                            from bot.streaming_queue import StreamingMessageQueue
-
                             typing_task = asyncio.create_task(
                                 self._maintain_typing_indicator(channel)
                             )
@@ -1480,12 +1459,6 @@ class DiscordBot(discord.Client):
                                 "notified_processing": False,
                                 "typing_task": typing_task,
                                 "typing_active": True,
-                                "streaming_queue": StreamingMessageQueue(
-                                    channel,
-                                    self.config.queue_send_interval
-                                ),
-                                "last_streaming_content": "",
-                                "sent_blocks": [],
                             }
                             log.log(f"📨 [消息 #{msg_id}] 已加载外部消息: {username}")
 
@@ -1497,139 +1470,6 @@ class DiscordBot(discord.Client):
 
             except Exception as e:
                 log.log(f"❌ 检查响应时出错: {e}")
-                import traceback
-                traceback.print_exc()
-                await asyncio.sleep(5)
-
-    async def check_streaming_responses(self):
-        """定期检查流式响应更新并实时发送 Discord 消息"""
-        await self.wait_until_ready()
-
-        log.log("🌊 流式响应检查任务已启动")
-
-        while not self.is_closed():
-            try:
-                # 批量获取有待发送流式响应的 Discord 消息
-                messages = self.message_queue.get_streaming_messages(channel_type="discord")
-
-                for msg_info in messages:
-                    msg_id = msg_info["id"]
-                    channel_id = msg_info["discord_channel_id"]
-                    streaming_response = msg_info["streaming_response"]
-                    # 如果消息在 pending_messages 中，处理它
-                    if msg_id in self.pending_messages:
-                        pending = self.pending_messages[msg_id]
-
-                        # 检测并发送新的 block
-                        last_content = pending.get("last_streaming_content", "")
-                        new_blocks = self._detect_new_blocks(last_content, streaming_response)
-
-                        if new_blocks:
-                            # 将新 block 添加到发送队列
-                            streaming_queue = pending.get("streaming_queue")
-                            if streaming_queue:
-                                # 导入 MessageType
-                                from bot.streaming_queue import MessageType
-
-                                # 获取 content block 顺序（如果还没有加载，先加载）
-                                content_blocks = pending.get("content_blocks", [])
-                                if not content_blocks:
-                                    content_blocks = self.message_queue.get_content_blocks(msg_id)
-                                    pending["content_blocks"] = content_blocks
-
-                                # 找到当前文本对应的 content block 索引
-                                # 当前文本块索引
-                                current_text_block_index = pending.get("current_text_block_index", 0)
-
-                                # 找到对应的 content block 索引
-                                content_block_index = 0  # 默认为第一个 content block
-                                text_block_count = 0
-                                for cb in content_blocks:
-                                    if cb.get("type") == "text":
-                                        if text_block_count == current_text_block_index:
-                                            content_block_index = cb.get("index", 0)
-                                            break
-                                        text_block_count += 1
-
-                                # 获取当前文本块的 item 索引
-                                text_block_item_indices = pending.get("text_block_item_indices", {})
-                                current_item_index = text_block_item_indices.get(current_text_block_index, 0)
-
-                                # 实际发送的 block 计数（用于 item_index）
-                                sent_count = 0
-
-                                for i, block in enumerate(new_blocks):
-                                    # 处理表情包标记 <:文件名.扩展名>
-                                    channel = pending.get("channel")
-                                    processed_block, stickers, additional_sent = await self._process_sticker_mentions(
-                                        block,
-                                        channel,
-                                        streaming_queue,
-                                        content_block_index,
-                                        current_item_index + sent_count
-                                    )
-
-                                    # 发送表情包（如果找到）
-                                    for sticker_path in stickers:
-                                        try:
-                                            # 直接使用文件路径创建 discord.File
-                                            # discord.File 会自动处理文件打开和关闭
-                                            file = discord.File(sticker_path)
-                                            await streaming_queue.add_message(
-                                                MessageType.FILES,
-                                                [file],
-                                                content_block_index=content_block_index,
-                                                item_index=current_item_index + sent_count
-                                            )
-                                            sent_count += 1
-                                        except Exception as e:
-                                            log.log(f"[表情包] 发送失败: {sticker_path} - {e}")
-
-                                    # 只有当处理后文本不为空时才发送
-                                    if processed_block and processed_block.strip():
-                                        # 使用实际的 content block 索引
-                                        await streaming_queue.add_message(
-                                            MessageType.TEXT,
-                                            processed_block,
-                                            content_block_index=content_block_index,
-                                            item_index=current_item_index + sent_count + additional_sent
-                                        )
-                                        pending["sent_blocks"].append(block)
-                                        sent_count += 1
-
-                                    # 加上表情包前文本发送的数量
-                                    sent_count += additional_sent
-
-                                # 更新 item 索引（使用实际发送的数量）
-                                text_block_item_indices[current_text_block_index] = current_item_index + sent_count
-                                pending["text_block_item_indices"] = text_block_item_indices
-
-                                # 检查是否需要移动到下一个文本 content block
-                                # 检查 streaming_response 中是否已经包含了下一个 content block 的标记（工具调用）
-                                # 如果包含工具调用标记，说明当前文本 block 已完成
-                                if content_blocks:
-                                    # 找到当前文本 block 在 content_blocks 中的位置
-                                    current_text_block_position = -1
-                                    text_block_count = 0
-                                    for i, cb in enumerate(content_blocks):
-                                        if cb.get("type") == "text":
-                                            if text_block_count == current_text_block_index:
-                                                current_text_block_position = i
-                                                break
-                                            text_block_count += 1
-
-                                    # 检查下一个 block 是否是 tool_use
-                                    if current_text_block_position >= 0 and current_text_block_position + 1 < len(content_blocks):
-                                        next_block = content_blocks[current_text_block_position + 1]
-                                        if next_block.get("type") == "tool_use":
-                                            # 下一个 block 是工具调用，说明当前文本 block 已完成
-                                            pending["current_text_block_index"] = current_text_block_index + 1
-
-                            # 更新上次的内容
-                            pending["last_streaming_content"] = streaming_response
-
-            except Exception as e:
-                log.log(f"❌ 检查流式响应时出错: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(5)
@@ -2051,354 +1891,6 @@ class DiscordBot(discord.Client):
             # 消息不在缓存中，可能已经被清理，静默返回
             pass
 
-    def _detect_new_blocks(self, previous_content: str, new_content: str) -> list:
-        """
-        检测新增的 block（内容块）
-
-        Args:
-            previous_content: 上次的内容
-            new_content: 新的完整内容
-
-        Returns:
-            list: 新增的 block 列表
-        """
-        if not new_content:
-            return []
-
-        # 如果禁用了消息分割功能，直接返回整个内容
-        if not self.config.enable_message_splitting:
-            if not previous_content:
-                return [new_content]
-            else:
-                new_text = new_content[len(previous_content):]
-                return [new_text] if new_text else []
-
-        # 如果是首次内容，检测内部是否有空行分隔
-        if not previous_content:
-            # 检测首次内容中的 block 边界（与增量检测相同的逻辑）
-            blocks = []
-            current_block = []
-            in_code_block = False
-            empty_line_count = 0
-
-            lines = new_content.split('\n')
-            for line in lines:
-                # 检测代码块开始/结束
-                if line.strip().startswith('```'):
-                    if not in_code_block:
-                        # 代码块开始
-                        if current_block:
-                            blocks.append('\n'.join(current_block))
-                            current_block = []
-                        in_code_block = True
-                        current_block.append(line)
-                    else:
-                        # 代码块结束
-                        current_block.append(line)
-                        blocks.append('\n'.join(current_block))
-                        current_block = []
-                        in_code_block = False
-                        empty_line_count = 0
-                    continue
-
-                # 如果在代码块内，所有内容都视为同一 block
-                if in_code_block:
-                    current_block.append(line)
-                    continue
-
-                # 检测段落分隔（一个空行，即两个连续换行）
-                if not line.strip():
-                    empty_line_count += 1
-                    if empty_line_count >= 1 and current_block:
-                        # 空行，结束当前 block
-                        blocks.append('\n'.join(current_block))
-                        current_block = []
-                        empty_line_count = 0
-                else:
-                    empty_line_count = 0
-                    current_block.append(line)
-
-            # 处理最后一个 block
-            if current_block:
-                blocks.append('\n'.join(current_block))
-
-            return blocks if blocks else [new_content]
-
-        # 计算新增的文本部分
-        new_text = new_content[len(previous_content):]
-
-        if not new_text:
-            return []
-
-        # 检测新增文本中的 block 边界
-        blocks = []
-        current_block = []
-        in_code_block = False
-        empty_line_count = 0
-
-        lines = new_text.split('\n')
-        for line in lines:
-            # 检测代码块开始/结束
-            if line.strip().startswith('```'):
-                if not in_code_block:
-                    # 代码块开始
-                    if current_block:
-                        blocks.append('\n'.join(current_block))
-                        current_block = []
-                    in_code_block = True
-                    current_block.append(line)
-                else:
-                    # 代码块结束
-                    current_block.append(line)
-                    blocks.append('\n'.join(current_block))
-                    current_block = []
-                    in_code_block = False
-                    empty_line_count = 0
-                continue
-
-            # 如果在代码块内，所有内容都视为同一 block
-            if in_code_block:
-                current_block.append(line)
-                continue
-
-            # 检测段落分隔（一个空行，即两个连续换行）
-            if not line.strip():
-                empty_line_count += 1
-                if empty_line_count >= 1 and current_block:
-                    # 空行，结束当前 block
-                    blocks.append('\n'.join(current_block))
-                    current_block = []
-                    empty_line_count = 0
-            else:
-                empty_line_count = 0
-                current_block.append(line)
-
-        # 处理最后一个 block
-        if current_block:
-            blocks.append('\n'.join(current_block))
-
-        return blocks
-
-    async def _process_sticker_mentions(self, text: str, channel: discord.abc.Messageable, streaming_queue=None, content_block_index=None, base_item_index=0):
-        """
-        处理表情包标记 <:文件名.扩展名>
-
-        注意：会跳过代码块（```）中的内容，避免误处理示例代码
-        如果表情包在文本中间，会将前面的文本直接发送到队列
-
-        Args:
-            text: 要处理的文本
-            channel: Discord 频道对象
-            streaming_queue: 流式队列对象（可选）
-            content_block_index: content block 索引（可选）
-            base_item_index: 基础 item 索引（可选）
-
-        Returns:
-            tuple: (处理后的文本, 表情包路径列表, 发送的文本块数量)
-        """
-        import re
-        from pathlib import Path
-        from bot.streaming_queue import MessageType
-
-        # 表情包目录（从配置读取）
-        sticker_dir = Path(self.config.stickers_path)
-
-        # 检测表情包标记（但不在代码块中）
-        sticker_pattern = re.compile(r'<:([^>]+\.(png|jpg|jpeg|gif))>')
-
-        # 分离代码块和非代码块
-        result_text = text
-        sticker_paths = []
-        sent_blocks_count = 0
-
-        # 检查是否在代码块中
-        lines = text.split('\n')
-        in_code_block = False
-        processed_lines = []
-
-        for line in lines:
-            # 检测代码块开始/结束
-            if line.strip().startswith('```'):
-                in_code_block = not in_code_block
-                processed_lines.append(line)
-                continue
-
-            # 如果在代码块中，直接添加，不处理表情包
-            if in_code_block:
-                processed_lines.append(line)
-                continue
-
-            # 不在代码块中，检测表情包
-            matches = sticker_pattern.findall(line)
-            if matches:
-                # 检查表情包是否在行中间（前后都有文本）
-                line_parts = sticker_pattern.split(line)
-
-                # 如果表情包在文本中间（split 后有多部分）
-                if len(line_parts) > 1:
-                    # 使用循环处理每个表情包
-                    current_text = line
-                    for match_index in range(len(matches)):
-                        # 在当前文本中搜索第一个表情包
-                        match_obj = sticker_pattern.search(current_text)
-                        if not match_obj:
-                            break
-
-                        # 分割文本：表情包之前的部分
-                        prefix_text = current_text[:match_obj.start()].rstrip()
-
-                        # 分割文本：表情包之后的部分
-                        suffix_text = current_text[match_obj.end():].lstrip()
-
-                        # 如果前缀不为空，发送到队列
-                        if prefix_text and streaming_queue:
-                            await streaming_queue.add_message(
-                                MessageType.TEXT,
-                                prefix_text,
-                                content_block_index=content_block_index,
-                                item_index=base_item_index + sent_blocks_count
-                            )
-                            sent_blocks_count += 1
-                        elif prefix_text:
-                            # 没有 streaming_queue，添加到 processed_lines
-                            processed_lines.append(prefix_text)
-
-                        # 查找并添加当前表情包文件
-                        # 从匹配中提取文件名（去掉扩展名）
-                        filename_match = match_obj.group(1)  # xxx
-                        ext_match = match_obj.group(2)  # gif
-                        filename = f"{filename_match}.{ext_match}"
-
-                        sticker_path = sticker_dir / filename
-
-                        if sticker_path.exists():
-                            sticker_paths.append(sticker_path)
-                        else:
-                            # 模糊匹配
-                            if '-' in filename:
-                                meaning = filename.split('-')[0]
-                                matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
-                                if matching_files:
-                                    sticker_paths.append(matching_files[0])
-                                else:
-                                    log.log(f"[表情包] 文件不存在: {filename}")
-                            else:
-                                log.log(f"[表情包] 文件不存在: {filename}")
-
-                        # 更新当前文本为后缀，继续处理下一个表情包
-                        current_text = suffix_text
-
-                    # 添加最后剩余的文本
-                    if current_text and current_text.strip():
-                        processed_lines.append(current_text)
-                else:
-                    # 表情包在行首或行尾，正常处理
-                    # 查找表情包文件
-                    for filename, _ in matches:
-                        sticker_path = sticker_dir / filename
-
-                        if sticker_path.exists():
-                            # 精确匹配
-                            sticker_paths.append(sticker_path)
-                        else:
-                            # 模糊匹配（只匹配含义部分）
-                            if '-' in filename:
-                                meaning = filename.split('-')[0]
-                                matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
-                                if matching_files:
-                                    sticker_paths.append(matching_files[0])
-                                else:
-                                    log.log(f"[表情包] 文件不存在: {filename}")
-                            else:
-                                log.log(f"[表情包] 文件不存在: {filename}")
-
-                    # 移除表情包标记
-                    line = sticker_pattern.sub('', line)
-                    processed_lines.append(line)
-            else:
-                processed_lines.append(line)
-
-        # 重新组合文本
-        processed_text = '\n'.join(processed_lines).strip()
-
-        return processed_text, sticker_paths, sent_blocks_count
-
-    async def _process_sticker_mentions_for_queue(self, text: str, channel: discord.abc.Messageable):
-        """
-        处理表情包标记 <:文件名.扩展名>（用于队列模式）
-
-        注意：会跳过代码块（```）中的内容，避免误处理示例代码
-
-        Args:
-            text: 要处理的文本
-            channel: Discord 频道对象（未使用，保持接口一致性）
-
-        Returns:
-            tuple: (处理后的文本, 表情包路径列表)
-        """
-        import re
-        from pathlib import Path
-
-        # 表情包目录（从配置读取）
-        sticker_dir = Path(self.config.stickers_path)
-
-        # 检测表情包标记（但不在代码块中）
-        sticker_pattern = re.compile(r'<:([^>]+\.(png|jpg|jpeg|gif))>')
-
-        # 分离代码块和非代码块
-        result_text = text
-        sticker_paths = []
-
-        # 检查是否在代码块中
-        lines = text.split('\n')
-        in_code_block = False
-        processed_lines = []
-
-        for line in lines:
-            # 检测代码块开始/结束
-            if line.strip().startswith('```'):
-                in_code_block = not in_code_block
-                processed_lines.append(line)
-                continue
-
-            # 如果在代码块中，直接添加，不处理表情包
-            if in_code_block:
-                processed_lines.append(line)
-                continue
-
-            # 不在代码块中，检测表情包
-            matches = sticker_pattern.findall(line)
-            if matches:
-                # 查找表情包文件
-                for filename, _ in matches:
-                    sticker_path = sticker_dir / filename
-
-                    if sticker_path.exists():
-                        # 精确匹配
-                        sticker_paths.append(sticker_path)
-                    else:
-                        # 模糊匹配（只匹配含义部分）
-                        if '-' in filename:
-                            meaning = filename.split('-')[0]
-                            matching_files = list(sticker_dir.glob(f"{meaning}-*.*"))
-                            if matching_files:
-                                sticker_paths.append(matching_files[0])
-                            else:
-                                log.log(f"[表情包] 文件不存在: {filename}")
-                        else:
-                            log.log(f"[表情包] 文件不存在: {filename}")
-
-                # 移除表情包标记
-                line = sticker_pattern.sub('', line)
-                processed_lines.append(line)
-            else:
-                processed_lines.append(line)
-
-        # 重新组合文本
-        processed_text = '\n'.join(processed_lines).strip()
-
-        return processed_text, sticker_paths
-
     async def check_tool_uses(self):
         """定期检查工具调用并发送通知"""
         await self.wait_until_ready()
@@ -2615,20 +2107,20 @@ class DiscordBot(discord.Client):
                             # 发送文本消息
                             text = item_data.get("text", "")
                             if text and text.strip():
-                                # 处理表情包标记 <:文件名.扩展名>
-                                processed_text, stickers = await self._process_sticker_mentions_for_queue(text, channel)
+                                await self._send_long_message(channel, text.strip())
 
-                                # 发送表情包（如果找到）
-                                for sticker_path in stickers:
-                                    try:
-                                        file = discord.File(sticker_path)
-                                        await channel.send(file=file)
-                                    except Exception as e:
-                                        log.log(f"[表情包] 发送失败: {sticker_path} - {e}")
-
-                                # 发送处理后的文本（如果不为空）
-                                if processed_text and processed_text.strip():
-                                    await self._send_long_message(channel, processed_text.strip())
+                        elif item_type == "sticker":
+                            # 表情包：从 item_data 获取文件路径，发送为图片
+                            sticker_path = item_data.get("file_path", "") if item_data else ""
+                            if sticker_path and os.path.exists(sticker_path):
+                                try:
+                                    file = discord.File(sticker_path)
+                                    await channel.send(file=file)
+                                    log.log(f"✅ [消息 #{message_id}] 已发送表情包: {os.path.basename(sticker_path)}")
+                                except Exception as e:
+                                    log.log(f"❌ [消息 #{message_id}] 表情包发送失败: {sticker_path} - {e}")
+                            else:
+                                log.log(f"⚠️ [消息 #{message_id}] 表情包文件不存在: {sticker_path}")
 
                         elif item_type == "tool_use":
                             # 发送工具调用通知（直接发送，不使用队列）

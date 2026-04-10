@@ -710,6 +710,18 @@ class WeixinBot:
                                     # 继续下一条消息
                                     continue
 
+                        elif item_type == "sticker":
+                            # 表情包：从 item_data 获取文件路径，发送为图片
+                            sticker_path = item_data.get("file_path", "") if item_data else ""
+                            if sticker_path:
+                                try:
+                                    await self._send_sticker_image(client, to_user_id, sticker_path, context_token)
+                                    log.log(f"✅ [消息 #{message_id}] 已发送表情包: {os.path.basename(sticker_path)}")
+                                except Exception as e:
+                                    log.log(f"❌ [消息 #{message_id}] 表情包发送失败: {sticker_path} - {e}")
+                            else:
+                                log.log(f"⚠️ [消息 #{message_id}] 表情包文件路径为空")
+
                         elif item_type == "tool_use":
                             # 对于工具调用，由于微信不支持编辑消息
                             # 我们需要等待工具执行完成后再发送通知
@@ -973,6 +985,81 @@ class WeixinBot:
             except Exception as e:
                 log.log(f"❌ 检查工具执行结果时出错: {e}")
                 await asyncio.sleep(5)
+
+    async def _send_sticker_image(self, client, to_user_id: str, file_path: str, context_token: str):
+        """发送表情包图片到微信（轻量版，专用于表情包场景）
+
+        Args:
+            client: WeixinClient 实例
+            to_user_id: 接收者的 wxid 或 username
+            file_path: 表情包图片的本地路径
+            context_token: 上下文 token
+        """
+        import hashlib
+        import base64
+        from Crypto.Cipher import AES
+        from Crypto.Util.Padding import pad
+
+        # 将 username 转换为 wxid（get_upload_url 需要 wxid）
+        target_wxid = self.username_to_wxid.get(to_user_id, to_user_id)
+
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+
+        # 读取文件并计算 MD5
+        with open(file_path, 'rb') as f:
+            plaintext = f.read()
+        rawfilemd5 = hashlib.md5(plaintext).hexdigest()
+
+        # 生成随机 AES key 和 filekey
+        aeskey = os.urandom(16)
+        filekey = os.urandom(16).hex()
+
+        # AES-128-ECB 加密文件
+        cipher = AES.new(aeskey, AES.MODE_ECB)
+        ciphertext = cipher.encrypt(pad(plaintext, AES.block_size))
+        filesize = len(ciphertext)
+
+        # 获取上传 URL（media_type=1 表示图片）
+        upload_resp = await client.get_upload_url(
+            filekey=filekey,
+            media_type=1,
+            to_user_id=target_wxid,
+            rawsize=len(plaintext),
+            rawfilemd5=rawfilemd5,
+            filesize=filesize,
+            aeskey=aeskey.hex(),
+            no_need_thumb=True
+        )
+
+        upload_param = upload_resp.get("upload_param")
+        if not upload_param:
+            raise Exception("获取上传参数失败")
+
+        # 上传加密文件到 CDN
+        download_param = await client.upload_to_cdn(
+            file_path=file_path,
+            upload_param=upload_param,
+            filekey=filekey,
+            aeskey=aeskey,
+            filesize=filesize
+        )
+
+        # 构造媒体信息
+        media_info = {
+            "encrypt_query_param": download_param,
+            "aes_key": base64.b64encode(aeskey.hex().encode('utf-8')).decode('utf-8'),
+            "filesize_ciphertext": filesize
+        }
+
+        # 发送图片消息
+        await client.send_media_message(
+            to_user_id=target_wxid,
+            media_type="image",
+            media_info=media_info,
+            context_token=context_token
+        )
 
     async def _send_file_to_weixin(self, client: WeixinClient, to_user_id: str, file_path: str, context_token: str, user_id: int):
         """发送文件到微信
