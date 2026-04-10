@@ -141,7 +141,17 @@ class Config:
     def auto_load_prompt_text(self) -> str:
         """获取首次对话提示词注入的文本"""
         return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
-    
+
+    @property
+    def auto_trigger_after_new_enabled(self) -> bool:
+        """获取是否启用 /new 后自动触发对话"""
+        return self._config.get('auto_trigger_after_new', {}).get('enabled', False)
+
+    @property
+    def auto_trigger_after_new_message(self) -> str:
+        """获取 /new 后自动触发的预设用户消息内容"""
+        return self._config.get('auto_trigger_after_new', {}).get('preset_message', '')
+
     # Typing indicator 配置
 
     @property

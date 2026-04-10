@@ -300,6 +300,14 @@ queue:
 message_splitting:
   enabled: true                        # 是否启用消息按空行分割功能（让回复更自然拟人）
 
+auto_load:
+  enabled: true                        # 首次对话提示词注入（会添加到新会话第一条消息前面）
+  prompt_text: "先仔细阅读并遵守 CLAUDE.md..."  # 提示词注入文本
+
+auto_trigger_after_new:
+  enabled: true                        # /new 后自动触发对话
+  preset_message: "执行会话启动流程。"    # 自动发送的预设用户消息
+
 typing_indicator:
   max_retries: 3                       # 最大连续重试次数（网络波动时）
   retry_delay: 3                       # 重试等待时间（秒）

@@ -1489,6 +1489,27 @@ class WeixinBot:
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
 
+        # /new 后自动触发对话
+        if self.config.auto_trigger_after_new_enabled:
+            preset_msg = self.config.auto_trigger_after_new_message
+            if preset_msg:
+                auto_msg = Message(
+                    id=None,
+                    direction=MessageDirection.TO_CLAUDE.value,
+                    content=preset_msg,
+                    status=MessageStatus.PENDING.value,
+                    discord_channel_id=0,
+                    discord_message_id=0,
+                    discord_user_id=user_id_int,
+                    username=from_user_id,
+                    is_dm=True,
+                    tag=MessageTag.DEFAULT.value,
+                    channel_type=ChannelType.WEIXIN.value,
+                    attachments=[]
+                )
+                auto_message_id = self.message_queue.add_message(auto_msg)
+                log.log(f"[自动触发] 已发送预设消息 #{auto_message_id} 到新会话: {preset_msg[:50]}...")
+
     async def _cmd_status(self, from_user_id: str, account_bot_id: str):
         """查看当前会话状态"""
         # 从配置中获取 user_id
