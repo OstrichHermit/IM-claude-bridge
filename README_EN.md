@@ -300,6 +300,14 @@ queue:
 message_splitting:
   enabled: true                        # Enable message splitting by empty lines (Make replies more natural and personified)
 
+auto_load:
+  enabled: true                        # Auto-inject prompt for first message of a new session
+  prompt_text: "Read and follow CLAUDE.md..."  # Prompt text to inject
+
+auto_trigger_after_new:
+  enabled: true                        # Auto-trigger conversation after /new command
+  preset_message: "Execute session startup."  # Preset user message to send automatically
+
 typing_indicator:
   max_retries: 3                       # Max consecutive retries (network fluctuations)
   retry_delay: 3                       # Retry wait time (seconds)

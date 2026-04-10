@@ -424,6 +424,27 @@ class DiscordBot(discord.Client):
                 embed.add_field(name="当前 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
                 await interaction.response.send_message(embed=embed)
 
+            # /new 后自动触发对话
+            if self.config.auto_trigger_after_new_enabled:
+                preset_msg = self.config.auto_trigger_after_new_message
+                if preset_msg:
+                    auto_msg = Message(
+                        id=None,
+                        direction=MessageDirection.TO_CLAUDE.value,
+                        content=preset_msg,
+                        status=MessageStatus.PENDING.value,
+                        discord_channel_id=interaction.channel.id if not is_dm else 0,
+                        discord_message_id=0,
+                        discord_user_id=interaction.user.id,
+                        username=interaction.user.display_name,
+                        is_dm=is_dm,
+                        tag=MessageTag.DEFAULT.value,
+                        channel_type=ChannelType.DISCORD.value,
+                        attachments=[]
+                    )
+                    auto_message_id = self.message_queue.add_message(auto_msg)
+                    log.log(f"[自动触发] 已发送预设消息 #{auto_message_id} 到新会话: {preset_msg[:50]}...")
+
         @self.tree.command(name="status", description="查看当前会话和系统状态")
         async def status_command(interaction: discord.Interaction):
             """查看当前会话状态"""
