@@ -44,19 +44,8 @@ class StreamingMessageQueue:
         self.send_lock = asyncio.Lock()
 
         # Content block 顺序追踪
-        self.content_block_sequence = []  # 记录 content block 顺序，例如：[("text", 0), ("tool", 0), ("tool", 1)]
         self.current_content_block_index = 0  # 当前发送到第几个 content block
         self.content_block_senders = {}  # 记录每个 content block 的发送状态：{index: {"pending": int, "sent": int}}
-        self.content_block_lock = asyncio.Lock()  # Content block 顺序锁
-
-    async def add_block(self, block: str):
-        """
-        添加一个文本 block 到队列（保持向后兼容）
-
-        Args:
-            block: 要发送的内容块
-        """
-        await self.add_message(MessageType.TEXT, block)
 
     async def add_message(self, msg_type: MessageType, data: Union[str, discord.Embed, List[discord.File]], return_future: bool = False, content_block_index: int = None, item_index: int = None):
         """
@@ -225,16 +214,3 @@ class StreamingMessageQueue:
 
         return None
 
-    async def flush(self):
-        """立即发送队列中的所有消息（用于强制刷新）"""
-        while self.queue:
-            block = self.queue.pop(0)
-            await self._send_with_retry(block)
-
-    def is_empty(self) -> bool:
-        """检查队列是否为空"""
-        return len(self.queue) == 0
-
-    def get_queue_length(self) -> int:
-        """获取队列长度"""
-        return len(self.queue)
