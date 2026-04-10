@@ -309,7 +309,7 @@ class DiscordBot(discord.Client):
 
         mention_default = "需要 @" if self.config.mention_required else "不需要 @"
         embed.add_field(
-            name=f"💬 对话模式：{mention_default}",
+            name=f"💬 对话模式：{mention_default}（默认）",
             value="每个频道和每个用户的私聊都使用独立的对话模式\n在具体频道或私聊中使用 `/mention` 进行对话模式设置",
             inline=False
         )
