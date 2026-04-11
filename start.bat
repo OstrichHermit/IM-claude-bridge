@@ -25,7 +25,7 @@ if errorlevel 1 (
 if not exist "shared" mkdir shared
 if not exist "logs" mkdir logs
 
-start "" /b "%PYTHONW%" "%~dp0bot\discord_bot.py"
+start "" /b "%PYTHONW%" "%~dp0bot\discord\discord_bot.py"
 start "" /b "%PYTHONW%" "%~dp0bridge\claude_bridge.py"
 start "" /b "%PYTHONW%" "%~dp0im_claude_bridge_manager.py"
 start "" /b "%PYTHONW%" "%~dp0web\web_server.py"
@@ -34,7 +34,7 @@ start "" /b "%PYTHONW%" "%~dp0mcp_server\server.py"
 for /f "delims=" %%i in ('python -c "import yaml; config = yaml.safe_load(open(r'%~dp0config\config.yaml', encoding='utf-8')); result = config.get('weixin', {}).get('enabled', False); print('1' if result else '0')"') do set WEIXIN_RESULT=%%i
 
 if "%WEIXIN_RESULT%"=="1" (
-    start "" /b "%PYTHONW%" "%~dp0bot\weixin_bot.py"
+    start "" /b "%PYTHONW%" "%~dp0bot\weixin\weixin_bot.py"
 )
 
 echo All services started!

@@ -14,7 +14,7 @@ from pathlib import Path
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.logger import get_logger
 
 log = get_logger("WeixinMedia", "weixin")
