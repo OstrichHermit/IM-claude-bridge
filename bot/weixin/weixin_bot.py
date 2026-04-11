@@ -17,9 +17,9 @@ from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.message_queue import MessageTag as MessageTagEnum
 from shared.context_token_storage import ContextTokenStorage
-from bot.weixin_client import WeixinClient, WeixinAccount
-from bot.weixin_qr_login import WeixinAccountManager
-from bot.weixin_media import WeixinMediaHandler, WeixinFileMapping, MediaType
+from bot.weixin.weixin_client import WeixinClient, WeixinAccount
+from bot.weixin.weixin_qr_login import WeixinAccountManager
+from bot.weixin.weixin_media import WeixinMediaHandler, WeixinFileMapping, MediaType
 
 log = get_logger("WeixinBot", "weixin")
 
