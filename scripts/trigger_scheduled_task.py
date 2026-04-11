@@ -22,8 +22,7 @@ def trigger_scheduled_task(
     channel_id: int = None,
     is_dm: bool = False,
     tag: str = None,
-    channel_type: str = "discord",  # 频道类型（默认 discord）
-    file_path: str = None
+    channel_type: str = "discord"  # 频道类型（默认 discord）
 ) -> int:
     """
     触发定时任务，向 Claude Bridge 发送定时消息
@@ -66,8 +65,7 @@ def trigger_scheduled_task(
         use_message_request=False,  # 固定使用 messages 表
         tag=tag,  # 传递标签
         channel_type=channel_type,  # 传递频道类型
-        db_path=None,             # 固定使用默认数据库路径
-        file_path=file_path         # 附加文件路径
+        db_path=None              # 固定使用默认数据库路径
     )
     return message_id
 
@@ -118,12 +116,6 @@ def main():
         "--tag", "-t",
         required=False,
         help="消息标签（可从配置文件读取）：task 或 reminder"
-    )
-
-    parser.add_argument(
-        "--file-path", "-fp",
-        default=None,
-        help="要附加的文件路径（可从配置文件读取）"
     )
 
     parser.add_argument(
@@ -187,7 +179,6 @@ def main():
         user_id_str = config.get('user_id', '')
         channel_id_str = config.get('channel_id', '')
         tag = config.get('tag') or args.tag
-        file_path = config.get('file_path') or args.file_path
         channel_type = config.get('channel_type') or args.channel_type
 
         # 转换 ID 为整数（如果提供）
@@ -203,9 +194,6 @@ def main():
             print(f"   频道 ID: {channel_id}")
         print(f"   标签: {tag}")
         print(f"   频道类型: {channel_type}")
-        if file_path:
-            print(f"   附加文件: {file_path}")
-
         # 参数校验
         if not content:
             parser.error("配置文件中缺少 content 字段")
@@ -260,8 +248,7 @@ def main():
             channel_id=target_channel_id,
             is_dm=is_dm_mode,
             tag=tag,  # 传递标签参数
-            channel_type=channel_type,  # 传递频道类型
-            file_path=file_path  # 传递文件路径
+            channel_type=channel_type  # 传递频道类型
         )
 
         print(f"✅ 定时任务已成功触发！")
