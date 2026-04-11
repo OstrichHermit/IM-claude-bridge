@@ -143,311 +143,43 @@ class MessageRequest:
 
 
 class MessageQueue:
-    """消息队列管理器"""
+    """消息队列管理器（精简版，只做编排和委托）"""
 
     def __init__(self, db_path: str):
         """初始化消息队列"""
         self.db_path = db_path
         self._init_database()
 
+        # 初始化各个 Manager
+        from shared.session_manager import SessionManager
+        from shared.tool_use_tracker import ToolUseTracker
+        from shared.sequence_manager import MessageSequenceManager
+
+        self._sessions = SessionManager(db_path)
+        self._tool_uses = ToolUseTracker(db_path)
+        self._sequences = MessageSequenceManager(db_path)
+
     def _init_database(self):
         """初始化数据库表"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        from shared.schema import SchemaManager
+        SchemaManager(self.db_path).init_database()
 
-        # 创建消息表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                direction TEXT NOT NULL,
-                content TEXT NOT NULL,
-                status TEXT NOT NULL,
-                discord_channel_id INTEGER NOT NULL,
-                discord_message_id INTEGER NOT NULL,
-                discord_user_id INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                response TEXT,
-                error TEXT,
-                is_dm BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+    # ========== 属性：代理到各 Manager ==========
 
-        # 兼容性处理：为旧数据库添加 is_dm 字段
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN is_dm BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
+    @property
+    def sessions(self):
+        """会话管理器"""
+        return self._sessions
 
-        # 兼容性处理：为旧数据库添加 is_external 字段（标记外部插入的消息）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN is_external BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
+    @property
+    def tool_uses(self):
+        """工具调用追踪器"""
+        return self._tool_uses
 
-        # 兼容性处理：为旧数据库添加 tag 字段（消息标签）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN tag TEXT DEFAULT 'default'")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 context_token 字段（微信消息上下文）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN context_token TEXT")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 channel_type 字段（频道类型）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN channel_type TEXT DEFAULT 'discord'")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 streaming_response 字段（流式响应）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN streaming_response TEXT")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 last_stream_update 字段（最后流式更新时间）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN last_stream_update TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 attachments 字段（附件信息）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 兼容性处理：为旧数据库添加 tool_uses 字段（工具调用信息）
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN tool_uses TEXT")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 创建流式响应索引（提高查询性能）
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_last_stream_update
-            ON messages(last_stream_update)
-        """)
-
-        # 创建工具调用卡片引用表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tool_use_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL,
-                tool_use_index INTEGER NOT NULL,
-                discord_message_id INTEGER NOT NULL,
-                channel_id INTEGER NOT NULL,
-                is_dm BOOLEAN DEFAULT 0,
-                channel_type TEXT DEFAULT 'discord',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(message_id, tool_use_index)
-            )
-        """)
-
-        # 兼容性处理：为旧数据库的 tool_use_messages 表添加 channel_type 字段
-        try:
-            cursor.execute("ALTER TABLE tool_use_messages ADD COLUMN channel_type TEXT DEFAULT 'discord'")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 创建索引以提高查询性能
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tool_use_message_id
-            ON tool_use_messages(message_id)
-        """)
-
-        # 创建 content block 顺序表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS content_blocks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL,
-                block_index INTEGER NOT NULL,
-                block_type TEXT NOT NULL,
-                block_data TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(message_id, block_index)
-            )
-        """)
-
-        # 创建索引以提高查询性能
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_content_block_message_id
-            ON content_blocks(message_id)
-        """)
-
-        # 创建工具执行结果状态表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tool_use_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL,
-                tool_use_index INTEGER NOT NULL,
-                success BOOLEAN NOT NULL,
-                processed BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(message_id, tool_use_index)
-            )
-        """)
-
-        # 创建索引以提高查询性能
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tool_use_results_processed
-            ON tool_use_results(processed)
-        """)
-
-        # 创建会话表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_key TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                session_created BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 创建频道设置表（mention_required 按频道独立管理）
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS channel_settings (
-                channel_id TEXT PRIMARY KEY,
-                mention_required BOOLEAN NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 兼容性处理：为旧数据库添加 session_created 字段
-        try:
-            cursor.execute("ALTER TABLE sessions ADD COLUMN session_created BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        # 创建索引以提高查询性能
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_status_direction
-            ON messages(status, direction)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_created_at
-            ON messages(created_at)
-        """)
-
-        # 创建文件下载请求表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS file_download_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_message_id INTEGER NOT NULL,
-                discord_channel_id INTEGER NOT NULL,
-                save_directory TEXT NOT NULL,
-                status TEXT NOT NULL,
-                downloaded_files TEXT,
-                error TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 创建文件下载请求索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_file_download_requests_status
-            ON file_download_requests(status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_file_download_requests_created_at
-            ON file_download_requests(created_at)
-        """)
-
-        # 创建消息发送请求表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS message_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT NOT NULL,
-                user_id INTEGER,
-                channel_id INTEGER,
-                use_embed BOOLEAN DEFAULT 1,
-                embed_title TEXT,
-                embed_color INTEGER,
-                tag TEXT DEFAULT 'default',
-                status TEXT NOT NULL,
-                result TEXT,
-                error TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 创建消息发送请求索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_requests_status
-            ON message_requests(status)
-        """)
-
-        # 兼容性处理：为旧数据库添加 tag 字段（消息请求标签）
-        try:
-            cursor.execute("ALTER TABLE message_requests ADD COLUMN tag TEXT DEFAULT 'default'")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_requests_created_at
-            ON message_requests(created_at)
-        """)
-
-        # 创建消息序列表（用于保证消息发送顺序）
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS message_sequence (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL,
-                sequence_index INTEGER NOT NULL,
-                content_block_index INTEGER NOT NULL,
-                item_type TEXT NOT NULL,
-                item_data TEXT NOT NULL,
-                tool_use_index INTEGER,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                sent_at
-            )
-        """)
-
-        # 创建消息序列索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_sequence_message_id
-            ON message_sequence(message_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_sequence_status
-            ON message_sequence(status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_sequence_sequence_index
-            ON message_sequence(sequence_index)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_sequence_status
-            ON message_sequence(status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_message_sequence_sequence_index
-            ON message_sequence(sequence_index)
-        """)
-
-        # 兼容性处理：为旧数据库添加 tool_use_index 字段
-        try:
-            cursor.execute("ALTER TABLE message_sequence ADD COLUMN tool_use_index INTEGER")
-        except sqlite3.OperationalError:
-            pass  # 字段已存在
-
-        conn.commit()
-        conn.close()
+    @property
+    def sequences(self):
+        """消息序列管理器"""
+        return self._sequences
 
     def add_message(self, message: Message) -> int:
         """添加新消息到队列"""
@@ -658,280 +390,40 @@ class MessageQueue:
         conn.close()
 
     def add_tool_use(self, message_id: int, tool_name: str, tool_input: dict, tool_use_id: str = None) -> int:
-        """添加工具调用信息
-
-        Args:
-            message_id: 消息 ID
-            tool_name: 工具名称
-            tool_input: 工具参数
-            tool_use_id: 工具调用 ID（可选）
-
-        Returns:
-            工具调用的索引（从 0 开始）
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # 获取现有的 tool_uses
-        cursor.execute("SELECT tool_uses FROM messages WHERE id = ?", (message_id,))
-        row = cursor.fetchone()
-
-        tool_uses = []
-        if row and row[0]:
-            try:
-                tool_uses = json.loads(row[0])
-            except json.JSONDecodeError:
-                tool_uses = []
-
-        # 获取当前索引（即添加后的索引）
-        tool_use_index = len(tool_uses)
-
-        # 添加新的工具调用
-        tool_use_data = {
-            "name": tool_name,
-            "input": tool_input
-        }
-        if tool_use_id:
-            tool_use_data["id"] = tool_use_id
-
-        tool_uses.append(tool_use_data)
-
-        # 更新数据库
-        now = datetime.now().isoformat()
-        cursor.execute("""
-            UPDATE messages
-            SET tool_uses = ?, updated_at = ?
-            WHERE id = ?
-        """, (json.dumps(tool_uses, ensure_ascii=False), now, message_id))
-
-        conn.commit()
-        conn.close()
-
-        return tool_use_index
-
-    def add_content_block(self, message_id: int, block_index: int, block_type: str, block_data: dict = None):
-        """添加 content block 信息（记录 JSON 中的原始顺序）
-
-        Args:
-            message_id: 消息 ID
-            block_index: Content block 索引（从 0 开始）
-            block_type: Content block 类型（text 或 tool_use）
-            block_data: Content block 数据（可选）
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-        data_json = json.dumps(block_data, ensure_ascii=False) if block_data else None
-
-        cursor.execute("""
-            INSERT OR REPLACE INTO content_blocks
-            (message_id, block_index, block_type, block_data, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (message_id, block_index, block_type, data_json, now))
-
-        conn.commit()
-        conn.close()
-
-    def get_content_blocks(self, message_id: int) -> list:
-        """获取消息的所有 content blocks（按原始顺序）
-
-        Args:
-            message_id: 消息 ID
-
-        Returns:
-            Content block 列表，格式：[{"index": 0, "type": "text", "data": {...}}, ...]
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT block_index, block_type, block_data
-            FROM content_blocks
-            WHERE message_id = ?
-            ORDER BY block_index ASC
-        """, (message_id,))
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        content_blocks = []
-        for row in rows:
-            block_index, block_type, block_data = row
-            block_info = {
-                "index": block_index,
-                "type": block_type
-            }
-            if block_data:
-                try:
-                    block_info["data"] = json.loads(block_data)
-                except json.JSONDecodeError:
-                    pass
-            content_blocks.append(block_info)
-
-        return content_blocks
+        """添加工具调用信息（代理到 ToolUseTracker）"""
+        return self._tool_uses.add_tool_use(message_id, tool_name, tool_input, tool_use_id)
 
     def get_tool_uses(self, message_id: int) -> list:
-        """获取消息的所有工具调用
+        """获取消息的所有工具调用（代理到 ToolUseTracker）"""
+        return self._tool_uses.get_tool_uses(message_id)
 
-        Args:
-            message_id: 消息 ID
+    def add_content_block(self, message_id: int, block_index: int, block_type: str, block_data: dict = None):
+        """添加 content block 信息（代理到 ToolUseTracker）"""
+        self._tool_uses.add_content_block(message_id, block_index, block_type, block_data)
 
-        Returns:
-            工具调用列表
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT tool_uses FROM messages WHERE id = ?", (message_id,))
-        row = cursor.fetchone()
-        conn.close()
-
-        if row and row[0]:
-            try:
-                return json.loads(row[0])
-            except json.JSONDecodeError:
-                return []
-
-        return []
+    def get_content_blocks(self, message_id: int) -> list:
+        """获取消息的所有 content blocks（代理到 ToolUseTracker）"""
+        return self._tool_uses.get_content_blocks(message_id)
 
     def save_tool_use_message_ref(self, message_id: int, tool_use_index: int, discord_message_id: int, channel_id: int, is_dm: bool, channel_type: str = 'discord'):
-        """保存工具调用卡片的 Discord 消息引用
-
-        Args:
-            message_id: 消息 ID
-            tool_use_index: 工具调用索引
-            discord_message_id: Discord 消息 ID
-            channel_id: Discord 频道/私聊 ID
-            is_dm: 是否为私聊
-            channel_type: 频道类型（'discord' 或 'weixin'）
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-        cursor.execute("""
-            INSERT OR REPLACE INTO tool_use_messages
-            (message_id, tool_use_index, discord_message_id, channel_id, is_dm, channel_type, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (message_id, tool_use_index, discord_message_id, channel_id, 1 if is_dm else 0, channel_type, now))
-
-        conn.commit()
-        conn.close()
+        """保存工具调用卡片的 Discord 消息引用（代理到 ToolUseTracker）"""
+        self._tool_uses.save_tool_use_message_ref(message_id, tool_use_index, discord_message_id, channel_id, is_dm, channel_type)
 
     def get_tool_use_message_ref(self, message_id: int, tool_use_index: int) -> Optional[dict]:
-        """获取工具调用卡片的 Discord 消息引用
-
-        Args:
-            message_id: 消息 ID
-            tool_use_index: 工具调用索引
-
-        Returns:
-            包含 discord_message_id, channel_id, is_dm, channel_type 的字典，如果不存在则返回 None
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT discord_message_id, channel_id, is_dm, channel_type
-            FROM tool_use_messages
-            WHERE message_id = ? AND tool_use_index = ?
-        """, (message_id, tool_use_index))
-
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return {
-                "discord_message_id": row[0],
-                "channel_id": row[1],
-                "is_dm": bool(row[2]),
-                "channel_type": row[3] or 'discord'
-            }
-
-        return None
+        """获取工具调用卡片的 Discord 消息引用（代理到 ToolUseTracker）"""
+        return self._tool_uses.get_tool_use_message_ref(message_id, tool_use_index)
 
     def save_tool_use_result(self, message_id: int, tool_use_index: int, success: bool):
-        """保存工具执行结果
-
-        Args:
-            message_id: 消息 ID
-            tool_use_index: 工具调用索引
-            success: 工具执行是否成功
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-        cursor.execute("""
-            INSERT OR REPLACE INTO tool_use_results
-            (message_id, tool_use_index, success, processed, created_at)
-            VALUES (?, ?, ?, 0, ?)
-        """, (message_id, tool_use_index, 1 if success else 0, now))
-
-        conn.commit()
-        conn.close()
+        """保存工具执行结果（代理到 ToolUseTracker）"""
+        self._tool_uses.save_tool_use_result(message_id, tool_use_index, success)
 
     def get_pending_tool_use_results(self, channel_type: str = None) -> List[dict]:
-        """获取待处理的工具执行结果
-
-        Args:
-            channel_type: 可选，按频道类型过滤（'discord' 或 'weixin'）
-
-        Returns:
-            待处理的工具执行结果列表
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        if channel_type:
-            # JOIN tool_use_messages 来过滤频道类型
-            cursor.execute("""
-                SELECT r.message_id, r.tool_use_index, r.success
-                FROM tool_use_results r
-                INNER JOIN tool_use_messages m ON r.message_id = m.message_id AND r.tool_use_index = m.tool_use_index
-                WHERE r.processed = 0 AND m.channel_type = ?
-                ORDER BY r.created_at ASC
-            """, (channel_type,))
-        else:
-            cursor.execute("""
-                SELECT message_id, tool_use_index, success
-                FROM tool_use_results
-                WHERE processed = 0
-                ORDER BY created_at ASC
-            """)
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        results = []
-        for row in rows:
-            results.append({
-                "message_id": row[0],
-                "tool_use_index": row[1],
-                "success": bool(row[2])
-            })
-
-        return results
+        """获取待处理的工具执行结果（代理到 ToolUseTracker）"""
+        return self._tool_uses.get_pending_tool_use_results(channel_type)
 
     def mark_tool_use_result_processed(self, message_id: int, tool_use_index: int):
-        """标记工具执行结果为已处理
-
-        Args:
-            message_id: 消息 ID
-            tool_use_index: 工具调用索引
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE tool_use_results
-            SET processed = 1
-            WHERE message_id = ? AND tool_use_index = ?
-        """, (message_id, tool_use_index))
-
-        conn.commit()
-        conn.close()
+        """标记工具执行结果为已处理（代理到 ToolUseTracker）"""
+        self._tool_uses.mark_tool_use_result_processed(message_id, tool_use_index)
 
     def request_abort(self, message_id: int) -> bool:
         """请求中止消息处理
@@ -1297,271 +789,38 @@ class MessageQueue:
         use_temp_session: bool = False,
         temp_session_key: str = None
     ) -> tuple[str, str, bool, str]:
-        """
-        获取或创建会话的工作目录（固定使用 session 模式）
-
-        Args:
-            base_working_dir: 基础工作目录
-            channel_id: Discord 频道 ID（频道消息使用）
-            user_id: Discord 用户 ID（私聊消息使用）
-            is_dm: 是否为私聊消息
-            use_temp_session: 是否使用临时会话（外部消息）
-            temp_session_key: 临时会话 key（use_temp_session=True 时使用）
-
-        Returns:
-            (session_key, session_id, session_created, working_directory):
-            会话标识、会话 ID、会话是否已创建、工作目录路径
-        """
-        import os
-        from pathlib import Path
-
-        base_path = Path(base_working_dir)
-
-        # ========== 生成 session_key 和工作目录 ==========
-        if use_temp_session and temp_session_key:
-            # 临时会话（外部消息：task/reminder）- 独立 session
-            session_key = temp_session_key
-            working_dir = str(base_path)  # 使用基础工作目录
-        elif is_dm:
-            # 私聊：每个用户的私聊使用独立 session
-            session_key = f"dm_{user_id}"
-            working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
-        else:
-            # 频道：每个频道使用独立 session（该频道所有用户共享）
-            session_key = f"channel_{channel_id}"
-            working_dir = str(base_path)  # 使用基础工作目录（不创建子目录）
-
-        # 确保工作目录存在
-        os.makedirs(working_dir, exist_ok=True)
-
-        # 获取或创建 session_id
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT session_id, session_created FROM sessions WHERE session_key = ?
-        """, (session_key,))
-
-        row = cursor.fetchone()
-
-        if row:
-            session_id, session_created = row[0], bool(row[1])
-            # 更新最后使用时间
-            cursor.execute("""
-                UPDATE sessions SET last_used_at = ? WHERE session_key = ?
-            """, (datetime.now().isoformat(), session_key))
-        else:
-            # 新会话：立即生成一个新的 session_id（使用 UUID）
-            import uuid
-            session_id = str(uuid.uuid4())
-            session_created = False
-            # 插入新记录
-            cursor.execute("""
-                INSERT INTO sessions (session_key, session_id, session_created, created_at, last_used_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (session_key, session_id, 0, datetime.now().isoformat(), datetime.now().isoformat()))
-
-        conn.commit()
-        conn.close()
-
-        return session_key, session_id, session_created, working_dir
+        """获取或创建会话的工作目录（代理到 SessionManager）"""
+        return self._sessions.get_or_create_session(
+            base_working_dir, channel_id, user_id, is_dm, use_temp_session, temp_session_key
+        )
 
     def get_claude_session_path(self, working_dir: str) -> str:
-        """
-        获取 Claude Code 会话文件路径（~/.claude/projects）
-
-        Args:
-            working_dir: 工作目录
-
-        Returns:
-            Claude Code 会话目录路径
-        """
-        from pathlib import Path
-        import platform
-
-        # Claude Code 将路径转换为项目目录名
-        # Windows: D:\path -> F--D--path
-        # Unix: /home/user -> D--home-user
-
-        working_path = Path(working_dir).resolve()
-
-        if platform.system() == "Windows":
-            # Windows: 盘符转为大写字母前缀
-            # D:\path -> F--D--path
-            parts = working_path.parts
-            drive = parts[0][0].upper()  # D:\ -> D
-            rest = "-".join(parts[1:])  # \path\to -> path-to
-            project_name = f"F--{drive}--{rest}" if rest else f"F--{drive}"
-        else:
-            # Unix: /home/user/path -> D--home-user-path
-            parts = working_path.parts[1:]  # 去掉开头的 /
-            project_name = "D--" + "-".join(parts) if parts else "D--"
-
-        # 获取 Claude projects 目录
-        home = Path.home()
-        claude_projects_dir = home / ".claude" / "projects"
-
-        return str(claude_projects_dir / project_name)
+        """获取 Claude Code 会话文件路径（代理到 SessionManager）"""
+        return self._sessions.get_claude_session_path(working_dir)
 
     def delete_claude_session_files(self, working_dir: str) -> bool:
-        """
-        删除 Claude Code 的会话文件
-
-        Args:
-            working_dir: 工作目录
-
-        Returns:
-            是否成功删除
-        """
-        from pathlib import Path
-        import glob
-
-        try:
-            claude_session_dir = self.get_claude_session_path(working_dir)
-            session_path = Path(claude_session_dir)
-
-            if not session_path.exists():
-                return False
-
-            # 删除所有 .jsonl 会话文件
-            jsonl_files = list(session_path.glob("*.jsonl"))
-            deleted = False
-
-            for jsonl_file in jsonl_files:
-                try:
-                    jsonl_file.unlink()
-                    log.log(f"[会话清理] 已删除 Claude 会话文件: {jsonl_file.name}")
-                    deleted = True
-                except Exception as e:
-                    log.log(f"⚠️ 删除会话文件失败: {e}")
-
-            # 删除会话索引文件
-            index_file = session_path / "sessions-index.json"
-            if index_file.exists():
-                try:
-                    index_file.unlink()
-                    log.log(f"[会话清理] 已删除会话索引: sessions-index.json")
-                except Exception as e:
-                    log.log(f"⚠️ 删除索引文件失败: {e}")
-
-            return deleted
-
-        except Exception as e:
-            log.log(f"❌ 删除 Claude 会话文件时出错: {e}")
-            return False
+        """删除 Claude Code 的会话文件（代理到 SessionManager）"""
+        return self._sessions.delete_claude_session_files(working_dir)
 
     def get_latest_session_id(self, working_dir: str) -> str:
-        """
-        获取 Claude Code 最新的 session_id（从会话文件中读取）
-
-        Args:
-            working_dir: 工作目录
-
-        Returns:
-            最新的 session_id，如果没有则返回 None
-        """
-        from pathlib import Path
-        import json
-
-        try:
-            claude_session_dir = self.get_claude_session_path(working_dir)
-            session_path = Path(claude_session_dir)
-
-            if not session_path.exists():
-                return None
-
-            # 读取 sessions-index.json
-            index_file = session_path / "sessions-index.json"
-            if not index_file.exists():
-                return None
-
-            with open(index_file, 'r', encoding='utf-8') as f:
-                index_data = json.load(f)
-
-            # 获取最新的 session_id（列表中的第一个）
-            if index_data and isinstance(index_data, list):
-                return index_data[0] if index_data else None
-
-            return None
-
-        except Exception as e:
-            log.log(f"⚠️ 获取最新 session_id 失败: {e}")
-            return None
+        """获取 Claude Code 最新的 session_id（代理到 SessionManager）"""
+        return self._sessions.get_latest_session_id(working_dir)
 
     def update_session_id(self, session_key: str, session_id: str):
-        """
-        更新会话的 session_id
-
-        Args:
-            session_key: 会话标识
-            session_id: Claude Code 返回的会话 ID
-        """
-        import sqlite3
-
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                UPDATE sessions SET session_id = ?, last_used_at = ?
-                WHERE session_key = ?
-            """, (session_id, datetime.now().isoformat(), session_key))
-
-            conn.commit()
-            conn.close()
-
-            log.log(f"✅ session_id 已更新: {session_key} -> {session_id}")
-
-        except Exception as e:
-            log.log(f"❌ 更新 session_id 失败: {e}")
+        """更新会话的 session_id（代理到 SessionManager）"""
+        self._sessions.update_session_id(session_key, session_id)
 
     def mark_session_created(self, session_key: str):
-        """
-        标记会话已创建（第一次使用 --session-id 后）
-
-        Args:
-            session_key: 会话标识
-        """
-        import sqlite3
-
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                UPDATE sessions SET session_created = 1, last_used_at = ?
-                WHERE session_key = ?
-            """, (datetime.now().isoformat(), session_key))
-
-            conn.commit()
-            conn.close()
-
-            log.log(f"✅ 会话已标记为创建: {session_key}")
-
-        except Exception as e:
-            log.log(f"❌ 标记会话创建失败: {e}")
+        """标记会话已创建（代理到 SessionManager）"""
+        self._sessions.mark_session_created(session_key)
 
     def cleanup_old_sessions(self, days: int = 7):
-        """
-        清理超过指定天数未使用的会话
+        """清理超过指定天数未使用的会话（代理到 SessionManager）"""
+        return self._sessions.cleanup_old_sessions(days)
 
-        Args:
-            days: 保留天数，默认 7 天
-        """
-        cutoff_time = datetime.now() - timedelta(days=days)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            DELETE FROM sessions WHERE last_used_at < ?
-        """, (cutoff_time.isoformat(),))
-
-        deleted_count = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        return deleted_count
+    def delete_session(self, session_key: str, working_dir: str = None) -> bool:
+        """删除指定会话（代理到 SessionManager）"""
+        return self._sessions.delete_session(session_key, working_dir)
 
     def add_file_download_request(self, download_request: FileDownloadRequest) -> int:
         """添加文件下载请求到队列"""
@@ -1937,220 +1196,29 @@ class MessageQueue:
 
     def add_message_sequence(self, message_id: int, sequence_index: int, content_block_index: int,
                             item_type: str, item_data: dict, tool_use_index: int = None):
-        """添加消息序列项
-
-        Args:
-            message_id: 消息ID
-            sequence_index: 序列索引（从0开始）
-            content_block_index: content block索引
-            item_type: 类型（text或tool_use）
-            item_data: 数据（字典）
-            tool_use_index: 工具调用索引（仅当item_type为tool_use时有效）
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # 检查是否已存在完全相同的记录（避免streaming过程中重复插入）
-        cursor.execute("""
-            SELECT id FROM message_sequence
-            WHERE message_id = ? AND sequence_index = ? AND content_block_index = ? AND item_type = ?
-        """, (message_id, sequence_index, content_block_index, item_type))
-
-        if cursor.fetchone():
-            # 已存在，跳过
-            conn.close()
-            return
-
-        now = datetime.now().isoformat()
-        data_json = json.dumps(item_data, ensure_ascii=False)
-
-        # 插入新记录
-        cursor.execute("""
-            INSERT INTO message_sequence
-            (message_id, sequence_index, content_block_index, item_type, item_data, tool_use_index, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-        """, (message_id, sequence_index, content_block_index, item_type, data_json, tool_use_index, now))
-
-        conn.commit()
-        conn.close()
+        """添加消息序列项（代理到 MessageSequenceManager）"""
+        self._sequences.add_message_sequence(message_id, sequence_index, content_block_index, item_type, item_data, tool_use_index)
 
     def get_pending_message_sequences(self, message_id: int, limit: int = 10) -> list:
-        """获取待发送的消息序列
-
-        Args:
-            message_id: 消息ID
-            limit: 最多返回多少条
-
-        Returns:
-            消息序列列表，格式：[{"id": ..., "sequence_index": ..., "item_type": ..., "item_data": ..., "tool_use_index": ...}, ...]
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, sequence_index, content_block_index, item_type, item_data, tool_use_index
-            FROM message_sequence
-            WHERE message_id = ? AND status = 'pending'
-            ORDER BY sequence_index ASC
-            LIMIT ?
-        """, (message_id, limit))
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        sequences = []
-        for row in rows:
-            seq_id, seq_index, block_index, item_type, item_data_json, tool_use_index = row
-            item_data = json.loads(item_data_json) if item_data_json else {}
-            sequences.append({
-                "id": seq_id,
-                "sequence_index": seq_index,
-                "content_block_index": block_index,
-                "item_type": item_type,
-                "item_data": item_data,
-                "tool_use_index": tool_use_index
-            })
-
-        return sequences
+        """获取待发送的消息序列（代理到 MessageSequenceManager）"""
+        return self._sequences.get_pending_message_sequences(message_id, limit)
 
     def get_messages_with_pending_sequences(self, channel_type: str, limit: int = 1) -> List[dict]:
-        """获取有待发送序列的消息列表
-
-        Args:
-            channel_type: 频道类型（'discord' 或 'weixin'）
-            limit: 最多返回多少条消息，默认 1
-
-        Returns:
-            消息列表，每条消息包含：id, discord_channel_id, discord_user_id, is_dm, channel_type, username, context_token
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT DISTINCT m.id, m.discord_channel_id, m.discord_user_id, m.is_dm, m.channel_type, m.username, m.context_token
-            FROM message_sequence ms
-            INNER JOIN messages m ON ms.message_id = m.id
-            WHERE ms.status = 'pending' AND m.channel_type = ?
-            ORDER BY m.id ASC
-            LIMIT ?
-        """, (channel_type, limit))
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        messages = []
-        for row in rows:
-            messages.append({
-                "id": row[0],
-                "discord_channel_id": row[1],
-                "discord_user_id": row[2],
-                "is_dm": bool(row[3]),
-                "channel_type": row[4],
-                "username": row[5],
-                "context_token": row[6]
-            })
-
-        return messages
+        """获取有待发送序列的消息列表（代理到 MessageSequenceManager）"""
+        return self._sequences.get_messages_with_pending_sequences(channel_type, limit)
 
     def mark_sequence_sent(self, sequence_id: int):
-        """标记消息序列项为已发送
-
-        Args:
-            sequence_id: 序列项ID
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-
-        cursor.execute("""
-            UPDATE message_sequence
-            SET status = 'sent', sent_at = ?
-            WHERE id = ?
-        """, (now, sequence_id))
-
-        conn.commit()
-        conn.close()
+        """标记消息序列项为已发送（代理到 MessageSequenceManager）"""
+        self._sequences.mark_sequence_sent(sequence_id)
 
     def get_max_sequence_index(self, message_id: int) -> int:
-        """获取指定消息的最大 sequence_index
-
-        Args:
-            message_id: 消息ID
-
-        Returns:
-            最大的 sequence_index，如果没有记录则返回 -1
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT MAX(sequence_index)
-            FROM message_sequence
-            WHERE message_id = ?
-        """, (message_id,))
-
-        result = cursor.fetchone()
-        max_index = result[0] if result[0] is not None else -1
-
-        conn.close()
-        return max_index
+        """获取指定消息的最大 sequence_index（代理到 MessageSequenceManager）"""
+        return self._sequences.get_max_sequence_index(message_id)
 
     def get_message_sequences_stats(self, message_id: int) -> dict:
-        """获取消息序列统计信息
-
-        Args:
-            message_id: 消息ID
-
-        Returns:
-            统计信息字典：{"total": 总数, "pending": 待发送数, "sent": 已发送数}
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # 获取总数
-        cursor.execute("""
-            SELECT COUNT(*) FROM message_sequence WHERE message_id = ?
-        """, (message_id,))
-        total = cursor.fetchone()[0]
-
-        # 获取待发送数
-        cursor.execute("""
-            SELECT COUNT(*) FROM message_sequence WHERE message_id = ? AND status = 'pending'
-        """, (message_id,))
-        pending = cursor.fetchone()[0]
-
-        # 获取已发送数
-        cursor.execute("""
-            SELECT COUNT(*) FROM message_sequence WHERE message_id = ? AND status = 'sent'
-        """, (message_id,))
-        sent = cursor.fetchone()[0]
-
-        conn.close()
-
-        return {
-            "total": total,
-            "pending": pending,
-            "sent": sent
-        }
+        """获取消息序列统计信息（代理到 MessageSequenceManager）"""
+        return self._sequences.get_message_sequences_stats(message_id)
 
     def cleanup_message_sequences(self, message_id: int):
-        """清理已发送的消息序列（当消息完成时）
-
-        Args:
-            message_id: 消息ID
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            DELETE FROM message_sequence WHERE message_id = ?
-        """, (message_id,))
-
-        deleted_count = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        return deleted_count
-
-        return deleted_count
+        """清理已发送的消息序列（代理到 MessageSequenceManager）"""
+        return self._sequences.cleanup_message_sequences(message_id)
