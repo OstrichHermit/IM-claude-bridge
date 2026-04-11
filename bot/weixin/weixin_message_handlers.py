@@ -176,18 +176,18 @@ class WeixinMessageHandlersMixin:
 
                 # 图片消息（只下载保存，不加入返回列表）
                 elif item_type == MediaType.IMAGE:
+                    image_item = item.get("image_item", {})
                     filepath = await self.media_handler.download_media_item(
                         item,
                         label=f"inbound_{message_id}"
                     )
                     if filepath:
                         filename = Path(filepath).name
-                        # 从文件获取实际大小
-                        import os
-                        file_size = os.path.getsize(filepath)
-                        # 保存文件映射：file_size → filename
-                        self.file_mapping.add_file(filename, file_size)
-                        log.log(f"📎 图片已下载: {filename} ({file_size} bytes)")
+                        # 使用 mid_size 作为映射 key（与引用消息中的 mid_size 一致）
+                        mid_size = image_item.get("mid_size")
+                        if mid_size:
+                            self.file_mapping.add_file(filename, mid_size)
+                        log.log(f"📎 图片已下载: {filename} (mid_size={mid_size})")
                     # 图片消息不返回内容，不发送给 AI
 
                 # 语音消息（不处理）
