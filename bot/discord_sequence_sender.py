@@ -398,6 +398,23 @@ class DiscordSequenceSenderMixin:
                                         channel_type='discord'
                                     )
 
+                        elif item_type == "file":
+                            # 文件发送：从 item_data 获取文件路径列表，发送为 Discord 文件
+                            file_paths = item_data.get("file_paths", []) if item_data else []
+                            valid_files = []
+                            for fp in file_paths:
+                                if os.path.exists(fp):
+                                    valid_files.append(discord.File(fp))
+
+                            if valid_files:
+                                try:
+                                    await channel.send(files=valid_files)
+                                    log.log(f"✅ [消息 #{message_id}] 已发送 {len(valid_files)} 个文件")
+                                except Exception as e:
+                                    log.log(f"❌ [消息 #{message_id}] 文件发送失败: {e}")
+                            else:
+                                log.log(f"⚠️ [消息 #{message_id}] 没有有效的文件可发送")
+
                         # 标记为已发送
                         self.message_queue.mark_sequence_sent(seq_id)
 

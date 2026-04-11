@@ -88,9 +88,6 @@ class DiscordBot(
         # 启动响应检查任务
         self.response_check_task = asyncio.create_task(self.check_responses())
 
-        # 启动文件请求检查任务
-        self.file_request_check_task = asyncio.create_task(self.check_file_requests())
-
         # 启动文件下载检查任务
         self.file_download_check_task = asyncio.create_task(self.check_file_downloads())
 

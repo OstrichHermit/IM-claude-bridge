@@ -49,12 +49,7 @@ def _global_excepthook(exc_type, exc_value, exc_tb):
 
 sys.excepthook = _global_excepthook
 
-from mcp_server.tools import (
-    _send_file_to_discord,
-    _send_multiple_files_to_discord,
-    _send_file_to_weixin,
-    _send_multiple_files_to_weixin
-)
+from mcp_server.tools import _send_files
 from mcp_server.tools.scheduler import (
     add_cron as _add_cron_impl,
     list_cron as _list_cron_impl,
@@ -69,99 +64,42 @@ from mcp_server.tools.time import (
 
 
 # 创建 FastMCP 应用
-mcp = FastMCP('discord-bridge')
+mcp = FastMCP('im-claude-bridge')
 
 
 # ==================== MCP 工具 ====================
 
 @mcp.tool
-async def send_file_to_discord(
-    file_path: str,
-    user_id: Optional[str] = None,
-    channel_id: Optional[str] = None
+async def send_files(
+    file_paths: list
 ) -> str:
     """
-    发送文件到 Discord（支持用户私聊或频道）
+    发送文件到当前对话（支持 Discord 和微信）
 
-    将本地文件发送到指定 Discord 用户的私聊或频道中。
-    通过消息队列与 Discord Bot 通信。
-
-    Args:
-        file_path: 要发送的文件路径（必需）
-        user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
-        channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
-
-    Returns:
-        JSON格式的发送结果，包含成功状态和消息信息
-
-    Examples:
-        # 发送到用户私聊
-        send_file_to_discord(file_path="chart.png", user_id="123456789")
-
-        # 发送到频道
-        send_file_to_discord(file_path="report.png", channel_id="987654321")
-
-    Note:
-        - user_id 和 channel_id 必须指定其中一个
-        - 文件大小限制：普通服务器 25MB，Nitro 500MB
-        - 支持格式：图片、PDF、文本、压缩包等所有 Discord 支持的格式
-        - 发送给私聊用户时，user_id 可以从 Discord 开发者模式获取
-        - 发送到频道时，channel_id 可以从 Discord 开发者模式获取
-        - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
-    """
-    return await _send_file_to_discord(
-        file_path=file_path,
-        user_id=user_id,
-        channel_id=channel_id
-    )
-
-
-@mcp.tool
-async def send_multiple_files_to_discord(
-    file_paths: list,
-    user_id: Optional[str] = None,
-    channel_id: Optional[str] = None
-) -> str:
-    """
-    批量发送多个文件到 Discord（支持用户私聊或频道）
-
-    将多个本地文件批量发送到指定 Discord 用户的私聊或频道中。
-    Discord 限制单次最多发送 10 个文件。
-    通过消息队列与 Discord Bot 通信。
+    将本地文件发送到当前对话的频道或聊天中。
+    通过 SessionWorker 统一消息队列发送，文件会按序与其他消息一起发送。
 
     Args:
-        file_paths: 要发送的文件路径列表（必需），最多 10 个文件
-        user_id: Discord 用户 ID（可选），发送到私聊时使用，格式：数字字符串
-        channel_id: Discord 频道 ID（可选），发送到频道时使用，格式：数字字符串
+        file_paths: 要发送的文件路径列表（必需）
 
     Returns:
-        JSON格式的发送结果，包含成功状态和消息信息
+        JSON格式的发送结果，包含成功状态和文件信息
 
     Examples:
-        # 批量发送图片到用户私聊
-        send_multiple_files_to_discord(
-            file_paths=["chart1.png", "chart2.png", "data.pdf"],
-            user_id="123456789"
-        )
+        # 发送单个文件
+        send_files(file_paths=["chart.png"])
 
-        # 批量发送文件到频道
-        send_multiple_files_to_discord(
-            file_paths=["report1.pdf", "report2.pdf"],
-            channel_id="987654321"
-        )
+        # 发送多个文件
+        send_files(file_paths=["chart1.png", "chart2.png", "report.pdf"])
 
     Note:
-        - user_id 和 channel_id 必须指定其中一个
-        - 最多支持 10 个文件（Discord 限制）
-        - 文件大小限制：普通服务器 25MB，Nitro 500MB（每个文件）
-        - 如果某些文件不存在或发送失败，会跳过这些文件继续发送其他文件
-        - 此工具通过消息队列与 Discord Bot 通信，需要 Bot 正在运行
+        - 文件会发送到当前对话所在的频道或聊天
+        - Discord 限制单次最多发送 10 个文件
+        - 微信限制单次最多发送 9 个文件
+        - 支持格式：图片、PDF、文本、压缩包等
+        - 不存在的文件会被自动跳过
     """
-    return await _send_multiple_files_to_discord(
-        file_paths=file_paths,
-        user_id=user_id,
-        channel_id=channel_id
-    )
+    return await _send_files(file_paths=file_paths)
 
 
 @mcp.tool
@@ -483,94 +421,6 @@ async def get_current_time(timezone: str = "Asia/Taipei") -> str:
     return await _get_current_time_impl(timezone)
 
 
-@mcp.tool
-async def send_file_to_weixin(
-    file_path: str,
-    user_id: Optional[str] = None,
-    channel_id: Optional[str] = None
-) -> str:
-    """
-    发送文件到微信（支持用户私聊或群聊）
-
-    将本地文件发送到指定微信用户的私聊或群聊中。
-    通过消息队列与微信 Bot 通信。
-
-    Args:
-        file_path: 要发送的文件路径（必需）
-        user_id: 微信用户 ID（可选），发送到私聊时使用
-        channel_id: 微信群聊 ID（可选），发送到群聊时使用
-
-    Returns:
-        JSON格式的发送结果，包含成功状态和消息信息
-
-    Examples:
-        # 发送到用户私聊
-        send_file_to_weixin(file_path="chart.png", user_id="wxid_xxx")
-
-        # 发送到群聊
-        send_file_to_weixin(file_path="report.png", channel_id="chatroom_xxx")
-
-    Note:
-        - user_id 和 channel_id 必须指定其中一个
-        - 文件大小限制：微信限制 100MB
-        - 支持格式：图片、PDF、文本、压缩包等所有微信支持的格式
-        - 此工具通过消息队列与微信 Bot 通信，需要 Bot 正在运行
-    """
-    return await _send_file_to_weixin(
-        file_path=file_path,
-        user_id=user_id,
-        channel_id=channel_id
-    )
-
-
-@mcp.tool
-async def send_multiple_files_to_weixin(
-    file_paths: list,
-    user_id: Optional[str] = None,
-    channel_id: Optional[str] = None
-) -> str:
-    """
-    批量发送多个文件到微信（支持用户私聊或群聊）
-
-    将多个本地文件批量发送到指定微信用户的私聊或群聊中。
-    微信限制单次最多发送 9 个文件。
-    通过消息队列与微信 Bot 通信。
-
-    Args:
-        file_paths: 要发送的文件路径列表（必需），最多 9 个文件
-        user_id: 微信用户 ID（可选），发送到私聊时使用
-        channel_id: 微信群聊 ID（可选），发送到群聊时使用
-
-    Returns:
-        JSON格式的发送结果，包含成功状态和消息信息
-
-    Examples:
-        # 批量发送图片到用户私聊
-        send_multiple_files_to_weixin(
-            file_paths=["chart1.png", "chart2.png", "data.pdf"],
-            user_id="wxid_xxx"
-        )
-
-        # 批量发送文件到群聊
-        send_multiple_files_to_weixin(
-            file_paths=["report1.pdf", "report2.pdf"],
-            channel_id="chatroom_xxx"
-        )
-
-    Note:
-        - user_id 和 channel_id 必须指定其中一个
-        - 最多支持 9 个文件（微信限制）
-        - 文件大小限制：微信限制 100MB（每个文件）
-        - 如果某些文件不存在或发送失败，会跳过这些文件继续发送其他文件
-        - 此工具通过消息队列与微信 Bot 通信，需要 Bot 正在运行
-    """
-    return await _send_multiple_files_to_weixin(
-        file_paths=file_paths,
-        user_id=user_id,
-        channel_id=channel_id
-    )
-
-
 # ==================== 启动入口 ====================
 
 def run_server(
@@ -610,21 +460,17 @@ def run_server(
 
     log.log("")
     log.log("  已注册的工具:")
-    log.log("    Discord:")
-    log.log("      1. send_file_to_discord          - 发送文件到 Discord（支持私聊/频道）")
-    log.log("      2. send_multiple_files_to_discord - 批量发送文件到 Discord（最多10个，支持私聊/频道）")
-    log.log("    微信:")
-    log.log("      3. send_file_to_weixin           - 发送文件到微信（支持私聊/群聊）")
-    log.log("      4. send_multiple_files_to_weixin  - 批量发送文件到微信（最多9个，支持私聊/群聊）")
+    log.log("    文件发送:")
+    log.log("      1. send_files                   - 发送文件到当前对话（支持多文件）")
     log.log("    定时任务:")
-    log.log("      5. add_cron                     - 添加定时任务")
-    log.log("      6. list_cron                    - 列出所有定时任务")
-    log.log("      7. delete_cron                  - 删除定时任务")
-    log.log("      8. toggle_cron                  - 启用/禁用定时任务")
-    log.log("      9. get_cron_info                - 获取定时任务详情")
-    log.log("     10. update_cron                  - 更新定时任务")
+    log.log("      2. add_cron                     - 添加定时任务")
+    log.log("      3. list_cron                    - 列出所有定时任务")
+    log.log("      4. delete_cron                  - 删除定时任务")
+    log.log("      5. toggle_cron                  - 启用/禁用定时任务")
+    log.log("      6. get_cron_info                - 获取定时任务详情")
+    log.log("      7. update_cron                  - 更新定时任务")
     log.log("    其他:")
-    log.log("     11. get_current_time             - 获取当前时间（支持多时区）")
+    log.log("      8. get_current_time             - 获取当前时间（支持多时区）")
     log.log("")
     log.log("  架构说明:")
     log.log("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")

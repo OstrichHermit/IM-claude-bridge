@@ -34,14 +34,6 @@ class MessageDirection(Enum):
     TO_DISCORD = "to_discord"  # Claude -> Discord
 
 
-class FileRequestStatus(Enum):
-    """文件请求状态枚举"""
-    PENDING = "pending"        # 等待处理
-    PROCESSING = "processing"  # 正在处理
-    COMPLETED = "completed"    # 已完成
-    FAILED = "failed"          # 失败
-
-
 class FileDownloadRequestStatus(Enum):
     """文件下载请求状态枚举"""
     PENDING = "pending"        # 等待处理
@@ -102,25 +94,6 @@ class Message:
     context_token: Optional[str] = None  # 微信消息上下文 token（用于回复）
     attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
     streaming_response: Optional[str] = None  # 流式响应内容
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-
-    def to_dict(self) -> Dict:
-        """转换为字典"""
-        return asdict(self)
-
-
-@dataclass
-class FileRequest:
-    """文件发送请求数据类"""
-    id: Optional[int]
-    file_paths: List[str]  # 文件路径列表（JSON 数组）
-    user_id: Optional[int]  # 用户 ID
-    channel_id: Optional[int]  # 频道 ID
-    channel_type: str = ChannelType.DISCORD.value  # 频道类型（discord/weixin）
-    status: str = FileRequestStatus.PENDING.value  # 请求状态
-    result: Optional[str] = None  # 执行结果（JSON 格式）
-    error: Optional[str] = None  # 错误信息
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -361,43 +334,6 @@ class MessageQueue:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_created_at
             ON messages(created_at)
-        """)
-
-        # 创建文件请求表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS file_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_paths TEXT NOT NULL,
-                user_id INTEGER,
-                channel_id INTEGER,
-                channel_type TEXT DEFAULT 'discord',
-                status TEXT NOT NULL,
-                result TEXT,
-                error TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 为现有数据库添加 channel_type 字段（如果不存在）
-        try:
-            cursor.execute("""
-                ALTER TABLE file_requests ADD COLUMN channel_type TEXT DEFAULT 'discord'
-            """)
-        except sqlite3.OperationalError:
-            # 字段可能已存在，忽略错误
-            pass
-        conn.commit()
-
-        # 创建文件请求索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_file_requests_status
-            ON file_requests(status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_file_requests_created_at
-            ON file_requests(created_at)
         """)
 
         # 创建文件下载请求表
@@ -1620,185 +1556,6 @@ class MessageQueue:
         cursor.execute("""
             DELETE FROM sessions WHERE last_used_at < ?
         """, (cutoff_time.isoformat(),))
-
-        deleted_count = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        return deleted_count
-
-    def add_file_request(self, file_request: FileRequest) -> int:
-        """添加文件发送请求到队列"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-        file_request.created_at = now
-        file_request.updated_at = now
-
-        cursor.execute("""
-            INSERT INTO file_requests (
-                file_paths, user_id, channel_id, channel_type,
-                status, result, error, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            json.dumps(file_request.file_paths, ensure_ascii=False),
-            file_request.user_id,
-            file_request.channel_id,
-            file_request.channel_type,
-            file_request.status,
-            file_request.result,
-            file_request.error,
-            file_request.created_at,
-            file_request.updated_at
-        ))
-
-        request_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-
-        return request_id
-
-    def get_next_file_request(self, channel_type: Optional[str] = None) -> Optional[FileRequest]:
-        """获取下一个待处理的文件请求
-
-        Args:
-            channel_type: 可选，频道类型过滤（discord/weixin），None 表示获取所有
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        if channel_type:
-            cursor.execute("""
-                SELECT id, file_paths, user_id, channel_id, channel_type,
-                       status, result, error, created_at, updated_at
-                FROM file_requests
-                WHERE status = ? AND channel_type = ?
-                ORDER BY created_at ASC
-                LIMIT 1
-            """, (FileRequestStatus.PENDING.value, channel_type))
-        else:
-            cursor.execute("""
-                SELECT id, file_paths, user_id, channel_id, channel_type,
-                       status, result, error, created_at, updated_at
-                FROM file_requests
-                WHERE status = ?
-                ORDER BY created_at ASC
-                LIMIT 1
-            """, (FileRequestStatus.PENDING.value,))
-
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return FileRequest(
-                id=row[0],
-                file_paths=json.loads(row[1]),
-                user_id=row[2],
-                channel_id=row[3],
-                channel_type=row[4],
-                status=row[5],
-                result=row[6],
-                error=row[7],
-                created_at=row[8],
-                updated_at=row[8]
-            )
-        return None
-
-    def update_file_request_status(self, request_id: int, status: FileRequestStatus,
-                                   result: Optional[str] = None, error: Optional[str] = None):
-        """更新文件请求状态"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        now = datetime.now().isoformat()
-
-        if result is not None:
-            cursor.execute("""
-                UPDATE file_requests
-                SET status = ?, result = ?, updated_at = ?
-                WHERE id = ?
-            """, (status.value, result, now, request_id))
-        elif error is not None:
-            cursor.execute("""
-                UPDATE file_requests
-                SET status = ?, error = ?, updated_at = ?
-                WHERE id = ?
-            """, (status.value, error, now, request_id))
-        else:
-            cursor.execute("""
-                UPDATE file_requests
-                SET status = ?, updated_at = ?
-                WHERE id = ?
-            """, (status.value, now, request_id))
-
-        conn.commit()
-        conn.close()
-
-    def get_file_request(self, request_id: int, timeout: float = 30.0) -> Optional[FileRequest]:
-        """
-        获取文件请求及其结果（等待处理完成）
-
-        Args:
-            request_id: 请求 ID
-            timeout: 超时时间（秒），默认 30 秒
-
-        Returns:
-            完成的文件请求，如果超时或失败则返回 None
-        """
-        import time
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                SELECT id, file_paths, user_id, channel_id,
-                       status, result, error, created_at, updated_at
-                FROM file_requests
-                WHERE id = ?
-            """, (request_id,))
-
-            row = cursor.fetchone()
-            conn.close()
-
-            if row:
-                request = FileRequest(
-                    id=row[0],
-                    file_paths=json.loads(row[1]),
-                    user_id=row[2],
-                    channel_id=row[3],
-                    status=row[4],
-                    result=row[5],
-                    error=row[6],
-                    created_at=row[7],
-                    updated_at=row[8]
-                )
-
-                # 如果已完成或失败，返回结果
-                if request.status in (FileRequestStatus.COMPLETED.value, FileRequestStatus.FAILED.value):
-                    return request
-
-            # 等待一段时间后重试
-            time.sleep(0.5)
-
-        return None
-
-    def cleanup_old_file_requests(self, retention_hours: int = 24):
-        """清理旧的文件请求"""
-        if retention_hours == 0:
-            return
-
-        cutoff_time = datetime.now() - timedelta(hours=retention_hours)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            DELETE FROM file_requests
-            WHERE created_at < ? AND status IN (?, ?)
-        """, (cutoff_time.isoformat(), FileRequestStatus.COMPLETED.value, FileRequestStatus.FAILED.value))
 
         deleted_count = cursor.rowcount
         conn.commit()
