@@ -19,7 +19,7 @@ from datetime import datetime
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bot.weixin_qr_login import WeixinQRLogin, WeixinAccountManager
+from bot.weixin.weixin_qr_login import WeixinQRLogin, WeixinAccountManager
 from shared.config import Config
 
 

@@ -36,7 +36,7 @@ class LoginResult:
         """
         if not self.success:
             return None
-        from bot.weixin_client import WeixinAccount
+        from bot.weixin.weixin_client import WeixinAccount
 
         # 自动生成 user_id
         import zlib
@@ -313,7 +313,7 @@ class WeixinAccountManager:
         Returns:
             List[WeixinAccount]
         """
-        from bot.weixin_client import WeixinAccount
+        from bot.weixin.weixin_client import WeixinAccount
 
         if not self.accounts_file.exists():
             return []

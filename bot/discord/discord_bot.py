@@ -18,10 +18,10 @@ from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.file_mapping import FileMapping
 from shared.cron_scheduler import BotCronScheduler
-from bot.discord_commands import DiscordCommandsMixin
-from bot.discord_message_handlers import DiscordMessageHandlersMixin
-from bot.discord_pollers import DiscordPollersMixin
-from bot.discord_sequence_sender import DiscordSequenceSenderMixin
+from bot.discord.discord_commands import DiscordCommandsMixin
+from bot.discord.discord_message_handlers import DiscordMessageHandlersMixin
+from bot.discord.discord_pollers import DiscordPollersMixin
+from bot.discord.discord_sequence_sender import DiscordSequenceSenderMixin
 
 log = get_logger("DiscordBot", "discord")
 
