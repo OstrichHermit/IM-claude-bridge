@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.config import Config
 from shared.logger import get_logger
-from shared.message_queue import MessageQueue, Message, ChannelType
+from shared.message_queue import MessageQueue, ChannelType
 from shared.context_token_storage import ContextTokenStorage
 from bot.weixin.weixin_client import WeixinClient, WeixinAccount
 from bot.weixin.weixin_qr_login import WeixinAccountManager
@@ -269,39 +269,6 @@ class WeixinBot(
                 except Exception as e:
                     log.log(f"❌ 账号 {account.bot_id} 轮询错误: {e}")
                     await asyncio.sleep(5)
-
-    async def _send_to_weixin(self, client: WeixinClient, msg: Message):
-        """发送消息到微信"""
-        response_text = msg.response or msg.content
-        context_token = self.context_tokens.get(msg.username) or msg.context_token or ""
-
-        if not context_token:
-            raise Exception(f"context_token is required but missing for user {msg.username}")
-
-        # 注意：这里的 msg.username 已经是 "用户名" 了
-        # 直接传给 client，由 client 底层自动还原为微信 ID
-        result = await client.send_message(
-            to_user_id=msg.username,
-            text=response_text,
-            context_token=context_token
-        )
-
-        return result
-
-    async def _send_text_to_weixin(self, client: WeixinClient, msg: Message, text: str):
-        """发送文本内容到微信（用于流式输出）"""
-        context_token = self.context_tokens.get(msg.username) or msg.context_token or ""
-
-        if not context_token:
-            raise Exception(f"context_token is required but missing for user {msg.username}")
-
-        result = await client.send_message(
-            to_user_id=msg.username,
-            text=text,
-            context_token=context_token
-        )
-
-        return result
 
 
 async def main():
