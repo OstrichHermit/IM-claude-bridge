@@ -11,7 +11,7 @@ import sqlite3
 from pathlib import Path
 
 # 添加 shared 目录到 Python 路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.config import Config
 from shared.logger import get_logger
@@ -102,7 +102,7 @@ class DiscordBot(
 
         # ⏰ 启动定时任务调度器
         try:
-            tasks_file = Path(__file__).parent.parent / "shared" / "cron_jobs.json"
+            tasks_file = Path(__file__).parent.parent.parent / "shared" / "cron_jobs.json"
             self.cron_scheduler = BotCronScheduler(str(tasks_file))
             await self.cron_scheduler.start()
 

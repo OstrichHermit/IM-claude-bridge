@@ -10,7 +10,7 @@ python "%~dp0scripts\kill_bridge.py" im_claude_bridge_manager web_server >nul 2>
 
 timeout /t 2 /nobreak >nul
 
-start "" /b "%PYTHONW%" "%~dp0bot\discord_bot.py"
+start "" /b "%PYTHONW%" "%~dp0bot\discord\discord_bot.py"
 timeout /t 1 /nobreak >nul
 start "" /b "%PYTHONW%" "%~dp0bridge\claude_bridge.py"
 timeout /t 1 /nobreak >nul
@@ -19,5 +19,5 @@ start "" /b "%PYTHONW%" "%~dp0mcp_server\server.py"
 for /f "delims=" %%i in ('python -c "import yaml; config = yaml.safe_load(open(r'%~dp0config\config.yaml', encoding='utf-8')); result = config.get('weixin', {}).get('enabled', False); print('1' if result else '0')"') do set WEIXIN_RESULT=%%i
 
 if "%WEIXIN_RESULT%"=="1" (
-    start "" /b "%PYTHONW%" "%~dp0bot\weixin_bot.py"
+    start "" /b "%PYTHONW%" "%~dp0bot\weixin\weixin_bot.py"
 )
