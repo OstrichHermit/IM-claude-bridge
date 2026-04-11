@@ -3,6 +3,7 @@ Session Worker - 每个 session 的独立消息处理器
 负责串行处理同一个 session 的消息
 """
 import asyncio
+import os
 import re
 import subprocess
 import sys
@@ -321,12 +322,122 @@ class SessionWorker:
                 response_lines = []
                 partial_response = ""
                 last_update_time = 0
+                sequence_index = 0
                 aborted = False
 
                 try:
                     # 按块读取
                     buffer = b''
                     chunk_size = 4096
+
+                    def process_json_object(data: dict):
+                        """处理流式输出的单个 JSON 对象（内层函数，直接捕获外层变量）"""
+                        nonlocal ai_started_notified, response_lines, last_update_time, sequence_index
+
+                        if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
+                            self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
+                            if message_id:
+                                self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
+                            if not session_created and session_key:
+                                self.message_queue.mark_session_created(session_key)
+                            ai_started_notified = True
+
+                        elif data.get('type') == 'user' and message_id:
+                            message_data = data.get('message', {})
+                            if message_data.get('content'):
+                                for content_item in message_data['content']:
+                                    if content_item.get('type') == 'tool_result':
+                                        tool_use_id = content_item.get('tool_use_id', '')
+                                        is_error = content_item.get('is_error', False)
+                                        tool_uses = self.message_queue.get_tool_uses(message_id)
+                                        tool_use_index = None
+                                        for i, tool_use in enumerate(tool_uses):
+                                            if tool_use.get('id') == tool_use_id:
+                                                tool_use_index = i
+                                                break
+                                        if tool_use_index is not None:
+                                            self.message_queue.save_tool_use_result(message_id, tool_use_index, not is_error)
+
+                        elif data.get('type') == 'assistant' and data.get('message'):
+                            message_data = data.get('message', {})
+                            if message_data.get('content'):
+                                content_blocks = message_data['content']
+                                sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
+                                need_split = self.config.weixin_message_splitting_enabled if channel_type == 'weixin' else self.config.enable_message_splitting
+
+                                for block_index, content_item in enumerate(content_blocks):
+                                    block_type = content_item.get('type')
+
+                                    if block_type == 'text':
+                                        text = content_item.get('text', '')
+                                        self.message_queue.add_content_block(message_id, block_index, 'text', {'text': text})
+                                        if need_split:
+                                            text_parts = text.split('\n\n')
+                                            for part in text_parts:
+                                                if part.strip():
+                                                    segments = self._parse_sticker_segments(part.strip())
+                                                    for segment in segments:
+                                                        if segment["type"] == "text" and segment["content"].strip():
+                                                            self.message_queue.add_message_sequence(
+                                                                message_id, sequence_index, block_index, 'text',
+                                                                {'text': segment["content"].strip()}
+                                                            )
+                                                            sequence_index += 1
+                                                        elif segment["type"] == "sticker":
+                                                            self.message_queue.add_message_sequence(
+                                                                message_id, sequence_index, block_index, 'sticker',
+                                                                {'file_path': segment["file_path"]}
+                                                            )
+                                                            sequence_index += 1
+                                        else:
+                                            if text.strip():
+                                                segments = self._parse_sticker_segments(text.strip())
+                                                for segment in segments:
+                                                    if segment["type"] == "text" and segment["content"].strip():
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id, sequence_index, block_index, 'text',
+                                                            {'text': segment["content"].strip()}
+                                                        )
+                                                        sequence_index += 1
+                                                    elif segment["type"] == "sticker":
+                                                        self.message_queue.add_message_sequence(
+                                                            message_id, sequence_index, block_index, 'sticker',
+                                                            {'file_path': segment["file_path"]}
+                                                        )
+                                                        sequence_index += 1
+                                        response_lines.append(text)
+                                        partial = '\n'.join(response_lines)
+                                        current = time.time()
+                                        if message_id and current - last_update_time > 0.1:
+                                            self.message_queue.update_streaming_response(message_id, partial)
+                                            last_update_time = current
+
+                                    elif block_type == 'tool_use' and message_id:
+                                        tool_name = content_item.get('name', '')
+                                        tool_input = content_item.get('input', {})
+                                        tool_id = content_item.get('id', '')
+                                        self.message_queue.add_content_block(
+                                            message_id, block_index, 'tool_use',
+                                            {'name': tool_name, 'input': tool_input, 'id': tool_id}
+                                        )
+                                        tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
+                                        self.message_queue.add_message_sequence(
+                                            message_id, sequence_index, block_index, 'tool_use',
+                                            {'name': tool_name, 'input': tool_input, 'id': tool_id},
+                                            tool_use_index=tool_use_index
+                                        )
+                                        sequence_index += 1
+
+                                        # 如果是文件发送工具，额外创建 file 类型的序列条目
+                                        if tool_name in ('send_files', 'mcp__im-claude-bridge__send_files'):
+                                            file_paths = tool_input.get('file_paths', [])
+                                            valid_files = [fp for fp in file_paths if os.path.exists(fp)]
+                                            if valid_files:
+                                                self.message_queue.add_message_sequence(
+                                                    message_id, sequence_index, block_index, 'file',
+                                                    {'file_paths': valid_files}
+                                                )
+                                                sequence_index += 1
 
                     while True:
                         # 检查是否收到中止信号
@@ -365,157 +476,7 @@ class SessionWorker:
 
                             try:
                                 data = json.loads(line_str)
-
-                                if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
-                                    self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
-                                    if message_id:
-                                        self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
-
-                                    if not session_created and session_key:
-                                        self.message_queue.mark_session_created(session_key)
-
-                                    ai_started_notified = True
-
-                                elif data.get('type') == 'user' and message_id:
-                                    # 工具执行结果
-                                    message_data = data.get('message', {})
-                                    if message_data.get('content'):
-                                        for content_item in message_data['content']:
-                                            if content_item.get('type') == 'tool_result':
-                                                tool_use_id = content_item.get('tool_use_id', '')
-                                                result = content_item.get('content', '')
-                                                is_error = content_item.get('is_error', False)
-
-                                                # 查找对应的工具调用索引
-                                                tool_uses = self.message_queue.get_tool_uses(message_id)
-
-                                                tool_use_index = None
-                                                for i, tool_use in enumerate(tool_uses):
-                                                    if tool_use.get('id') == tool_use_id:
-                                                        tool_use_index = i
-                                                        break
-
-                                                # 如果找到了对应的工具调用，保存结果
-                                                if tool_use_index is not None:
-                                                    success = not is_error
-                                                    self.message_queue.save_tool_use_result(message_id, tool_use_index, success)
-
-                                elif data.get('type') == 'assistant' and data.get('message'):
-                                    message_data = data.get('message', {})
-                                    if message_data.get('content'):
-                                        # 记录 content block 顺序并生成消息序列
-                                        content_blocks = message_data['content']
-
-                                        # 从数据库获取当前最大的sequence_index，避免streaming过程中重复
-                                        sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
-
-                                        for block_index, content_item in enumerate(content_blocks):
-                                            block_type = content_item.get('type')
-
-                                            # 根据频道类型选择对应的配置开关
-                                            if channel_type == 'weixin':
-                                                need_split = self.config.weixin_message_splitting_enabled
-                                            else:
-                                                need_split = self.config.enable_message_splitting
-
-                                            if block_type == 'text':
-                                                # 记录 text content block
-                                                text = content_item.get('text', '')
-                                                self.message_queue.add_content_block(
-                                                    message_id,
-                                                    block_index,
-                                                    'text',
-                                                    {'text': text}
-                                                )
-
-                                                # 总是创建消息序列（确保 typing indicator 能正确停止）
-                                                if need_split:
-                                                    # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
-                                                    text_parts = text.split('\n\n')
-                                                    for part in text_parts:
-                                                        if part.strip():
-                                                            # 解析表情包并按位置拆分
-                                                            segments = self._parse_sticker_segments(part.strip())
-                                                            for segment in segments:
-                                                                if segment["type"] == "text" and segment["content"].strip():
-                                                                    self.message_queue.add_message_sequence(
-                                                                        message_id,
-                                                                        sequence_index,
-                                                                        block_index,
-                                                                        'text',
-                                                                        {'text': segment["content"].strip()}
-                                                                    )
-                                                                    sequence_index += 1
-                                                                elif segment["type"] == "sticker":
-                                                                    self.message_queue.add_message_sequence(
-                                                                        message_id,
-                                                                        sequence_index,
-                                                                        block_index,
-                                                                        'sticker',
-                                                                        {'file_path': segment["file_path"]}
-                                                                    )
-                                                                    sequence_index += 1
-                                                else:
-                                                    # 未启用分割：将整个文本作为一个序列项
-                                                    if text.strip():
-                                                        # 解析表情包并按位置拆分
-                                                        segments = self._parse_sticker_segments(text.strip())
-                                                        for segment in segments:
-                                                            if segment["type"] == "text" and segment["content"].strip():
-                                                                self.message_queue.add_message_sequence(
-                                                                    message_id,
-                                                                    sequence_index,
-                                                                    block_index,
-                                                                    'text',
-                                                                    {'text': segment["content"].strip()}
-                                                                )
-                                                                sequence_index += 1
-                                                            elif segment["type"] == "sticker":
-                                                                self.message_queue.add_message_sequence(
-                                                                    message_id,
-                                                                    sequence_index,
-                                                                    block_index,
-                                                                    'sticker',
-                                                                    {'file_path': segment["file_path"]}
-                                                                )
-                                                                sequence_index += 1
-
-                                                # 收集文本用于流式响应
-                                                response_lines.append(text)
-
-                                                partial_response = '\n'.join(response_lines)
-                                                current_time = time.time()
-                                                if message_id and current_time - last_update_time > 0.1:
-                                                    self.message_queue.update_streaming_response(message_id, partial_response)
-                                                    last_update_time = current_time
-
-                                            elif block_type == 'tool_use' and message_id:
-                                                # 记录 tool_use content block
-                                                tool_name = content_item.get('name', '')
-                                                tool_input = content_item.get('input', {})
-                                                tool_id = content_item.get('id', '')
-
-                                                self.message_queue.add_content_block(
-                                                    message_id,
-                                                    block_index,
-                                                    'tool_use',
-                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id}
-                                                )
-
-                                                # 保存工具调用信息到数据库（获取tool_use_index）
-                                                tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
-
-                                                # 总是创建工具调用消息序列（确保 typing indicator 能正确停止）
-                                                self.message_queue.add_message_sequence(
-                                                    message_id,
-                                                    sequence_index,
-                                                    block_index,
-                                                    'tool_use',
-                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
-                                                    tool_use_index=tool_use_index
-                                                )
-                                                sequence_index += 1
-
+                                process_json_object(data)
                             except json.JSONDecodeError:
                                 pass
 
@@ -524,157 +485,7 @@ class SessionWorker:
                             line_str = buffer.decode('utf-8', errors='replace').strip()
                             if line_str:
                                 data = json.loads(line_str)
-
-                                if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
-                                    self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
-                                    if message_id:
-                                        self.message_queue.update_status(message_id, MessageStatus.AI_STARTED)
-
-                                    if not session_created and session_key:
-                                        self.message_queue.mark_session_created(session_key)
-
-                                    ai_started_notified = True
-
-                                elif data.get('type') == 'user' and message_id:
-                                    # 工具执行结果
-                                    message_data = data.get('message', {})
-                                    if message_data.get('content'):
-                                        for content_item in message_data['content']:
-                                            if content_item.get('type') == 'tool_result':
-                                                tool_use_id = content_item.get('tool_use_id', '')
-                                                result = content_item.get('content', '')
-                                                is_error = content_item.get('is_error', False)
-
-                                                # 查找对应的工具调用索引
-                                                tool_uses = self.message_queue.get_tool_uses(message_id)
-
-                                                tool_use_index = None
-                                                for i, tool_use in enumerate(tool_uses):
-                                                    if tool_use.get('id') == tool_use_id:
-                                                        tool_use_index = i
-                                                        break
-
-                                                # 如果找到了对应的工具调用，保存结果
-                                                if tool_use_index is not None:
-                                                    success = not is_error
-                                                    self.message_queue.save_tool_use_result(message_id, tool_use_index, success)
-
-                                elif data.get('type') == 'assistant' and data.get('message'):
-                                    message_data = data.get('message', {})
-                                    if message_data.get('content'):
-                                        # 记录 content block 顺序并生成消息序列
-                                        content_blocks = message_data['content']
-
-                                        # 从数据库获取当前最大的sequence_index，避免streaming过程中重复
-                                        sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
-
-                                        for block_index, content_item in enumerate(content_blocks):
-                                            block_type = content_item.get('type')
-
-                                            # 根据频道类型选择对应的配置开关
-                                            if channel_type == 'weixin':
-                                                need_split = self.config.weixin_message_splitting_enabled
-                                            else:
-                                                need_split = self.config.enable_message_splitting
-
-                                            if block_type == 'text':
-                                                # 记录 text content block
-                                                text = content_item.get('text', '')
-                                                self.message_queue.add_content_block(
-                                                    message_id,
-                                                    block_index,
-                                                    'text',
-                                                    {'text': text}
-                                                )
-
-                                                # 总是创建消息序列（确保 typing indicator 能正确停止）
-                                                if need_split:
-                                                    # 启用分割：按\n\n拆分文本，每个拆分部分作为独立序列项
-                                                    text_parts = text.split('\n\n')
-                                                    for part in text_parts:
-                                                        if part.strip():
-                                                            # 解析表情包并按位置拆分
-                                                            segments = self._parse_sticker_segments(part.strip())
-                                                            for segment in segments:
-                                                                if segment["type"] == "text" and segment["content"].strip():
-                                                                    self.message_queue.add_message_sequence(
-                                                                        message_id,
-                                                                        sequence_index,
-                                                                        block_index,
-                                                                        'text',
-                                                                        {'text': segment["content"].strip()}
-                                                                    )
-                                                                    sequence_index += 1
-                                                                elif segment["type"] == "sticker":
-                                                                    self.message_queue.add_message_sequence(
-                                                                        message_id,
-                                                                        sequence_index,
-                                                                        block_index,
-                                                                        'sticker',
-                                                                        {'file_path': segment["file_path"]}
-                                                                    )
-                                                                    sequence_index += 1
-                                                else:
-                                                    # 未启用分割：将整个文本作为一个序列项
-                                                    if text.strip():
-                                                        # 解析表情包并按位置拆分
-                                                        segments = self._parse_sticker_segments(text.strip())
-                                                        for segment in segments:
-                                                            if segment["type"] == "text" and segment["content"].strip():
-                                                                self.message_queue.add_message_sequence(
-                                                                    message_id,
-                                                                    sequence_index,
-                                                                    block_index,
-                                                                    'text',
-                                                                    {'text': segment["content"].strip()}
-                                                                )
-                                                                sequence_index += 1
-                                                            elif segment["type"] == "sticker":
-                                                                self.message_queue.add_message_sequence(
-                                                                    message_id,
-                                                                    sequence_index,
-                                                                    block_index,
-                                                                    'sticker',
-                                                                    {'file_path': segment["file_path"]}
-                                                                )
-                                                                sequence_index += 1
-
-                                                # 收集文本用于流式响应
-                                                response_lines.append(text)
-
-                                                partial_response = '\n'.join(response_lines)
-                                                current_time = time.time()
-                                                if message_id and current_time - last_update_time > 0.1:
-                                                    self.message_queue.update_streaming_response(message_id, partial_response)
-                                                    last_update_time = current_time
-
-                                            elif block_type == 'tool_use' and message_id:
-                                                # 记录 tool_use content block
-                                                tool_name = content_item.get('name', '')
-                                                tool_input = content_item.get('input', {})
-                                                tool_id = content_item.get('id', '')
-
-                                                self.message_queue.add_content_block(
-                                                    message_id,
-                                                    block_index,
-                                                    'tool_use',
-                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id}
-                                                )
-
-                                                # 保存工具调用信息到数据库（获取tool_use_index）
-                                                tool_use_index = self.message_queue.add_tool_use(message_id, tool_name, tool_input, tool_id)
-
-                                                # 总是创建工具调用消息序列（确保 typing indicator 能正确停止）
-                                                self.message_queue.add_message_sequence(
-                                                    message_id,
-                                                    sequence_index,
-                                                    block_index,
-                                                    'tool_use',
-                                                    {'name': tool_name, 'input': tool_input, 'id': tool_id},
-                                                    tool_use_index=tool_use_index
-                                                )
-                                                sequence_index += 1
-
+                                process_json_object(data)
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
 

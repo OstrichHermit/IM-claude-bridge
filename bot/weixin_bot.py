@@ -186,9 +186,6 @@ class WeixinBot:
             task = asyncio.create_task(self._polling_loop(account))
             self.polling_tasks.append(task)
 
-        # 启动文件请求检查任务
-        self.file_check_task = asyncio.create_task(self._check_file_requests())
-
         # 启动消息序列检查任务
         self.sequence_check_task = asyncio.create_task(self.check_message_sequences())
 
@@ -200,7 +197,6 @@ class WeixinBot:
         # 等待所有任务完成
         await asyncio.gather(
             *self.polling_tasks,
-            self.file_check_task,
             self.sequence_check_task,
             self.tool_result_check_task
         )
@@ -218,8 +214,6 @@ class WeixinBot:
         # 取消所有任务
         for task in self.polling_tasks:
             task.cancel()
-        if hasattr(self, 'file_check_task') and self.file_check_task:
-            self.file_check_task.cancel()
         if hasattr(self, 'sequence_check_task') and self.sequence_check_task:
             self.sequence_check_task.cancel()
         if hasattr(self, 'tool_result_check_task') and self.tool_result_check_task:
@@ -228,7 +222,6 @@ class WeixinBot:
         # 等待任务取消完成
         await asyncio.gather(
             *self.polling_tasks,
-            self.file_check_task if hasattr(self, 'file_check_task') else None,
             self.sequence_check_task if hasattr(self, 'sequence_check_task') else None,
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
             return_exceptions=True
@@ -304,145 +297,6 @@ class WeixinBot:
         )
 
         return result
-
-    async def _check_file_requests(self):
-        """检查并发送文件请求到微信"""
-        from shared.message_queue import FileRequestStatus
-
-        while self.running:
-            try:
-
-                # 获取下一个待处理的微信文件请求
-                file_request = self.message_queue.get_next_file_request(channel_type="weixin")
-
-                if not file_request:
-                    await asyncio.sleep(0.5)
-                    continue
-
-                file_paths = file_request.file_paths
-
-                if file_request.user_id:
-                    user_id_int = file_request.user_id
-
-                try:
-                        if file_request.user_id:
-                            # 优先从配置中查找
-                            target_user = None
-
-                            # 从 userid_to_user 中查找
-                            user_info = self.userid_to_user.get(user_id_int)
-                            if user_info:
-                                target_user = user_info["username"]
-                            else:
-                                # 从运行时映射中查找
-                                target_user = self.id_to_username.get(user_id_int)
-
-                            # 如果还没找到，尝试从消息队列中查找
-                            if not target_user:
-                                from shared.message_queue import Message, MessageDirection
-                                import sqlite3
-
-                                conn = sqlite3.connect(self.message_queue.db_path)
-                                cursor = conn.cursor()
-                                cursor.execute(
-                                    """SELECT username FROM messages
-                                       WHERE discord_user_id = ?
-                                       AND direction = ?
-                                       ORDER BY id DESC LIMIT 1""",
-                                    (user_id_int, MessageDirection.TO_CLAUDE.value)
-                                )
-                                recent_messages = cursor.fetchone()
-                                conn.close()
-
-                                if recent_messages:
-                                    target_user = recent_messages[0]
-                                    self.id_to_username[user_id_int] = target_user
-                                else:
-                                    self.message_queue.update_file_request_status(
-                                        file_request.id,
-                                        FileRequestStatus.FAILED,
-                                        error=f"无法找到用户 ID {user_id_int} 对应的用户名"
-                                    )
-                                    await asyncio.sleep(self.config.queue_send_interval)
-                                    continue
-
-                        elif file_request.channel_id:
-                            target_user = str(file_request.channel_id)
-                        else:
-                            raise Exception("未指定目标用户")
-
-                        # 获取 context_token
-                        context_token = self.context_tokens.get(target_user) or ""
-                        if not context_token:
-                            self.message_queue.update_file_request_status(
-                                file_request.id,
-                                FileRequestStatus.FAILED,
-                                error=f"用户 {target_user} 没有有效的 context_token"
-                            )
-                            await asyncio.sleep(self.config.queue_send_interval)
-                            continue
-
-                        # 根据用户 wxid 选择对应的账号
-                        user_info = self.userid_to_user.get(user_id_int)
-                        if not user_info:
-                            raise Exception(f"未找到用户 ID {user_id_int} 对应的信息")
-
-                        target_wxid = user_info.get("wxid")
-                        if not target_wxid:
-                            raise Exception(f"用户 {user_id_int} 没有 wxid 信息")
-
-                        # 找到 wxid 对应的账号
-                        account = None
-                        for acc in self.accounts:
-                            if acc.wxid == target_wxid:
-                                account = acc
-                                break
-
-                        if not account:
-                            raise Exception(f"未找到 wxid={target_wxid} 对应的账号")
-
-                        client = self.clients.get(account.bot_id)
-
-                        if not client:
-                            raise Exception(f"账号 {account.bot_id} 的客户端未初始化")
-
-                        # 发送每个文件
-                        sent_count = 0
-                        failed_count = 0
-                        for file_path in file_paths:
-                            try:
-                                await self._send_file_to_weixin(client, target_user, file_path, context_token, user_id_int)
-                                sent_count += 1
-                            except Exception as e:
-                                log.log(f"❌ 发送文件 {file_path} 失败: {e}")
-                                failed_count += 1
-
-                        # 只有至少有一个文件成功发送才标记为完成
-                        if sent_count > 0:
-                            self.message_queue.update_file_request_status(file_request.id, FileRequestStatus.COMPLETED)
-                            log.log(f"✅ [文件请求] 成功发送 {sent_count}/{len(file_paths)} 个文件")
-                        else:
-                            self.message_queue.update_file_request_status(
-                                file_request.id,
-                                FileRequestStatus.FAILED,
-                                error=f"所有 {len(file_paths)} 个文件发送失败"
-                            )
-                            log.log(f"❌ [文件请求] 所有文件发送失败")
-
-                except Exception as e:
-                        log.log(f"❌ 处理文件请求失败: {e}")
-                        self.message_queue.update_file_request_status(
-                            file_request.id,
-                            FileRequestStatus.FAILED,
-                            error=str(e)
-                        )
-
-                # 等待一段时间再检查
-                await asyncio.sleep(self.config.queue_send_interval)
-
-            except Exception as e:
-                log.log(f"❌ 检查文件请求错误: {e}")
-                await asyncio.sleep(1)
 
     async def check_message_sequences(self):
         """检查并发送消息序列（统一的发送任务）"""
@@ -739,6 +593,21 @@ class WeixinBot:
                                     is_dm,
                                     'weixin'
                                 )
+
+                        elif item_type == "file":
+                            # 文件发送：从 item_data 获取文件路径列表
+                            file_paths = item_data.get("file_paths", []) if item_data else []
+                            sent_count = 0
+                            for fp in file_paths:
+                                if fp and os.path.exists(fp):
+                                    try:
+                                        await self._send_file_to_weixin(client, to_user_id, fp, context_token, user_id)
+                                        sent_count += 1
+                                        log.log(f"✅ [消息 #{message_id}] 已发送文件: {os.path.basename(fp)}")
+                                    except Exception as e:
+                                        log.log(f"❌ [消息 #{message_id}] 文件发送失败: {fp} - {e}")
+                            if sent_count == 0:
+                                log.log(f"⚠️ [消息 #{message_id}] 没有有效的文件可发送")
 
                         # 标记为已发送
                         self.message_queue.mark_sequence_sent(seq_id)
