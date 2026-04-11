@@ -77,7 +77,7 @@ class WeixinCommandsMixin:
         # 从配置中获取 user_id
         user_id_int = self.username_to_userid.get(from_user_id)
         if user_id_int is None:
-            await self._send_to_weixin(self.clients[account_bot_id], f"⚠️  未找到用户 [{from_user_id}] 的配置", from_user_id, "")
+            await self._send_direct_message(from_user_id, account_bot_id, f"⚠️  未找到用户 [{from_user_id}] 的配置")
             return
 
         # 获取当前会话
@@ -147,7 +147,7 @@ class WeixinCommandsMixin:
         # 从配置中获取 user_id
         user_id_int = self.username_to_userid.get(from_user_id)
         if user_id_int is None:
-            await self._send_to_weixin(self.clients[account_bot_id], f"⚠️  未找到用户 [{from_user_id}] 的配置", from_user_id, "")
+            await self._send_direct_message(from_user_id, account_bot_id, f"⚠️  未找到用户 [{from_user_id}] 的配置")
             return
 
         # 获取会话信息
