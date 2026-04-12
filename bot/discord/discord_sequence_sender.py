@@ -62,8 +62,57 @@ class DiscordSequenceSenderMixin:
                 channel_id = message_info['discord_channel_id']
                 user_id = message_info['discord_user_id']
                 is_dm = message_info['is_dm']
+                username = message_info['username']
 
                 try:
+
+                    # 发现未追踪的消息：立即占位 + 启动 typing indicator（和微信 bot 一致的兜底机制）
+                    if message_id not in self.pending_messages:
+                        log.log(f"📨 [消息 #{message_id}] 已加载未追踪消息: {username}")
+
+                        # 解析频道
+                        channel = None
+                        if is_dm:
+                            user = self.get_user(user_id)
+                            if not user:
+                                try:
+                                    user = await self.fetch_user(user_id)
+                                except (discord.NotFound, Exception):
+                                    pass
+                            if user:
+                                try:
+                                    channel = await user.create_dm()
+                                except (discord.NotFound, discord.Forbidden):
+                                    pass
+                        else:
+                            channel = self.get_channel(channel_id)
+
+                        if channel:
+                            typing_task = asyncio.create_task(
+                                self._maintain_typing_indicator(channel)
+                            )
+                            self.pending_messages[message_id] = {
+                                "channel": channel,
+                                "user_message": None,
+                                "confirmation_msg": None,
+                                "start_time": asyncio.get_event_loop().time(),
+                                "content": "",
+                                "notified_processing": False,
+                                "typing_task": typing_task,
+                                "typing_active": True,
+                            }
+                        else:
+                            # 频道解析失败，仍然占位（避免重复尝试解析）
+                            self.pending_messages[message_id] = {
+                                "channel": None,
+                                "user_message": None,
+                                "confirmation_msg": None,
+                                "start_time": asyncio.get_event_loop().time(),
+                                "content": "",
+                                "notified_processing": False,
+                                "typing_task": None,
+                                "typing_active": False,
+                            }
 
                     # 初始化消息状态
                     if message_id not in message_states:
