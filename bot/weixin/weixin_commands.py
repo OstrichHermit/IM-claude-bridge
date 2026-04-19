@@ -63,12 +63,12 @@ class WeixinCommandsMixin:
         # 未知命令
         else:
             help_text = (
-                "📋 可用命令:\n"
-                "/new - 重置当前会话\n"
-                "/status - 查看会话状态\n"
-                "/abort - 中止当前响应\n"
-                "/stop - 停止服务（需确认）\n"
-                "/restart - 重启服务"
+                "**📋 可用命令**\n"
+                "`/new` - 重置当前会话\n"
+                "`/status` - 查看会话状态\n"
+                "`/abort` - 中止当前响应\n"
+                "`/stop` - 停止服务（需确认）\n"
+                "`/restart` - 重启服务"
             )
             await self._send_direct_message(from_user_id, account_bot_id, help_text)
 
@@ -77,7 +77,7 @@ class WeixinCommandsMixin:
         # 从配置中获取 user_id
         user_id_int = self.username_to_userid.get(from_user_id)
         if user_id_int is None:
-            await self._send_direct_message(from_user_id, account_bot_id, f"⚠️  未找到用户 [{from_user_id}] 的配置")
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
             return
 
         # 获取当前会话
@@ -105,9 +105,9 @@ class WeixinCommandsMixin:
 
         if deleted:
             msg = (
-                f"✅ 会话已重置\n\n"
-                f"旧 Session ID: {old_session_id[:8]}... (已删除)\n"
-                f"新 Session ID: {new_session_id[:8]}...\n\n"
+                f"**✅ 会话已重置**\n\n"
+                f"旧 Session ID: `{old_session_id[:8]}...` (已删除)\n"
+                f"新 Session ID: `{new_session_id[:8]}...`\n\n"
                 f"下次对话将使用新的会话 ID 创建全新上下文。"
             )
             log.log(f"[会话重置] 用户 {from_user_id} 重置了私聊会话")
@@ -115,8 +115,8 @@ class WeixinCommandsMixin:
             log.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
         else:
             msg = (
-                f"⚠️ 没有活跃会话\n\n"
-                f"当前 Session ID: {new_session_id[:8]}..."
+                f"**⚠️ 没有活跃会话**\n\n"
+                f"当前 Session ID: `{new_session_id[:8]}...`"
             )
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
@@ -147,7 +147,7 @@ class WeixinCommandsMixin:
         # 从配置中获取 user_id
         user_id_int = self.username_to_userid.get(from_user_id)
         if user_id_int is None:
-            await self._send_direct_message(from_user_id, account_bot_id, f"⚠️  未找到用户 [{from_user_id}] 的配置")
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
             return
 
         # 获取会话信息
@@ -161,11 +161,13 @@ class WeixinCommandsMixin:
         )
 
         msg = (
-            f"📊 Claude Bridge 状态\n\n"
-            f"会话类型: 私聊会话\n"
-            f"Session ID: {session_id[:8] if session_id else '未生成'}...\n"
-            f"状态: {'已创建 ✅' if session_created else '未创建 ⏳'}\n"
-            f"工作目录: {working_dir}"
+            f"**📊 IM-Claude-Bridge 状态**\n\n"
+            f"**📋 会话类型**\n私聊会话\n\n"
+            f"**{'✅' if session_created else '⏳'} 当前会话**\n"
+            f"Session ID: `{session_id[:8] if session_id else '未生成'}...`\n"
+            f"状态: {'已创建' if session_created else '未创建'}\n\n"
+            f"**📂 工作目录**\n`{working_dir}`\n\n"
+            f"**💬 对话模式**\n不需要 @（私聊）"
         )
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
@@ -187,7 +189,7 @@ class WeixinCommandsMixin:
                 # 确认停止
                 del self.stop_requests[from_user_id]
 
-                msg = "🛑 正在停止服务\n\n服务将在几秒钟后停止。"
+                msg = "**🛑 正在停止服务**\n\n服务将在几秒钟后停止。"
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
                 log.log(f"[停止命令] 用户 {from_user_id} 确认停止服务")
 
@@ -204,11 +206,11 @@ class WeixinCommandsMixin:
                         )
                         log.log(f"✅ 停止命令已执行: stop.bat")
                     else:
-                        msg = f"❌ 文件未找到\n\n找不到 stop.bat 文件"
+                        msg = f"**❌ 文件未找到**\n\n找不到 `stop.bat` 文件"
                         await self._send_direct_message(from_user_id, account_bot_id, msg)
 
                 except Exception as e:
-                    msg = f"❌ 停止失败\n\n错误: {str(e)}"
+                    msg = f"**❌ 停止失败**\n\n错误: `{str(e)}`"
                     await self._send_direct_message(from_user_id, account_bot_id, msg)
                     log.log(f"❌ 执行停止命令时出错: {e}")
 
@@ -218,9 +220,9 @@ class WeixinCommandsMixin:
         self.stop_requests[from_user_id] = current_time
 
         msg = (
-            "⚠️ 确认停止服务\n\n"
-            "此操作将停止 Bot 和 Bridge，服务将不再响应消息。\n"
-            "如需确认，请在 60 秒内再次使用 /stop 命令"
+            "**⚠️ 确认停止服务**\n\n"
+            "此操作将停止 Bot 和 Bridge，服务将不再响应消息。\n\n"
+            "如需确认，请在 **60 秒内** 再次使用 `/stop` 命令"
         )
         await self._send_direct_message(from_user_id, account_bot_id, msg)
 
@@ -229,7 +231,7 @@ class WeixinCommandsMixin:
         import subprocess
         import os
 
-        msg = "🔄 正在重启服务\n\n请稍候，服务将在几秒钟后重新启动。"
+        msg = "**🔄 正在重启服务**\n\n请稍候，服务将在几秒钟后重新启动。"
         await self._send_direct_message(from_user_id, account_bot_id, msg)
         log.log(f"[重启命令] 用户 {from_user_id} 触发了服务重启")
 
@@ -245,11 +247,11 @@ class WeixinCommandsMixin:
                 )
                 log.log(f"✅ 重启命令已执行: restart.bat")
             else:
-                msg = "❌ 文件未找到\n\n找不到 restart.bat 文件"
+                msg = "**❌ 文件未找到**\n\n找不到 `restart.bat` 文件"
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
 
         except Exception as e:
-            msg = f"❌ 重启失败\n\n错误: {str(e)}"
+            msg = f"**❌ 重启失败**\n\n错误: `{str(e)}`"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
             log.log(f"❌ 执行重启命令时出错: {e}")
 
@@ -262,7 +264,7 @@ class WeixinCommandsMixin:
         )
 
         if not processing_messages:
-            msg = "⚠️ 没有正在处理的响应\n\n当前没有正在处理的 Claude 响应。"
+            msg = "**⚠️ 没有正在处理的响应**\n\n当前没有正在处理的 Claude 响应。"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
             return
 
@@ -275,14 +277,14 @@ class WeixinCommandsMixin:
             await self.stop_typing_indicator(message_to_abort.id)
 
             msg = (
-                f"🛑 已请求中止\n\n"
-                f"已请求中止消息 #{message_to_abort.id} 的处理\n"
+                f"**🛑 已请求中止**\n\n"
+                f"已请求中止消息 `#{message_to_abort.id}` 的处理\n"
                 f"Claude 响应将在几秒内停止..."
             )
             await self._send_direct_message(from_user_id, account_bot_id, msg)
             log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}")
         else:
-            msg = "❌ 中止请求失败\n\n中止请求失败，请稍后重试。"
+            msg = "**❌ 中止请求失败**\n\n中止请求失败，请稍后重试。"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
 
     async def _send_direct_message(self, to_user_id: str, account_bot_id: str, text: str):

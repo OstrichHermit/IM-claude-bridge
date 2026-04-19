@@ -123,7 +123,6 @@ class WeixinPollersMixin:
                         tool_input = tool_use.get('input', {})
 
                         # 构建工具调用通知文本
-                        status_emoji = "✅" if success else "❌"
 
                         # 从配置文件读取工具 emoji 映射
                         TOOL_EMOJIS = self.config.tool_emoji_mapping
@@ -142,47 +141,47 @@ class WeixinPollersMixin:
                                 if emoji is None:
                                     emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
 
-                                tool_title = f"{emoji} MCP {mcp_server}"
-                                tool_desc = mcp_tool
+                                tool_title = f"**{emoji} MCP `{mcp_server}`**"
+                                tool_desc = f"`{mcp_tool}`"
                             else:
                                 emoji = TOOL_EMOJIS.get(tool_name, "🔧")
-                                tool_title = f"{emoji} {tool_name}"
+                                tool_title = f"**{emoji} `{tool_name}`**"
                                 tool_desc = "无参数"
                         else:
                             emoji = TOOL_EMOJIS.get(tool_name, "🔧")
-                            tool_title = f"{emoji} {tool_name}"
+                            tool_title = f"**{emoji} `{tool_name}`**"
 
                             # 智能显示参数（为每个工具定制显示内容）
                             tool_desc = None
 
                             if tool_name == 'Read':
-                                tool_desc = tool_input.get('file_path', '无路径')
+                                tool_desc = f"`{tool_input.get('file_path', '无路径')}`"
                             elif tool_name == 'Write':
-                                tool_desc = tool_input.get('file_path', '无路径')
+                                tool_desc = f"`{tool_input.get('file_path', '无路径')}`"
                             elif tool_name == 'Edit':
-                                tool_desc = tool_input.get('file_path', '无路径')
+                                tool_desc = f"`{tool_input.get('file_path', '无路径')}`"
                             elif tool_name == 'Glob':
                                 pattern = tool_input.get('pattern', '无 pattern')
                                 path = tool_input.get('path', '')
                                 if path:
-                                    tool_desc = f"{path}: {pattern}"
+                                    tool_desc = f"`{path}`: `{pattern}`"
                                 else:
-                                    tool_desc = pattern
+                                    tool_desc = f"`{pattern}`"
                             elif tool_name == 'Grep':
-                                tool_desc = tool_input.get('pattern', '无 pattern')
+                                tool_desc = f"`{tool_input.get('pattern', '无 pattern')}`"
                             elif tool_name == 'Bash':
                                 cmd = tool_input.get('command', '')
                                 if len(cmd) > 100:
                                     cmd = cmd[:97] + "..."
-                                tool_desc = cmd
+                                tool_desc = f"`{cmd}`"
                             elif tool_name == 'WebSearch':
-                                tool_desc = tool_input.get('query', '无 query')
+                                tool_desc = f"`{tool_input.get('query', '无 query')}`"
                             elif tool_name == 'Skill':
-                                tool_desc = tool_input.get('skill', '无 skill')
+                                tool_desc = f"`{tool_input.get('skill', '无 skill')}`"
                             elif tool_name == 'Agent':
                                 desc = tool_input.get('description', '')
                                 subagent = tool_input.get('subagent_type', 'general-purpose')
-                                tool_desc = f"{subagent}: {desc}"
+                                tool_desc = f"`{subagent}`: {desc}"
                             elif tool_name == 'EnterPlanMode':
                                 tool_desc = "进入计划模式"
                             elif tool_name == 'ExitPlanMode':
@@ -195,7 +194,7 @@ class WeixinPollersMixin:
                                 tool_desc = "无参数"
 
                         # 构建通知文本（只显示状态 emoji，不显示"成功"/"失败"文字）
-                        notification_text = f"{status_emoji} {tool_title}"
+                        notification_text = tool_title
 
                         if tool_desc and tool_desc != "无参数":
                             notification_text += f"\n{tool_desc}"

@@ -33,10 +33,12 @@ class DiscordCommandsMixin:
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
-                    await interaction.response.send_message(
-                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
-                        ephemeral=True
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.mention}，您没有权限执行此操作。",
+                        color=discord.Color.red()
                     )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
             # 判断当前是频道还是私聊
@@ -69,7 +71,7 @@ class DiscordCommandsMixin:
                 # 判断会话类型用于显示
                 session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name} 的会话"
                 embed = discord.Embed(
-                    title="✅ 会话已重置",
+                    title="会话已重置",
                     description=f"{interaction.user.mention}，{session_type}已成功重置！",
                     color=discord.Color.green()
                 )
@@ -83,7 +85,7 @@ class DiscordCommandsMixin:
                 log.log(f"[会话重置] 已删除 Claude Code 会话文件: {working_dir}")
             else:
                 embed = discord.Embed(
-                    title="⚠️ 没有活跃会话",
+                    title="没有活跃会话",
                     description=f"{interaction.user.mention}，当前没有找到活跃的会话。",
                     color=discord.Color.orange()
                 )
@@ -128,20 +130,20 @@ class DiscordCommandsMixin:
             )
 
             embed = discord.Embed(
-                title="📊 Claude Bridge 状态",
-                color=discord.Color.blue()
+                title="📊 IM-Claude-Bridge 状态",
+                color=discord.Color.green()
             )
 
             # 显示会话类型
             session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name}"
-            embed.add_field(name="会话类型", value=session_type, inline=False)
+            embed.add_field(name="📋 会话类型", value=session_type, inline=False)
 
             # 显示 session ID 和状态（不显示 Key）
             session_info = f"**Session ID**: `{session_id[:8]}...`" if session_id else "`未生成`"
-            session_info += f"\n**状态**: {'已创建 ✅' if session_created else '未创建 ⏳'}"
-            embed.add_field(name="当前会话", value=session_info, inline=False)
+            session_info += f"\n**状态**: {'已创建' if session_created else '未创建'}"
+            embed.add_field(name=f"{'✅' if session_created else '⏳'} 当前会话", value=session_info, inline=False)
 
-            embed.add_field(name="工作目录", value=f"`{working_dir}`", inline=False)
+            embed.add_field(name="📂 工作目录", value=f"`{working_dir}`", inline=False)
 
             if is_dm:
                 mention_status = "不需要 @（私聊）"
@@ -151,7 +153,7 @@ class DiscordCommandsMixin:
                     default=self.config.mention_required
                 )
                 mention_status = "需要 @" if mention_required else "不需要 @"
-            embed.add_field(name="对话模式", value=mention_status, inline=False)
+            embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
 
             await interaction.response.send_message(embed=embed)
 
@@ -161,10 +163,12 @@ class DiscordCommandsMixin:
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
-                    await interaction.response.send_message(
-                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
-                        ephemeral=True
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.mention}，您没有权限执行此操作。",
+                        color=discord.Color.red()
                     )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
             import time
@@ -181,7 +185,7 @@ class DiscordCommandsMixin:
                     del self.stop_requests[user_id]  # 清除记录
 
                     embed = discord.Embed(
-                        title="🛑 正在停止服务",
+                        title="正在停止服务",
                         description=f"{interaction.user.mention}，正在停止 Discord Bridge 服务...",
                         color=discord.Color.orange()
                     )
@@ -194,7 +198,7 @@ class DiscordCommandsMixin:
                     import os
 
                     try:
-                        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                         stop_script = os.path.join(script_dir, 'stop.bat')
 
                         if os.path.exists(stop_script):
@@ -206,7 +210,7 @@ class DiscordCommandsMixin:
                             log.log(f"✅ 停止命令已执行: stop.bat")
                         else:
                             embed = discord.Embed(
-                                title="❌ 文件未找到",
+                                title="文件未找到",
                                 description="找不到 stop.bat 文件",
                                 color=discord.Color.red()
                             )
@@ -215,7 +219,7 @@ class DiscordCommandsMixin:
 
                     except Exception as e:
                         embed = discord.Embed(
-                            title="❌ 停止失败",
+                            title="停止失败",
                             description=f"错误: {str(e)}",
                             color=discord.Color.red()
                         )
@@ -230,7 +234,7 @@ class DiscordCommandsMixin:
             self.stop_requests[user_id] = {"timestamp": current_time}
 
             embed = discord.Embed(
-                title="⚠️ 确认停止服务",
+                title="确认停止服务",
                 description=f"{interaction.user.mention}，确定要停止 Discord Bridge 服务吗？",
                 color=discord.Color.orange()
             )
@@ -246,15 +250,17 @@ class DiscordCommandsMixin:
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
-                    await interaction.response.send_message(
-                        f"❌ {interaction.user.mention}，您没有权限执行此操作。",
-                        ephemeral=True
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.mention}，您没有权限执行此操作。",
+                        color=discord.Color.red()
                     )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
             # 发送确认消息
             embed = discord.Embed(
-                title="🔄 正在重启服务",
+                title="正在重启服务",
                 description=f"{interaction.user.mention}，正在重启 Discord Bridge 服务...",
                 color=discord.Color.blue()
             )
@@ -268,7 +274,7 @@ class DiscordCommandsMixin:
 
             try:
                 # 获取项目根目录
-                script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 restart_script = os.path.join(script_dir, 'restart.bat')
 
                 if os.path.exists(restart_script):
@@ -281,7 +287,7 @@ class DiscordCommandsMixin:
                     log.log(f"✅ 重启命令已执行: restart.bat")
                 else:
                     embed = discord.Embed(
-                        title="❌ 文件未找到",
+                        title="文件未找到",
                         description="找不到 restart.bat 文件",
                         color=discord.Color.red()
                     )
@@ -290,7 +296,7 @@ class DiscordCommandsMixin:
 
             except Exception as e:
                 embed = discord.Embed(
-                    title="❌ 重启失败",
+                    title="重启失败",
                     description=f"错误: {str(e)}",
                     color=discord.Color.red()
                 )
@@ -305,7 +311,12 @@ class DiscordCommandsMixin:
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
-                    await interaction.response.send_message("❌ 您没有权限执行此操作", ephemeral=True)
+                    embed = discord.Embed(
+                        title="无权限",
+                        description="您没有权限执行此操作。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
             # 查找正在处理的消息（匹配发送命令的频道或私聊）
@@ -322,7 +333,7 @@ class DiscordCommandsMixin:
 
             if not processing_messages:
                 embed = discord.Embed(
-                    title="⚠️ 没有正在处理的响应",
+                    title="没有正在处理的响应",
                     description="当前没有正在处理的 Claude 响应。",
                     color=discord.Color.orange()
                 )
@@ -335,7 +346,7 @@ class DiscordCommandsMixin:
 
             if success:
                 embed = discord.Embed(
-                    title="🛑 已请求中止",
+                    title="已请求中止",
                     description=f"已请求中止消息 #{message_to_abort.id} 的处理",
                     color=discord.Color.orange()
                 )
@@ -347,7 +358,7 @@ class DiscordCommandsMixin:
                 self.stop_typing_indicator(message_to_abort.id)
             else:
                 embed = discord.Embed(
-                    title="❌ 中止请求失败",
+                    title="中止请求失败",
                     description="中止请求失败，请稍后重试。",
                     color=discord.Color.red()
                 )
@@ -359,18 +370,22 @@ class DiscordCommandsMixin:
             # 检查用户权限
             if self.config.allowed_users:
                 if interaction.user.id not in self.config.allowed_users:
-                    await interaction.response.send_message(
-                        f"❌ {interaction.user.display_name}，您没有权限执行此操作。",
-                        ephemeral=True
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.display_name}，您没有权限执行此操作。",
+                        color=discord.Color.red()
                     )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
             # 私聊中不可用
             if isinstance(interaction.channel, discord.DMChannel):
-                await interaction.response.send_message(
-                    "❌ 私聊中无需切换，私聊始终不需要 @",
-                    ephemeral=True
+                embed = discord.Embed(
+                    title="不可用",
+                    description="私聊中无需切换，私聊始终不需要 @。",
+                    color=discord.Color.red()
                 )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
             # 切换当前频道的设置
@@ -412,10 +427,12 @@ class DiscordCommandsMixin:
 
             # 检查消息是否有附件
             if not message.attachments:
-                await interaction.response.send_message(
-                    f"❌ {interaction.user.mention}，这条消息没有附件。",
-                    ephemeral=True
+                embed = discord.Embed(
+                    title="无附件",
+                    description=f"{interaction.user.mention}，这条消息没有附件。",
+                    color=discord.Color.red()
                 )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
             # 使用配置的默认下载目录
@@ -426,9 +443,12 @@ class DiscordCommandsMixin:
             failed_files = []
 
             # 先响应，告知用户正在处理
-            await interaction.response.send_message(
-                f"📥 {interaction.user.mention}，正在下载 {len(message.attachments)} 个附件到 `{save_dir}`..."
+            embed = discord.Embed(
+                title="📥 正在下载附件",
+                description=f"{interaction.user.mention}，正在下载 {len(message.attachments)} 个附件到 `{save_dir}`...",
+                color=discord.Color.blue()
             )
+            await interaction.response.send_message(embed=embed)
             # 获取原始消息以便后续编辑
             status_message = await interaction.original_response()
 
@@ -482,28 +502,23 @@ class DiscordCommandsMixin:
                         })
                         log.log(f"[下载命令] ✗ 下载失败: {attachment.filename} - {e}")
 
-            # 构建响应消息
-            response_lines = [
-                f"✅ {interaction.user.mention}，附件下载完成！",
-                f"📁 保存目录: `{save_dir}`",
-                ""
-            ]
+            # 构建响应卡片
+            success = len(failed_files) == 0
+            result_embed = discord.Embed(
+                title="附件下载完成" if success else "部分下载失败",
+                color=discord.Color.green() if success else discord.Color.orange()
+            )
+            result_embed.add_field(name="保存目录", value=f"`{save_dir}`", inline=False)
 
             if downloaded_files:
-                response_lines.append(f"**成功下载 {len(downloaded_files)} 个文件:**")
-                for f in downloaded_files:
-                    size_kb = f['size'] / 1024
-                    response_lines.append(f"  • **{f['filename']}** ({size_kb:.1f} KB)")
-                    response_lines.append(f"    `{f['local_path']}`")
+                file_list = "\n".join(f"• **{f['filename']}** ({f['size']/1024:.1f} KB)" for f in downloaded_files)
+                result_embed.add_field(name=f"成功 {len(downloaded_files)} 个", value=file_list, inline=False)
 
             if failed_files:
-                response_lines.append("")
-                response_lines.append(f"**失败 {len(failed_files)} 个文件:**")
-                for f in failed_files:
-                    response_lines.append(f"  • **{f['filename']}**: {f['error']}")
+                fail_list = "\n".join(f"• **{f['filename']}**: {f['error']}" for f in failed_files)
+                result_embed.add_field(name=f"失败 {len(failed_files)} 个", value=fail_list, inline=False)
 
             # 编辑原消息发送最终结果
-            followup_msg = "\n".join(response_lines)
-            await status_message.edit(content=followup_msg)
+            await status_message.edit(embed=result_embed)
 
             log.log(f"[下载命令] 用户 {interaction.user.display_name} 下载了 {len(downloaded_files)}/{len(message.attachments)} 个文件")
