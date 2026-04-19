@@ -242,21 +242,21 @@ class DiscordSequenceSenderMixin:
                                             emoji = TOOL_EMOJIS.get(mcp_server, "🔧")
 
                                         embed = discord.Embed(
-                                            title=f"🔄 {emoji} {display_title}",
+                                            title=f"{emoji} {display_title}",
                                             color=discord.Color.blue()
                                         )
                                         embed.description = mcp_tool
                                     else:
                                         emoji = TOOL_EMOJIS.get(tool_name, "🔧")
                                         embed = discord.Embed(
-                                            title=f"🔄 {emoji} {tool_name}",
+                                            title=f"{emoji} {tool_name}",
                                             color=discord.Color.blue()
                                         )
                                         embed.description = "无参数"
                                 else:
                                     emoji = TOOL_EMOJIS.get(tool_name, "🔧")
                                     embed = discord.Embed(
-                                        title=f"🔄 {emoji} {tool_name}",
+                                        title=f"{emoji} {tool_name}",
                                         color=discord.Color.blue()
                                     )
 
@@ -346,7 +346,7 @@ class DiscordSequenceSenderMixin:
                                             # 1. 显示已完成任务
                                             completed_tasks = [t for t in todos if t.get('status') == 'completed']
                                             if completed_tasks:
-                                                todo_lines.append("✅ 已完成:")
+                                                todo_lines.append("已完成:")
                                                 for todo in completed_tasks:
                                                     content = todo.get('content', '')
                                                     todo_lines.append(f"  • {content}")
@@ -355,7 +355,7 @@ class DiscordSequenceSenderMixin:
                                             # 2. 显示进行中任务
                                             in_progress_tasks = [t for t in todos if t.get('status') == 'in_progress']
                                             if in_progress_tasks:
-                                                todo_lines.append("🔄 进行中:")
+                                                todo_lines.append("进行中:")
                                                 for todo in in_progress_tasks:
                                                     active_form = todo.get('activeForm', todo.get('content', ''))
                                                     todo_lines.append(f"  • {active_form}")

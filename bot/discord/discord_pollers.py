@@ -422,19 +422,11 @@ class DiscordPollersMixin:
             # 获取原 embed
             embed = message.embeds[0]
 
-            # 更新标题：将 🔄 替换为 ✅ 或 ❌
-            old_title = embed.title
-            if old_title:
-                new_title = old_title.replace('🔄', '✅' if success else '❌', 1)
+            # 更新颜色（成功=绿色，失败=红色）
+            embed.color = discord.Color.green() if success else discord.Color.red()
 
-                # 更新 embed
-                embed.title = new_title
-
-                # 更新颜色
-                embed.color = discord.Color.green() if success else discord.Color.red()
-
-                # 编辑消息
-                await message.edit(embed=embed)
+            # 编辑消息
+            await message.edit(embed=embed)
 
         except Exception as e:
             pass  # 静默失败，避免刷屏
