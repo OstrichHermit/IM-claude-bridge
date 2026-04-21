@@ -44,6 +44,12 @@ class DiscordCommandsMixin:
             # 判断当前是频道还是私聊
             is_dm = isinstance(interaction.channel, discord.DMChannel)
 
+            # 判断是否需要 defer（before_new 等待可能超过 Discord 3 秒限制）
+            deferred = False
+            if self.config.auto_trigger_before_new_enabled and self.config.auto_trigger_before_new_message:
+                await interaction.response.defer()
+                deferred = True
+
             # 获取当前频道/私聊的会话工作目录
             session_key, old_session_id, _, working_dir = self.message_queue.get_or_create_session(
                 self.config.working_directory,
@@ -53,6 +59,40 @@ class DiscordCommandsMixin:
                 use_temp_session=False,
                 temp_session_key=None
             )
+
+            # /new 前自动发送提示词
+            if self.config.auto_trigger_before_new_enabled:
+                preset_msg = self.config.auto_trigger_before_new_message
+                if preset_msg:
+                    auto_msg = Message(
+                        id=None,
+                        direction=MessageDirection.TO_CLAUDE.value,
+                        content=preset_msg,
+                        status=MessageStatus.PENDING.value,
+                        discord_channel_id=interaction.channel.id if not is_dm else 0,
+                        discord_message_id=0,
+                        discord_user_id=interaction.user.id,
+                        username=interaction.user.display_name,
+                        is_dm=is_dm,
+                        tag=MessageTag.DEFAULT.value,
+                        channel_type=ChannelType.DISCORD.value,
+                        attachments=[]
+                    )
+                    auto_message_id = self.message_queue.add_message(auto_msg)
+                    log.log(f"[自动触发] 已发送预设消息 #{auto_message_id} 到当前会话: {preset_msg[:50]}...")
+
+                    # 等待消息处理完成后再删除会话，否则消息会被路由到新会话
+                    max_wait = 120
+                    waited = 0
+                    while waited < max_wait:
+                        await asyncio.sleep(1)
+                        waited += 1
+                        status = self.message_queue.get_message_status(auto_message_id)
+                        if status in (MessageStatus.COMPLETED, MessageStatus.FAILED):
+                            log.log(f"[自动触发] 消息 #{auto_message_id} 已处理完成 (状态: {status.value}, 等待 {waited}秒)")
+                            break
+                    else:
+                        log.log(f"[自动触发] 消息 #{auto_message_id} 等待超时 ({max_wait}秒)，继续执行 /new")
 
             # 删除会话（包括数据库记录和 Claude Code 会话文件）
             deleted = self.message_queue.delete_session(session_key, working_dir)
@@ -67,6 +107,9 @@ class DiscordCommandsMixin:
                 temp_session_key=None
             )
 
+            # 发送结果（deferred 用 followup，否则用 response）
+            send = interaction.followup.send if deferred else interaction.response.send_message
+
             if deleted:
                 # 判断会话类型用于显示
                 session_type = "私聊会话" if is_dm else f"频道 #{interaction.channel.name} 的会话"
@@ -78,7 +121,7 @@ class DiscordCommandsMixin:
                 embed.add_field(name="旧的 Session ID", value=f"`{old_session_id[:8]}...` (已删除)", inline=False)
                 embed.add_field(name="新的 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
                 embed.add_field(name="说明", value="下次对话将使用新的会话 ID 创建全新上下文。", inline=False)
-                await interaction.response.send_message(embed=embed)
+                await send(embed=embed)
                 log.log(f"[会话重置] 用户 {interaction.user.display_name} 重置了 {session_type}")
                 log.log(f"[会话重置] Session Key: {session_key}")
                 log.log(f"[会话重置] 旧 Session ID: {old_session_id} -> 新 Session ID: {new_session_id}")
@@ -90,7 +133,7 @@ class DiscordCommandsMixin:
                     color=discord.Color.orange()
                 )
                 embed.add_field(name="当前 Session ID", value=f"`{new_session_id[:8]}...`", inline=False)
-                await interaction.response.send_message(embed=embed)
+                await send(embed=embed)
 
             # /new 后自动触发对话
             if self.config.auto_trigger_after_new_enabled:

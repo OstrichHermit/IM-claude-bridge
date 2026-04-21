@@ -6,6 +6,7 @@ import os
 import time
 import subprocess
 import sys
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -89,6 +90,40 @@ class WeixinCommandsMixin:
             use_temp_session=False,
             temp_session_key=None
         )
+
+        # /new 前自动发送提示词
+        if self.config.auto_trigger_before_new_enabled:
+            preset_msg = self.config.auto_trigger_before_new_message
+            if preset_msg:
+                auto_msg = Message(
+                    id=None,
+                    direction=MessageDirection.TO_CLAUDE.value,
+                    content=preset_msg,
+                    status=MessageStatus.PENDING.value,
+                    discord_channel_id=0,
+                    discord_message_id=0,
+                    discord_user_id=user_id_int,
+                    username=from_user_id,
+                    is_dm=True,
+                    tag=MessageTag.DEFAULT.value,
+                    channel_type=ChannelType.WEIXIN.value,
+                    attachments=[]
+                )
+                auto_message_id = self.message_queue.add_message(auto_msg)
+                log.log(f"[自动触发] 已发送预设消息 #{auto_message_id} 到当前会话: {preset_msg[:50]}...")
+
+                # 等待消息处理完成后再删除会话，否则消息会被路由到新会话
+                max_wait = 120
+                waited = 0
+                while waited < max_wait:
+                    await asyncio.sleep(1)
+                    waited += 1
+                    status = self.message_queue.get_message_status(auto_message_id)
+                    if status in (MessageStatus.COMPLETED, MessageStatus.FAILED):
+                        log.log(f"[自动触发] 消息 #{auto_message_id} 已处理完成 (状态: {status.value}, 等待 {waited}秒)")
+                        break
+                else:
+                    log.log(f"[自动触发] 消息 #{auto_message_id} 等待超时 ({max_wait}秒)，继续执行 /new")
 
         # 删除会话
         deleted = self.message_queue.delete_session(session_key, working_dir)

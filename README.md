@@ -304,9 +304,13 @@ auto_load:
   enabled: true                        # 首次对话提示词注入（会添加到新会话第一条消息前面）
   prompt_text: "先仔细阅读并遵守 CLAUDE.md..."  # 提示词注入文本
 
+auto_trigger_before_new:
+  enabled: false                       # /new 前自动发送提示词（让 Claude 在旧会话中做最后处理，如保存记忆）
+  prompt_text: "会话即将重置，请保存或更新重要记忆。"  # 自动发送的预设用户消息
+
 auto_trigger_after_new:
   enabled: true                        # /new 后自动触发对话
-  preset_message: "执行会话启动流程。"    # 自动发送的预设用户消息
+  prompt_text: "执行会话启动流程。"      # 自动发送的预设用户消息
 
 typing_indicator:
   max_retries: 3                       # 最大连续重试次数（网络波动时）

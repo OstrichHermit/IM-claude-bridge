@@ -143,6 +143,16 @@ class Config:
         return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
 
     @property
+    def auto_trigger_before_new_enabled(self) -> bool:
+        """获取是否启用 /new 前自动发送提示词"""
+        return self._config.get('auto_trigger_before_new', {}).get('enabled', False)
+
+    @property
+    def auto_trigger_before_new_message(self) -> str:
+        """获取 /new 前自动发送的预设用户消息内容"""
+        return self._config.get('auto_trigger_before_new', {}).get('prompt_text', '')
+
+    @property
     def auto_trigger_after_new_enabled(self) -> bool:
         """获取是否启用 /new 后自动触发对话"""
         return self._config.get('auto_trigger_after_new', {}).get('enabled', False)
@@ -150,7 +160,7 @@ class Config:
     @property
     def auto_trigger_after_new_message(self) -> str:
         """获取 /new 后自动触发的预设用户消息内容"""
-        return self._config.get('auto_trigger_after_new', {}).get('preset_message', '')
+        return self._config.get('auto_trigger_after_new', {}).get('prompt_text', '')
 
     # Typing indicator 配置
 
