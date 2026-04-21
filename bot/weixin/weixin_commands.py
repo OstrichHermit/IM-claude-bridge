@@ -95,6 +95,14 @@ class WeixinCommandsMixin:
         if self.config.auto_trigger_before_new_enabled:
             preset_msg = self.config.auto_trigger_before_new_message
             if preset_msg:
+                # 发送提示消息
+                msg = (
+                    f"**⏳ 正在进行会话收尾工作...**\n\n"
+                    f"**提示词内容**\n{preset_msg}\n\n"
+                    f"**说明**\n处理完成后将自动重置会话。"
+                )
+                await self._send_direct_message(from_user_id, account_bot_id, msg)
+
                 auto_msg = Message(
                     id=None,
                     direction=MessageDirection.TO_CLAUDE.value,
