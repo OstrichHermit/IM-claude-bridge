@@ -76,6 +76,14 @@ auto_load:
   # 加载记忆的提示文本（会添加到消息前面）
   prompt_text: "加载记忆。"
 
+# /new 命令前自动发送提示词配置
+auto_trigger_before_new:
+  # 是否启用 /new 前自动发送提示词
+  # 启用后，/new 命令会先发送一条预设消息给 Claude，再执行会话重置
+  enabled: false
+  # 自动发送的预设用户消息内容
+  prompt_text: "会话即将重置，请保存或更新重要记忆。"
+
 # /new 命令后自动触发对话配置
 auto_trigger_after_new:
   # 是否启用 /new 后自动触发对话
@@ -83,7 +91,7 @@ auto_trigger_after_new:
   enabled: false
   # 自动触发的预设用户消息内容
   # 如果同时启用了 auto_load，auto_load 的提示词会自动拼接在此消息前面
-  preset_message: "执行会话启动流程。"
+  prompt_text: "执行会话启动流程。"
 
 # Typing indicator 配置（"正在输入"状态）
 typing_indicator:

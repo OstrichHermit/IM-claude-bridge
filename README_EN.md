@@ -304,9 +304,13 @@ auto_load:
   enabled: true                        # Auto-inject prompt for first message of a new session
   prompt_text: "Read and follow CLAUDE.md..."  # Prompt text to inject
 
+auto_trigger_before_new:
+  enabled: false                       # Auto-send prompt before /new (lets Claude do final tasks in old session, e.g. save memories)
+  prompt_text: "Session is about to reset, please save important memories."  # Preset user message to send automatically
+
 auto_trigger_after_new:
   enabled: true                        # Auto-trigger conversation after /new command
-  preset_message: "Execute session startup."  # Preset user message to send automatically
+  prompt_text: "Execute session startup."  # Preset user message to send automatically
 
 typing_indicator:
   max_retries: 3                       # Max consecutive retries (network fluctuations)
