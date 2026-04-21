@@ -210,7 +210,7 @@ async def add_cron(
     Args:
         cron_expr: cron 表达式（必需），格式：分 时 日 月 周，例如 "0 9 * * *" 表示每天早上 9 点
         content: 任务内容/提示词（必需），任务执行时发送给 Claude 的内容
-        username: 用户名（必需），任务关联的用户
+        username: 用户名（必需），消息接收方的用户名（即任务执行时要发消息给谁）
         user_id: Discord 用户 ID（可选），私聊模式时使用
         channel_id: Discord 频道 ID（可选），频道模式时使用
         tag: 任务标签（可选），默认 "task"，可选值："task"（任务类）、"reminder"（提醒类）
@@ -393,7 +393,7 @@ async def update_cron(
         job_id: 任务 ID（必需），8 位字符
         cron_expr: cron 表达式（可选），格式：分 时 日 月 周
         content: 任务内容/提示词（可选），任务执行时发送给 Claude 的内容
-        username: 用户名（可选），任务关联的用户
+        username: 用户名（可选），消息接收方的用户名（即任务执行时要发消息给谁）
         user_id: Discord 用户 ID（可选），私聊模式时使用
         channel_id: Discord 频道 ID（可选），频道模式时使用
         tag: 任务标签（可选），如 "task" 或 "reminder"
