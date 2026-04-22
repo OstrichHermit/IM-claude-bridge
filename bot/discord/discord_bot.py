@@ -116,72 +116,73 @@ class DiscordBot(
         """清理上次崩溃时卡住的消息"""
         try:
             conn = sqlite3.connect(self.config.database_path)
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            # 1. 清理 PROCESSING 状态的消息（只清理 Discord 频道的）
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing' AND channel_type = ?", (ChannelType.DISCORD.value,))
-            stuck_count = cursor.fetchone()[0]
+                # 1. 清理 PROCESSING 状态的消息（只清理 Discord 频道的）
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'processing' AND channel_type = ?", (ChannelType.DISCORD.value,))
+                stuck_count = cursor.fetchone()[0]
 
-            if stuck_count > 0:
-                log.log(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
+                if stuck_count > 0:
+                    log.log(f"🧹 发现 {stuck_count} 条卡住的消息（PROCESSING），正在清理...")
 
-                cursor.execute("""
-                               UPDATE messages
-                               SET status = 'completed',
-                                   updated_at = CURRENT_TIMESTAMP,
-                                   error = 'Bot 重置：消息被标记为已完成'
-                               WHERE status = 'processing' AND channel_type = ?
-                               """, (ChannelType.DISCORD.value,))
+                    cursor.execute("""
+                                   UPDATE messages
+                                   SET status = 'completed',
+                                       updated_at = CURRENT_TIMESTAMP,
+                                       error = 'Bot 重置：消息被标记为已完成'
+                                   WHERE status = 'processing' AND channel_type = ?
+                                   """, (ChannelType.DISCORD.value,))
 
-                affected = cursor.rowcount
-                conn.commit()
-                log.log(f"✅ 已清理 {affected} 条卡住的消息")
-            else:
-                log.log("✓ 没有发现 PROCESSING 状态的消息")
+                    affected = cursor.rowcount
+                    conn.commit()
+                    log.log(f"✅ 已清理 {affected} 条卡住的消息")
+                else:
+                    log.log("✓ 没有发现 PROCESSING 状态的消息")
 
-            # 2. 清理 PENDING 状态的消息（避免重启后重复处理，只清理 Discord 频道的）
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending' AND channel_type = ?", (ChannelType.DISCORD.value,))
-            pending_count = cursor.fetchone()[0]
+                # 2. 清理 PENDING 状态的消息（避免重启后重复处理，只清理 Discord 频道的）
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'pending' AND channel_type = ?", (ChannelType.DISCORD.value,))
+                pending_count = cursor.fetchone()[0]
 
-            if pending_count > 0:
-                log.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
+                if pending_count > 0:
+                    log.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
 
-                cursor.execute("""
-                               UPDATE messages
-                               SET status = 'skipped',
-                                   updated_at = CURRENT_TIMESTAMP,
-                                   error = 'Bot 重启：消息被跳过，避免重复处理'
-                               WHERE status = 'pending' AND channel_type = ?
-                               """, (ChannelType.DISCORD.value,))
+                    cursor.execute("""
+                                   UPDATE messages
+                                   SET status = 'skipped',
+                                       updated_at = CURRENT_TIMESTAMP,
+                                       error = 'Bot 重启：消息被跳过，避免重复处理'
+                                   WHERE status = 'pending' AND channel_type = ?
+                                   """, (ChannelType.DISCORD.value,))
 
-                affected = cursor.rowcount
-                conn.commit()
-                log.log(f"✅ 已跳过 {affected} 条旧消息")
-            else:
-                log.log("✓ 没有发现 PENDING 状态的消息")
+                    affected = cursor.rowcount
+                    conn.commit()
+                    log.log(f"✅ 已跳过 {affected} 条旧消息")
+                else:
+                    log.log("✓ 没有发现 PENDING 状态的消息")
 
-            # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知，只清理 Discord 频道的）
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started' AND channel_type = ?", (ChannelType.DISCORD.value,))
-            ai_started_count = cursor.fetchone()[0]
+                # 3. 清理 AI_STARTED 状态的消息（避免重启后重复发送工具调用通知，只清理 Discord 频道的）
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE status = 'ai_started' AND channel_type = ?", (ChannelType.DISCORD.value,))
+                ai_started_count = cursor.fetchone()[0]
 
-            if ai_started_count > 0:
-                log.log(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
+                if ai_started_count > 0:
+                    log.log(f"🧹 发现 {ai_started_count} 条 AI 正在处理的消息（AI_STARTED），正在标记为已完成...")
 
-                cursor.execute("""
-                               UPDATE messages
-                               SET status = 'completed',
-                                   updated_at = CURRENT_TIMESTAMP,
-                                   error = 'Bot 重启：AI 响应被标记为已完成（避免重复发送工具调用通知）'
-                               WHERE status = 'ai_started' AND channel_type = ?
-                               """, (ChannelType.DISCORD.value,))
+                    cursor.execute("""
+                                   UPDATE messages
+                                   SET status = 'completed',
+                                       updated_at = CURRENT_TIMESTAMP,
+                                       error = 'Bot 重置：AI 响应被标记为已完成（避免重复发送工具调用通知）'
+                                   WHERE status = 'ai_started' AND channel_type = ?
+                                   """, (ChannelType.DISCORD.value,))
 
-                affected = cursor.rowcount
-                conn.commit()
-                log.log(f"✅ 已标记 {affected} 条 AI_STARTED 消息为已完成")
-            else:
-                log.log("✓ 没有发现 AI_STARTED 状态的消息")
-
-            conn.close()
+                    affected = cursor.rowcount
+                    conn.commit()
+                    log.log(f"✅ 已标记 {affected} 条 AI_STARTED 消息为已完成")
+                else:
+                    log.log("✓ 没有发现 AI_STARTED 状态的消息")
+            finally:
+                conn.close()
 
         except Exception as e:
             log.log(f"⚠️ 清理卡住消息时出错: {e}")
@@ -299,7 +300,7 @@ class DiscordBot(
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 

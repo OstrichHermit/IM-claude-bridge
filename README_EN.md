@@ -44,7 +44,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 
 **🎯 Service Management**
 - Windows daemon process (auto monitor & restart)
-- Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`, `/mention`)
+- Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`, `/mention`, `/split`)
 - Context menus (right-click message to download attachments)
 - Message queue system (SQLite persistence)
 - **Parallel Bot Architecture** (Discord Bot and WeChat Bot run independently)
@@ -147,6 +147,7 @@ The bot will receive messages and display that it is typing, and then stop when 
 - `/status` - View system status (session ID, database statistics, etc.)
 - `/abort` - Abort current ongoing output
 - `/mention` - Toggle whether @mention is required for the current channel (per-channel setting)
+- `/split` - Toggle newline splitting mode for the current channel (per-channel setting)
 - `/restart` - Restart service
 - `/stop` - Stop service
 

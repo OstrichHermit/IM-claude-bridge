@@ -205,6 +205,16 @@ class DiscordCommandsMixin:
                 mention_status = "需要 @" if mention_required else "不需要 @"
             embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
 
+            if is_dm:
+                split_status = f"{'已开启' if self.config.enable_message_splitting else '已关闭'}（全局配置）"
+            else:
+                splitting = self.message_queue.get_channel_message_splitting(
+                    interaction.channel.id,
+                    default=self.config.enable_message_splitting
+                )
+                split_status = "已开启" if splitting else "已关闭"
+            embed.add_field(name="✂️ 换行分割", value=split_status, inline=False)
+
             await interaction.response.send_message(embed=embed)
 
         @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
@@ -466,6 +476,59 @@ class DiscordCommandsMixin:
 
             await interaction.response.send_message(embed=embed)
             log.log(f"[Mention命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 mention_required 为 {new_value}")
+
+        @self.tree.command(name="split", description="切换当前频道的换行分割模式")
+        async def split_command(interaction: discord.Interaction):
+            """切换当前频道的 message_splitting 设置"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.display_name}，您没有权限执行此操作。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+            # 私聊中不可用
+            if isinstance(interaction.channel, discord.DMChannel):
+                embed = discord.Embed(
+                    title="不可用",
+                    description="私聊中无需切换，请使用全局配置。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+            # 切换当前频道的设置
+            channel_id = interaction.channel.id
+            current = self.message_queue.get_channel_message_splitting(
+                channel_id,
+                default=self.config.enable_message_splitting
+            )
+            new_value = not current
+            self.message_queue.set_channel_message_splitting(channel_id, new_value)
+
+            # 构建响应
+            status_text = "已开启" if new_value else "已关闭"
+            target = f"频道 #{interaction.channel.name}"
+
+            desc = f"{target} 的换行分割已切换为：**{status_text}**"
+            if new_value:
+                note = "回复将按空行分割成多条消息发送"
+            else:
+                note = "回复将作为一条完整消息发送"
+
+            embed = discord.Embed(
+                title="✂️ 换行分割",
+                description=desc,
+                color=discord.Color.green()
+            )
+            embed.add_field(name="说明", value=note, inline=False)
+
+            await interaction.response.send_message(embed=embed)
+            log.log(f"[Split命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 message_splitting 为 {new_value}")
 
         @self.tree.context_menu(name="下载附件")
         async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
