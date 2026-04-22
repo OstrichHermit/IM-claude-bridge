@@ -35,15 +35,17 @@ class DiscordPollersMixin:
                 # 扫描外部插入的消息（is_external=True）
                 # 查询 pending 和 processing 状态，并过滤已追踪的消息（只获取 Discord 频道）
                 conn = sqlite3.connect(self.config.database_path)
-                cursor = conn.cursor()
-                cursor.execute("""
-                               SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
-                               FROM messages
-                               WHERE status IN (?, ?) AND direction = ? AND is_external = 1 AND channel_type = ?
-                               ORDER BY created_at ASC
-                               """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value, ChannelType.DISCORD.value))
-                external_messages = cursor.fetchall()
-                conn.close()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                                   SELECT id, discord_user_id, discord_channel_id, username, content, is_dm
+                                   FROM messages
+                                   WHERE status IN (?, ?) AND direction = ? AND is_external = 1 AND channel_type = ?
+                                   ORDER BY created_at ASC
+                                   """, (MessageStatus.PENDING.value, MessageStatus.PROCESSING.value, MessageDirection.TO_CLAUDE.value, ChannelType.DISCORD.value))
+                    external_messages = cursor.fetchall()
+                finally:
+                    conn.close()
 
                 for msg_info in external_messages:
                     msg_id, user_id, channel_id, username, content, is_dm = msg_info

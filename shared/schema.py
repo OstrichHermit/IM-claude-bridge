@@ -213,6 +213,14 @@ MIGRATIONS: List[Dict] = [
             "ALTER TABLE message_sequence ADD COLUMN tool_use_index INTEGER",
         ]
     },
+
+    # Version 6: channel_settings 表 - 添加 message_splitting
+    {
+        "version": 6,
+        "alterations": [
+            "ALTER TABLE channel_settings ADD COLUMN message_splitting BOOLEAN",
+        ]
+    },
 ]
 
 

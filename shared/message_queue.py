@@ -731,13 +731,15 @@ class MessageQueue:
         """
         import sqlite3
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT mention_required FROM channel_settings WHERE channel_id = ?",
-            (str(channel_id),)
-        )
-        row = cursor.fetchone()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT mention_required FROM channel_settings WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
 
         if row is None:
             return default
@@ -752,17 +754,19 @@ class MessageQueue:
         """
         import sqlite3
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO channel_settings (channel_id, mention_required, updated_at)
-               VALUES (?, ?, CURRENT_TIMESTAMP)
-               ON CONFLICT(channel_id) DO UPDATE SET
-                   mention_required = excluded.mention_required,
-                   updated_at = CURRENT_TIMESTAMP""",
-            (str(channel_id), int(value))
-        )
-        conn.commit()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO channel_settings (channel_id, mention_required, message_splitting, updated_at)
+                   VALUES (?, ?, NULL, CURRENT_TIMESTAMP)
+                   ON CONFLICT(channel_id) DO UPDATE SET
+                       mention_required = excluded.mention_required,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (str(channel_id), int(value))
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def remove_channel_mention_required(self, channel_id: int):
         """删除指定频道的 mention_required 设置（恢复全局默认）
@@ -772,13 +776,84 @@ class MessageQueue:
         """
         import sqlite3
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM channel_settings WHERE channel_id = ?",
-            (str(channel_id),)
-        )
-        conn.commit()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM channel_settings WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # ========== 频道设置管理（message_splitting 按频道独立管理） ==========
+
+    def get_channel_message_splitting(self, channel_id: int, default: bool = True) -> bool:
+        """获取指定频道的 message_splitting 设置
+
+        Args:
+            channel_id: 频道 ID
+            default: 频道未配置时的默认值
+
+        Returns:
+            该频道的 message_splitting 值，未配置时返回 default
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT message_splitting FROM channel_settings WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+
+        if row is None or row[0] is None:
+            return default
+        return bool(row[0])
+
+    def set_channel_message_splitting(self, channel_id: int, value: bool):
+        """设置指定频道的 message_splitting 值
+
+        Args:
+            channel_id: 频道 ID
+            value: 是否启用换行分割
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO channel_settings (channel_id, mention_required, message_splitting, updated_at)
+                   VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(channel_id) DO UPDATE SET
+                       message_splitting = excluded.message_splitting,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (str(channel_id), int(value))
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_channel_message_splitting(self, channel_id: int):
+        """删除指定频道的 message_splitting 设置（恢复全局默认）
+
+        Args:
+            channel_id: 频道 ID
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE channel_settings SET message_splitting = NULL WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def get_or_create_session(
         self,

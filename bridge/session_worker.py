@@ -363,7 +363,15 @@ class SessionWorker:
                             if message_data.get('content'):
                                 content_blocks = message_data['content']
                                 sequence_index = self.message_queue.get_max_sequence_index(message_id) + 1
-                                need_split = self.config.weixin_message_splitting_enabled if channel_type == 'weixin' else self.config.enable_message_splitting
+                                # 查询 per-channel 设置，没有则 fallback 到全局配置默认值
+                                if channel_type == 'weixin':
+                                    need_split = self.message_queue.get_channel_message_splitting(
+                                        channel_id, default=self.config.weixin_message_splitting_enabled
+                                    )
+                                else:
+                                    need_split = self.message_queue.get_channel_message_splitting(
+                                        channel_id, default=self.config.enable_message_splitting
+                                    )
 
                                 for block_index, content_item in enumerate(content_blocks):
                                     block_type = content_item.get('type')
