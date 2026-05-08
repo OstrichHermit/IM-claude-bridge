@@ -27,13 +27,14 @@ class WeixinMessageHandlersMixin:
             message_type = msg.get("message_type")  # 1 = USER, 2 = BOT
             context_token = msg.get("context_token")
 
+            # 更新 context_token 缓存（自动持久化到磁盘）
+            # 无论消息类型，都保存最新的 context_token
+            if context_token:
+                self.context_tokens.set(from_user_id, context_token)
+
             # 只处理用户消息 (message_type = 1)
             if message_type != 1:
                 return
-
-            # 更新 context_token 缓存（自动持久化到磁盘）
-            if context_token:
-                self.context_tokens.set(from_user_id, context_token)
 
             # 从配置中获取 user_id
             user_id_int = self.username_to_userid.get(from_user_id)
