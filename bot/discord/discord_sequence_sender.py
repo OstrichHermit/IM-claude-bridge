@@ -222,7 +222,7 @@ class DiscordSequenceSenderMixin:
                             should_skip = False
                             if tool_name == "Bash" and tool_input.get("command"):
                                 command = tool_input["command"]
-                                management_keywords = ["restart.bat", "im_claude_bridge_manager.py", "restart", "shutdown", "stop"]
+                                management_keywords = ["restart.bat", "stop.bat", "start.bat", "shutdown.bat", "im_claude_bridge_manager.py"]
                                 if any(keyword in command.lower() for keyword in management_keywords):
                                     should_skip = True
 
