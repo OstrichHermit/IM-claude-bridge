@@ -9,6 +9,7 @@ import asyncio
 import sys
 import sqlite3
 from pathlib import Path
+from typing import Dict, List
 
 # 添加 shared 目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -57,6 +58,7 @@ class DiscordBot(
         self.message_request_check_task = None  # 新增：消息发送请求检查任务
         self.pending_messages = {}  # 追踪待处理的消息 {message_id: {"channel": channel, "user_msg": message, "start_time": time}}
         self.stop_requests = {}  # 追踪停止请求 {user_id: {"timestamp": time}}
+        self.pending_attachments: Dict[int, list] = {}  # 文件缓存：{cache_key: [AttachmentInfo, ...]}
 
         # ⏰ 定时任务调度器
         self.cron_scheduler = None
