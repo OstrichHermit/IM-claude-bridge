@@ -81,7 +81,15 @@ class WeixinMessageHandlersMixin:
                 return
 
             # 取出该用户的全部缓存附件
+            # 注意：引用消息（ref_files 非空）与文件缓存互斥 ——
+            # 有引用就只发引用的文件（对齐 Discord 那边的独立路由），
+            # 同时清空缓存避免污染下一条文字消息
             cached_attachments = self.pending_attachments.pop(from_user_id, [])
+            if ref_files:
+                if cached_attachments:
+                    log.log(f"[附件缓存] 用户 {from_user_id} 本条消息含引用，丢弃 {len(cached_attachments)} 个缓存附件")
+                cached_attachments = []
+
             if cached_attachments:
                 log.log(f"[附件缓存] 用户 {from_user_id} 文字消息触发发送，合并 {len(cached_attachments)} 个缓存附件，已清空缓存")
 
@@ -176,7 +184,7 @@ class WeixinMessageHandlersMixin:
             (文本内容, 引用的文件列表, 本次下载的媒体文件列表)
         """
         try:
-            # 获取消息 ID，用于文件命名
+            # 获取消息 ID，用于文件命名和引用消息映射
             message_id = msg.get("message_id", "")
             item_list = msg.get("item_list", [])
             if not item_list:
@@ -204,18 +212,15 @@ class WeixinMessageHandlersMixin:
 
                 # 图片消息（只下载保存，不加入返回列表）
                 elif item_type == MediaType.IMAGE:
-                    image_item = item.get("image_item", {})
                     filepath = await self.media_handler.download_media_item(
                         item,
                         label=f"inbound_{message_id}"
                     )
                     if filepath:
                         filename = Path(filepath).name
-                        # 使用 mid_size 作为映射 key（与引用消息中的 mid_size 一致）
-                        mid_size = image_item.get("mid_size")
-                        if mid_size:
-                            self.file_mapping.add_file(filename, mid_size)
-                        log.log(f"📎 图片已下载: {filename} (mid_size={mid_size})")
+                        # 用入站 message_id 作为映射 key（微信引用消息协议只回传 msg_id）
+                        self.file_mapping.add_file(str(message_id), filename)
+                        log.log(f"📎 图片已下载: {filename} (message_id={message_id})")
                         downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 图片消息不返回内容，不发送给 AI
 
@@ -231,12 +236,9 @@ class WeixinMessageHandlersMixin:
                     )
                     if filepath:
                         filename = Path(filepath).name
-                        # 从文件获取实际大小
-                        import os
-                        file_size = os.path.getsize(filepath)
-                        # 保存文件映射：file_size → filename
-                        self.file_mapping.add_file(filename, file_size)
-                        log.log(f"📎 文件已下载: {filename} ({file_size} bytes)")
+                        # 用入站 message_id 作为映射 key
+                        self.file_mapping.add_file(str(message_id), filename)
+                        log.log(f"📎 文件已下载: {filename} (message_id={message_id})")
                         downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 文件消息不返回内容，不发送给 AI
 
@@ -248,12 +250,9 @@ class WeixinMessageHandlersMixin:
                     )
                     if filepath:
                         filename = Path(filepath).name
-                        # 从文件获取实际大小
-                        import os
-                        file_size = os.path.getsize(filepath)
-                        # 保存文件映射：file_size → filename
-                        self.file_mapping.add_file(filename, file_size)
-                        log.log(f"📎 视频已下载: {filename} ({file_size} bytes)")
+                        # 用入站 message_id 作为映射 key
+                        self.file_mapping.add_file(str(message_id), filename)
+                        log.log(f"📎 视频已下载: {filename} (message_id={message_id})")
                         downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 视频消息不返回内容，不发送给 AI
 
@@ -270,6 +269,9 @@ class WeixinMessageHandlersMixin:
     def _parse_ref_message_and_lookup(self, ref_msg: dict, from_user_id: str) -> tuple[str, list[dict]]:
         """解析引用消息并从映射表中查找文件
 
+        微信协议层引用消息的 ref_msg.message_item 只带 type=0 占位符和原消息 msg_id，
+        没有任何 image/file 元数据。所以直接按 msg_id 查本地文件，再根据扩展名构造描述。
+
         Returns:
             (引用文本, 找到的文件列表)
         """
@@ -281,66 +283,29 @@ class WeixinMessageHandlersMixin:
         if title:
             parts.append(title)
 
-        # 添加引用的消息内容
-        ref_item = ref_msg.get("message_item")
-        if ref_item:
-            ref_type = ref_item.get("type")
+        ref_item = ref_msg.get("message_item") or {}
+        ref_msg_id = ref_item.get("msg_id")
 
-            if ref_type == MediaType.TEXT:  # 文本
-                text = ref_item.get("text_item", {}).get("text", "")
-                if text:
-                    parts.append(text)
+        if ref_msg_id:
+            local_filename = self.file_mapping.get_filename_by_msg_id(ref_msg_id)
+            if local_filename:
+                # 根据扩展名判断类型，构造人类可读描述
+                ext = Path(local_filename).suffix.lower()
+                if ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"):
+                    parts.append(f"[引用图片: {local_filename}]")
+                elif ext in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+                    parts.append(f"[引用视频: {local_filename}]")
+                else:
+                    parts.append(f"[引用文件: {local_filename}]")
 
-            elif ref_type == MediaType.FILE:  # 文件
-                file_item = ref_item.get("file_item", {})
-                filename = file_item.get("filename", "文件")
-                parts.append(f"[文件: {filename}]")
-
-                # 使用文件大小匹配文件
-                file_size = file_item.get("filesize")
-                if file_size:
-                    local_filename = self.file_mapping.get_filename_by_size(file_size)
-                    if local_filename:
-                        # 构造完整文件路径
-                        file_path = str(self.media_handler.save_dir / local_filename)
-                        found_files.append({
-                            "message_id": str(file_size),
-                            "file_path": file_path,
-                            "filename": local_filename,
-                        })
-
-            elif ref_type == MediaType.IMAGE:  # 图片
-                parts.append("[图片]")
-                # 使用文件大小匹配文件
-                image_item = ref_item.get("image_item", {})
-                file_size = image_item.get("mid_size")
-                if file_size:
-                    local_filename = self.file_mapping.get_filename_by_size(file_size)
-                    if local_filename:
-                        # 构造完整文件路径
-                        file_path = str(self.media_handler.save_dir / local_filename)
-                        found_files.append({
-                            "message_id": str(file_size),
-                            "file_path": file_path,
-                            "filename": local_filename,
-                        })
-
-            elif ref_type == MediaType.VIDEO:  # 视频
-                parts.append("[视频]")
-                # 使用文件大小匹配文件
-                video_item = ref_item.get("video_item", {})
-                file_size = video_item.get("video_size")
-                if file_size:
-                    local_filename = self.file_mapping.get_filename_by_size(file_size)
-                    if local_filename:
-                        # 构造完整文件路径
-                        file_path = str(self.media_handler.save_dir / local_filename)
-                        found_files.append({
-                            "message_id": str(file_size),
-                            "file_path": file_path,
-                            "filename": local_filename,
-                        })
-        else:
-            pass
+                file_path = str(self.media_handler.save_dir / local_filename)
+                found_files.append({
+                    "message_id": str(ref_msg_id),
+                    "file_path": file_path,
+                    "filename": local_filename,
+                })
+                log.log(f"📎 引用消息匹配成功: msg_id={ref_msg_id} → {local_filename}")
+            else:
+                log.log(f"⚠️ 引用消息未匹配到本地文件: msg_id={ref_msg_id}")
 
         return " | ".join(parts), found_files
