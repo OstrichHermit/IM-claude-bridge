@@ -288,48 +288,48 @@ class WeixinMediaHandler:
 
 
 class WeixinFileMapping:
-    """微信文件映射表：file_size → filename"""
+    """微信文件映射表：message_id → filename
+
+    微信引用消息协议层只回传原消息的 msg_id（不带 image/file 元数据），
+    所以用入站消息的 message_id 做 key，引用时按 msg_id 直接查。
+    """
 
     def __init__(self, mapping_file: str):
         self.mapping_file = Path(mapping_file)
         self.mapping_file.parent.mkdir(parents=True, exist_ok=True)
-        self.mapping: Dict[int, str] = {}  # file_size → filename
+        self.mapping: Dict[str, str] = {}  # message_id → filename
 
         self._load()
 
     def _load(self):
-        """从文件加载映射表"""
+        """从文件加载映射表
+
+        兼容历史格式：
+        - 旧 file_size → filename（int key）：直接丢弃，协议层已无引用入口
+        - 中间格式 message_id → {filename, file_size}：提取 filename
+        - 当前格式 str message_id → str filename：直接加载
+        """
         if self.mapping_file.exists():
             try:
                 with open(self.mapping_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                # 迁移旧格式到新格式
-                new_mapping = {}
+                new_mapping: Dict[str, str] = {}
+                dropped_legacy = 0
                 for key, value in data.items():
                     if isinstance(value, str):
-                        # 可能是旧格式：message_id → filename，或者已经是 file_size → filename
-                        try:
-                            # 尝试将 key 解析为整数（file_size）
-                            file_size = int(key)
-                            new_mapping[file_size] = value
-                        except ValueError:
-                            # key 不是整数，跳过
-                            pass
+                        # 字符串 key 才视为 message_id（兼容历史 int→str）
+                        new_mapping[str(key)] = value
                     elif isinstance(value, dict):
-                        # 中间格式：message_id → {filename, file_size, ...}
                         filename = value.get("filename")
-                        file_size = value.get("file_size")
-                        if filename and file_size:
-                            new_mapping[file_size] = filename
-
-                if new_mapping:
-                    self.mapping = new_mapping
+                        if filename and key:
+                            new_mapping[str(key)] = filename
+                    else:
+                        dropped_legacy += 1
+                self.mapping = new_mapping
+                if dropped_legacy:
                     self._save()
-                    log.log(f"📋 迁移了旧格式映射表到新格式")
-                else:
-                    self.mapping = {int(k): v for k, v in data.items() if isinstance(v, str)}
-
-                log.log(f"📋 加载了 {len(self.mapping)} 条文件映射")
+                log.log(f"📋 加载了 {len(self.mapping)} 条文件映射"
+                        + (f"，丢弃 {dropped_legacy} 条无效记录" if dropped_legacy else ""))
             except Exception as e:
                 log.log(f"⚠️ 加载文件映射失败: {e}")
                 self.mapping = {}
@@ -342,24 +342,25 @@ class WeixinFileMapping:
         except Exception as e:
             log.log(f"⚠️ 保存文件映射失败: {e}")
 
-    def add_file(self, filename: str, file_size: int) -> None:
+    def add_file(self, message_id: str, filename: str) -> None:
         """添加文件映射
 
         Args:
+            message_id: 微信入站消息 ID（来自 msg["message_id"]）
             filename: 本地保存的文件名
-            file_size: 文件大小（字节，作为查找键）
         """
-        self.mapping[file_size] = filename
+        key = str(message_id)
+        self.mapping[key] = filename
         self._save()
-        log.log(f"📋 添加文件映射: {file_size} → {filename}")
+        log.log(f"📋 添加文件映射: {key} → {filename}")
 
-    def get_filename_by_size(self, file_size: int) -> Optional[str]:
-        """根据文件大小获取本地文件名
+    def get_filename_by_msg_id(self, message_id: str) -> Optional[str]:
+        """根据入站消息 ID 获取本地文件名
 
         Args:
-            file_size: 文件大小（字节）
+            message_id: 微信入站消息 ID
 
         Returns:
             本地文件名，不存在返回 None
         """
-        return self.mapping.get(file_size)
+        return self.mapping.get(str(message_id))
