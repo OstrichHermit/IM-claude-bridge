@@ -69,6 +69,9 @@ class WeixinBot(
         # Typing ticket 缓存（用户 -> typing_ticket）
         self.typing_tickets: Dict[str, str] = {}
 
+        # 文件缓存：{from_user_id: [AttachmentInfo, ...]}
+        self.pending_attachments: Dict[str, list] = {}
+
         # 账号管理
         self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
         self._load_accounts()

@@ -43,10 +43,30 @@ class WeixinMessageHandlersMixin:
 
             self.id_to_username[user_id_int] = from_user_id
 
-            # 解析消息内容（获取文本和引用的文件）
-            content, ref_files = await self._parse_message_content(msg)
+            # 解析消息内容（获取文本、引用的文件、本次下载的媒体文件）
+            content, ref_files, downloaded_files = await self._parse_message_content(msg)
 
-            # 如果没有内容（只有文件消息），不发送给 AI
+            # 把下载的媒体文件加入缓存（构建 AttachmentInfo 列表）
+            if downloaded_files:
+                if from_user_id not in self.pending_attachments:
+                    self.pending_attachments[from_user_id] = []
+                for f in downloaded_files:
+                    file_size = 0
+                    try:
+                        file_size = os.path.getsize(f["file_path"])
+                    except Exception:
+                        pass
+                    self.pending_attachments[from_user_id].append(AttachmentInfo(
+                        id=0,  # 微信无附件 ID 概念，用 0 占位
+                        filename=f["filename"],
+                        size=file_size,
+                        url=f"file://{f['file_path']}",
+                        local_filename=f["filename"],
+                        description=None
+                    ))
+                log.log(f"[附件缓存] 用户 {from_user_id} 新增 {len(downloaded_files)} 个媒体到缓存，当前共 {len(self.pending_attachments[from_user_id])} 个")
+
+            # 如果没有内容（只有文件消息），不发送给 AI（但媒体已加入缓存）
             if not content:
                 return
 
@@ -60,27 +80,33 @@ class WeixinMessageHandlersMixin:
                 await self._handle_command(from_user_id, content_stripped, account_id)
                 return
 
+            # 取出该用户的全部缓存附件
+            cached_attachments = self.pending_attachments.pop(from_user_id, [])
+            if cached_attachments:
+                log.log(f"[附件缓存] 用户 {from_user_id} 文字消息触发发送，合并 {len(cached_attachments)} 个缓存附件，已清空缓存")
+
             # 构造消息队列消息
-            # 将引用的文件信息转换为 AttachmentInfo 对象
+            # 合并 ref_files（引用消息附件）和 cached_attachments（缓存附件）
             attachments = None
-            if ref_files:
+            if ref_files or cached_attachments:
                 attachments = []
+                # 引用消息附件（保持原逻辑）
                 for f in ref_files:
-                    # 获取文件大小
                     file_size = 0
                     try:
                         file_size = os.path.getsize(f["file_path"])
                     except Exception:
                         pass
-
                     attachments.append(AttachmentInfo(
-                        id=int(f.get("message_id", 0)),  # 使用 message_id 作为 ID
-                        filename=f["filename"],  # 文件名
-                        size=file_size,  # 文件大小
-                        url=f"file://{f['file_path']}",  # 本地文件路径作为 URL
-                        local_filename=f["filename"],  # 本地文件名
-                        description=None  # 无描述
+                        id=int(f.get("message_id", 0)),
+                        filename=f["filename"],
+                        size=file_size,
+                        url=f"file://{f['file_path']}",
+                        local_filename=f["filename"],
+                        description=None
                     ))
+                # 缓存附件
+                attachments.extend(cached_attachments)
 
             queue_msg = Message(
                 id=None,
@@ -143,21 +169,22 @@ class WeixinMessageHandlersMixin:
         except Exception as e:
             log.log(f"❌ 处理消息失败: {e}")
 
-    async def _parse_message_content(self, msg: dict) -> tuple[str | None, list[dict]]:
+    async def _parse_message_content(self, msg: dict) -> tuple[str | None, list[dict], list[dict]]:
         """解析消息内容
 
         Returns:
-            (文本内容, 引用的文件列表)
+            (文本内容, 引用的文件列表, 本次下载的媒体文件列表)
         """
         try:
             # 获取消息 ID，用于文件命名
             message_id = msg.get("message_id", "")
             item_list = msg.get("item_list", [])
             if not item_list:
-                return None, []
+                return None, [], []
 
             content_parts = []
             ref_files = []
+            downloaded_files = []
 
             for item in item_list:
                 item_type = item.get("type")
@@ -189,6 +216,7 @@ class WeixinMessageHandlersMixin:
                         if mid_size:
                             self.file_mapping.add_file(filename, mid_size)
                         log.log(f"📎 图片已下载: {filename} (mid_size={mid_size})")
+                        downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 图片消息不返回内容，不发送给 AI
 
                 # 语音消息（不处理）
@@ -209,6 +237,7 @@ class WeixinMessageHandlersMixin:
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
                         log.log(f"📎 文件已下载: {filename} ({file_size} bytes)")
+                        downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 文件消息不返回内容，不发送给 AI
 
                 # 视频消息（只下载保存，不加入返回列表）
@@ -225,17 +254,18 @@ class WeixinMessageHandlersMixin:
                         # 保存文件映射：file_size → filename
                         self.file_mapping.add_file(filename, file_size)
                         log.log(f"📎 视频已下载: {filename} ({file_size} bytes)")
+                        downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 视频消息不返回内容，不发送给 AI
 
             # 如果只有媒体文件没有文字，返回 None（不发送给 AI）
             if not content_parts or all(not part.strip() for part in content_parts):
-                return None, []
+                return None, [], downloaded_files
 
-            return "\n".join(content_parts), ref_files
+            return "\n".join(content_parts), ref_files, downloaded_files
 
         except Exception as e:
             log.log(f"❌ 解析消息内容失败: {e}")
-            return None, []
+            return None, [], []
 
     def _parse_ref_message_and_lookup(self, ref_msg: dict, from_user_id: str) -> tuple[str, list[dict]]:
         """解析引用消息并从映射表中查找文件

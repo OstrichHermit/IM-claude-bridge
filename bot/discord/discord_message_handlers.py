@@ -113,6 +113,23 @@ class DiscordMessageHandlersMixin:
             # 检测是否为私聊消息
             is_dm = isinstance(message.channel, discord.DMChannel)
 
+            # 计算缓存 key（私聊用 user_id，频道用 channel_id）
+            cache_key = message.author.id if is_dm else message.channel.id
+
+            # 文件缓存逻辑：
+            # - 纯附件消息（无文字）→ 加入缓存，不创建 Message
+            # - 文字消息（无论有无附件）→ 把新附件加入缓存，然后取出全部缓存合并到本次 Message
+            if attachment_infos:
+                if cache_key not in self.pending_attachments:
+                    self.pending_attachments[cache_key] = []
+                self.pending_attachments[cache_key].extend(attachment_infos)
+                log.log(f"[附件缓存] cache_key={cache_key} 新增 {len(attachment_infos)} 个附件，当前共 {len(self.pending_attachments[cache_key])} 个")
+
+            # 纯附件消息：附件已加入缓存，不触发 AI
+            if not content:
+                log.log(f"[消息缓存] 用户 {message.author.display_name} 发送了纯附件，已缓存不发 AI")
+                return
+
             # 获取会话信息，检查是否为首次对话
             session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
                 self.config.working_directory,
@@ -122,6 +139,13 @@ class DiscordMessageHandlersMixin:
                 use_temp_session=False,
                 temp_session_key=None
             )
+
+            # 文字消息：取出该 cache_key 下全部缓存附件，合并到本次 Message
+            cached_attachments = self.pending_attachments.pop(cache_key, [])
+            final_attachments = cached_attachments if cached_attachments else None
+
+            if cached_attachments:
+                log.log(f"[附件缓存] cache_key={cache_key} 文字消息触发发送，合并 {len(cached_attachments)} 个缓存附件，已清空缓存")
 
             # 创建消息对象（默认标签）
             msg = Message(
@@ -136,14 +160,15 @@ class DiscordMessageHandlersMixin:
                 is_dm=is_dm,
                 tag=MessageTag.DEFAULT.value,
                 channel_type=ChannelType.DISCORD.value,  # Discord 频道
-                attachments=attachment_infos  # 传入附件信息
+                attachments=final_attachments  # 传入合并后的附件信息
             )
 
             # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
             message_id = self.message_queue.add_message(msg)
 
             # 打印日志，包含附件信息
-            attach_info = f" (+{len(attachment_infos)}个附件)" if attachment_infos else ""
+            total_files = len(final_attachments) if final_attachments else 0
+            attach_info = f" (+{total_files}个附件)" if total_files else ""
             log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的消息: {content[:50] if content else '(仅附件)'}...{attach_info} ({'私聊' if is_dm else '频道'})")
 
             # 不发送确认消息，直接启动 typing indicator

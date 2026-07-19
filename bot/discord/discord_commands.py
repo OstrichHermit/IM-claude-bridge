@@ -101,6 +101,12 @@ class DiscordCommandsMixin:
                 else:
                     log.log(f"[自动触发] 消息 #{auto_message_id} 等待超时 ({max_wait}秒)，继续执行 /new")
 
+            # 清空当前频道/私聊的文件缓存
+            cache_key = interaction.user.id if is_dm else interaction.channel.id
+            if cache_key in self.pending_attachments:
+                cleared_count = len(self.pending_attachments.pop(cache_key))
+                log.log(f"[附件缓存] /new 触发清空 cache_key={cache_key}，丢弃 {cleared_count} 个缓存附件")
+
             # 删除会话（包括数据库记录和 Claude Code 会话文件）
             deleted = self.message_queue.delete_session(session_key, working_dir)
 
