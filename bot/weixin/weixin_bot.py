@@ -198,13 +198,17 @@ class WeixinBot(
         # 启动工具执行结果检查任务
         self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
 
+        # 启动 AskUserQuestion 挂起扫描任务（微信端纯文本展示 + 立即 clear）
+        self.pending_ask_check_task = asyncio.create_task(self.check_pending_asks_loop())
+
         log.log(f"✅ 微信 Bot 已启动，{len(self.accounts)} 个账号正在监听")
 
         # 等待所有任务完成
         await asyncio.gather(
             *self.polling_tasks,
             self.sequence_check_task,
-            self.tool_result_check_task
+            self.tool_result_check_task,
+            self.pending_ask_check_task
         )
         log.log("✓ 微信 Bot 已停止")
 
@@ -226,12 +230,15 @@ class WeixinBot(
             self.sequence_check_task.cancel()
         if hasattr(self, 'tool_result_check_task') and self.tool_result_check_task:
             self.tool_result_check_task.cancel()
+        if hasattr(self, 'pending_ask_check_task') and self.pending_ask_check_task:
+            self.pending_ask_check_task.cancel()
 
         # 等待任务取消完成
         await asyncio.gather(
             *self.polling_tasks,
             self.sequence_check_task if hasattr(self, 'sequence_check_task') else None,
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
+            self.pending_ask_check_task if hasattr(self, 'pending_ask_check_task') else None,
             return_exceptions=True
         )
         log.log("微信 Bot 已停止")

@@ -35,7 +35,12 @@ class ClaudeBridge:
         self.worker_idle_timeout = config.worker_idle_timeout
 
     async def cleanup_pending_messages(self):
-        """清理上次崩溃时留下的 PENDING 消息（避免重启后重复处理）"""
+        """清理上次崩溃时留下的 PENDING 消息（避免重启后重复处理）
+
+        ⚠️ 阶段三：跳过当前挂起（pending_ask 非空）的 session 的消息。
+        AskUserQuestion 挂起期间，新进入的消息会被 SessionWorker 排队但状态仍为 PENDING，
+        重启时如果误清，会导致用户回答完后 Worker 找不到续接消息。
+        """
         import sqlite3
         try:
             conn = sqlite3.connect(self.message_queue.db_path)
@@ -48,18 +53,74 @@ class ClaudeBridge:
             if pending_count > 0:
                 log.log(f"🧹 发现 {pending_count} 条待处理的消息（PENDING），正在跳过...")
 
-                # 将 PENDING 状态的消息标记为 SKIPPED
+                # 收集所有挂起中（pending_ask 非空）的 session_key
                 cursor.execute("""
-                    UPDATE messages
-                    SET status = 'skipped',
-                        updated_at = CURRENT_TIMESTAMP,
-                        error = 'Bridge 重启：消息被跳过，避免重复处理'
+                    SELECT session_key FROM sessions
+                    WHERE pending_ask IS NOT NULL AND pending_ask != ''
+                """)
+                hung_session_keys = {row[0] for row in cursor.fetchall()}
+
+                # 计算每条 PENDING 消息对应的 session_key，跳过挂起 session 的消息
+                # session_key 算法（与 message_queue._calculate_session_key 保持一致）：
+                #   - 外部 task/reminder：temp_{message.id}
+                #   - DM：dm_{discord_user_id}
+                #   - 频道：channel_{discord_channel_id}
+                cursor.execute("""
+                    SELECT id, is_dm, is_external, tag, discord_channel_id, discord_user_id
+                    FROM messages
                     WHERE status = 'pending'
                 """)
+                rows = cursor.fetchall()
 
-                affected = cursor.rowcount
-                conn.commit()
-                log.log(f"✅ 已跳过 {affected} 条旧消息")
+                skipped_due_to_pending = 0
+                skipped_ids_to_clean: list[int] = []
+
+                from shared.message_queue import MessageTag
+
+                for row in rows:
+                    msg_id = row[0]
+                    is_dm = bool(row[1])
+                    is_external = bool(row[2])
+                    tag = row[3]
+                    channel_id = row[4]
+                    user_id = row[5]
+
+                    if is_external and tag in (MessageTag.TASK.value, MessageTag.REMINDER.value):
+                        sk = f"temp_{msg_id}"
+                    elif is_dm:
+                        sk = f"dm_{user_id}"
+                    else:
+                        sk = f"channel_{channel_id}"
+
+                    if sk in hung_session_keys:
+                        skipped_due_to_pending += 1
+                    else:
+                        skipped_ids_to_clean.append(msg_id)
+
+                # 跳过挂起 session 的消息后，清理剩余的 PENDING
+                if skipped_ids_to_clean:
+                    placeholders = ",".join("?" * len(skipped_ids_to_clean))
+                    cursor.execute(
+                        f"""
+                        UPDATE messages
+                        SET status = 'skipped',
+                            updated_at = CURRENT_TIMESTAMP,
+                            error = 'Bridge 重启：消息被跳过，避免重复处理'
+                        WHERE id IN ({placeholders})
+                        """,
+                        skipped_ids_to_clean,
+                    )
+                    affected = cursor.rowcount
+                    conn.commit()
+                    log.log(f"✅ 已跳过 {affected} 条旧消息")
+                else:
+                    log.log("✓ 没有需要清理的 PENDING 消息（其余均挂起中）")
+
+                if skipped_due_to_pending > 0:
+                    log.log(
+                        f"⚠️  跳过 {skipped_due_to_pending} 条挂起 session 的消息"
+                        f"（AskUserQuestion 仍在等用户输入，保留 PENDING 等续接）"
+                    )
             else:
                 log.log("✓ 没有发现 PENDING 状态的消息")
 

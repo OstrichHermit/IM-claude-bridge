@@ -45,6 +45,9 @@ class SessionWorker:
         self.last_activity_time: float = time.time()  # 最后活动时间
         self._log = get_logger(f"Worker-{session_key}", "bridge")
 
+        # AskUserQuestion 拦截信号（_call_claude_cli 写入，_process_message 读取后清空）
+        self._pending_ask_payload: Optional[dict] = None
+
     async def start(self):
         """启动 worker 处理循环"""
         if not self.running:
@@ -87,6 +90,13 @@ class SessionWorker:
 
         while self.running:
             try:
+                # ====== AskUserQuestion 挂起检查 ======
+                # 如果 session 有 pending_ask，不消费新消息（让 queue 自动累积）。
+                # 等 Discord 端 clear_pending_ask 后才会继续处理。
+                if self.message_queue.get_pending_ask(self.session_key):
+                    await asyncio.sleep(0.5)  # 短暂等待，避免 busy loop
+                    continue
+
                 # 从队列获取消息（带超时，避免永久阻塞）
                 try:
                     message = await asyncio.wait_for(
@@ -159,6 +169,9 @@ class SessionWorker:
         # 先更新状态为 PROCESSING
         self.message_queue.update_status(message.id, MessageStatus.PROCESSING)
 
+        # 清空上一次的 pending_ask 信号（避免遗留）
+        self._pending_ask_payload = None
+
         try:
             # 调用 Claude Code CLI
             response = await self._call_claude_cli(
@@ -176,6 +189,32 @@ class SessionWorker:
                 attachments=message.attachments,
                 channel_type=message.channel_type
             )
+
+            # ====== AskUserQuestion 拦截后处理：保留 PROCESSING + 写 pending_ask ======
+            if self._pending_ask_payload is not None:
+                pending_payload = self._pending_ask_payload
+                # 附加 message_id（Discord 端可能用到）
+                pending_payload['message_id'] = message.id
+
+                # 写挂起状态到 sessions 表
+                self.message_queue.set_pending_ask(session_key, pending_payload)
+
+                # 保留 message.status = PROCESSING，附带部分响应（如果有）
+                partial = response if response else ""
+                self.message_queue.update_status(
+                    message.id,
+                    MessageStatus.PROCESSING,
+                    response=partial if partial else None
+                )
+
+                self._log.log(
+                    f"[AskUserQuestion] Session {session_key} suspended, "
+                    f"waiting for user answer (message #{message.id})"
+                )
+
+                # 清空信号，避免下次消息误判
+                self._pending_ask_payload = None
+                return True  # 处理"成功"（被拦截不视为失败）
 
             if response:
                 # 判断是否为外部消息（task/reminder）
@@ -324,6 +363,7 @@ class SessionWorker:
                 last_update_time = 0
                 sequence_index = 0
                 aborted = False
+                pending_ask_signal = None  # AskUserQuestion 拦截信号
 
                 try:
                     # 按块读取
@@ -332,7 +372,7 @@ class SessionWorker:
 
                     def process_json_object(data: dict):
                         """处理流式输出的单个 JSON 对象（内层函数，直接捕获外层变量）"""
-                        nonlocal ai_started_notified, response_lines, last_update_time, sequence_index
+                        nonlocal ai_started_notified, response_lines, last_update_time, sequence_index, pending_ask_signal
 
                         if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
                             self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
@@ -447,10 +487,28 @@ class SessionWorker:
                                                 )
                                                 sequence_index += 1
 
+                                        # ====== AskUserQuestion 拦截（阶段一） ======
+                                        # Claude Code 在 -p 模式下调用 AskUserQuestion 时会被内部立即注入"用户拒绝"的 tool_result，
+                                        # 进程随即退出。这里拦截该工具调用，触发 kill，并保留 questions 数据用于后续 Discord 投票。
+                                        if tool_name == 'AskUserQuestion' and pending_ask_signal is None:
+                                            pending_ask_signal = {
+                                                'tool_use_id': tool_id,  # 内部用，不展示给用户
+                                                'questions': tool_input.get('questions', []),  # 原始 questions 数组
+                                                'asked_at': datetime.now().isoformat(),
+                                            }
+                                            self._log.log(
+                                                f"[AskUserQuestion] Intercepted for message #{message_id}, "
+                                                f"session {session_key}, will kill process"
+                                            )
+
                     while True:
                         # 检查是否收到中止信号
                         if message_id and self.message_queue.is_aborting(message_id):
                             aborted = True
+                            break
+
+                        # 检查 AskUserQuestion 拦截信号（拦截后立即跳出读取循环，触发 kill）
+                        if pending_ask_signal is not None:
                             break
 
                         read_timeout = None if ai_started_notified else float(self.config.claude_timeout)
@@ -496,6 +554,27 @@ class SessionWorker:
                                 process_json_object(data)
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
+
+                    # ====== AskUserQuestion 拦截：kill 进程 + 保留 PROCESSING 状态 ======
+                    if pending_ask_signal is not None:
+                        # 1. kill 进程（复用 abort 的优雅终止路径）
+                        process.terminate()
+                        try:
+                            returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
+                            self._log.log(
+                                f"✅ [消息 #{message_id}] AskUserQuestion 拦截，进程已优雅终止 (退出码: {returncode})"
+                            )
+                        except asyncio.TimeoutError:
+                            self._log.log(f"⚠️ [消息 #{message_id}] AskUserQuestion 拦截，进程未在 5 秒内退出，强制终止...")
+                            process.kill()
+                            await process.wait()
+                            self._log.log(f"✅ [消息 #{message_id}] AskUserQuestion 拦截，进程已强制终止")
+
+                        # 2. 暴露信号给 _process_message（实例属性，单 worker 串行处理无竞态）
+                        self._pending_ask_payload = pending_ask_signal
+
+                        # 3. 不写错误状态、不改 message.status（_process_message 会处理）
+                        return None
 
                     if aborted:
                         process.terminate()
