@@ -226,6 +226,12 @@ class DiscordSequenceSenderMixin:
                                 if any(keyword in command.lower() for keyword in management_keywords):
                                     should_skip = True
 
+                            # AskUserQuestion 由 check_pending_asks_loop 轮询接管，
+                            # 这里跳过 Embed 卡片渲染（避免重复发送）。
+                            # 仍保留 tool_use_messages 记录（用于工具卡片染色）。
+                            if tool_name == "AskUserQuestion":
+                                should_skip = True
+
                             if not should_skip:
                                 # 构建工具调用Embed
                                 TOOL_EMOJIS = self.config.tool_emoji_mapping

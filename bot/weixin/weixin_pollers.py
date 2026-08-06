@@ -9,12 +9,183 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.logger import get_logger
+from shared.message_queue import ChannelType
 
 log = get_logger("WeixinBot", "weixin")
 
 
 class WeixinPollersMixin:
     """轮询任务 Mixin"""
+
+    async def check_pending_asks_loop(self):
+        """扫描 sessions.pending_ask，发送纯文本展示后立即 clear
+
+        微信端不做交互（没有 View/Modal），只把问题和选项作为纯文本展示给用户，
+        然后立即 clear pending_ask，让 SessionWorker 恢复。
+        用户后续消息会作为新 prompt 发给 Claude（自然语言回答）。
+        """
+        log.log("🤔 [AskUserQuestion][微信] 挂起扫描任务已启动")
+        while self.running:
+            try:
+                pending_list = self.message_queue.list_pending_asks()
+                if not pending_list:
+                    await asyncio.sleep(1.0)
+                    continue
+
+                for item in pending_list:
+                    try:
+                        session_key = item.get("session_key")
+                        payload = item.get("pending_ask") or {}
+                        questions = payload.get("questions") or []
+                        message_id = payload.get("message_id")
+
+                        # 异常情况：没有问题或没有 message_id，直接 clear
+                        if not questions or message_id is None:
+                            self.message_queue.clear_pending_ask(session_key)
+                            continue
+
+                        # 通过 message_id 查原消息拿元数据
+                        original_msg = self.message_queue.get_message_by_id(message_id)
+                        if not original_msg:
+                            self.message_queue.clear_pending_ask(session_key)
+                            continue
+
+                        # 只处理微信频道的 ask（Discord 的由 Discord Bot 处理）
+                        if original_msg.channel_type != ChannelType.WEIXIN.value:
+                            continue
+
+                        # 构造纯文本展示
+                        text = self._format_ask_text(questions)
+
+                        # 发送展示消息
+                        sent = await self._send_ask_text(original_msg, text)
+
+                        # 立即 clear pending_ask（让 Worker 恢复）
+                        self.message_queue.clear_pending_ask(session_key)
+
+                        if sent:
+                            log.log(
+                                f"✅ [AskUserQuestion][微信] 已发送展示并 clear: "
+                                f"session={session_key}, message #{message_id}, "
+                                f"{len(questions)} 个问题"
+                            )
+                    except Exception as e:
+                        log.log(f"❌ [AskUserQuestion][微信] 处理挂起项失败: {e}")
+            except Exception as e:
+                log.log(f"❌ check_pending_asks_loop 错误: {e}")
+
+            await asyncio.sleep(1.0)
+
+    def _format_ask_text(self, questions: list) -> str:
+        """根据 questions 数组构造纯文本展示
+
+        格式示例：
+            ❓ AskUserQuestion
+
+            Q1: 你想用什么库？
+            1. React — React 框架
+            2. Vue — Vue 框架
+
+            Q2: 需要支持深色模式吗？
+            1. 需要
+            2. 不需要
+
+            （请直接回复消息告诉我你的选择）
+        """
+        lines: list[str] = ["❓ AskUserQuestion", ""]
+
+        for i, q in enumerate(questions):
+            q_text = q.get("question", "（无问题）")
+            lines.append(f"Q{i + 1}: {q_text}")
+
+            options = q.get("options", []) or []
+            for opt_idx, opt in enumerate(options):
+                label = opt.get("label", "无标签")
+                desc = opt.get("description", "")
+                if desc:
+                    lines.append(f"{opt_idx + 1}. {label} — {desc}")
+                else:
+                    lines.append(f"{opt_idx + 1}. {label}")
+
+            # 问题之间空一行
+            if i < len(questions) - 1:
+                lines.append("")
+
+        lines.append("")
+        lines.append("（请直接回复消息告诉我你的选择）")
+        return "\n".join(lines)
+
+    async def _send_ask_text(self, original_msg, text: str) -> bool:
+        """发送 AskUserQuestion 展示文本到原消息对应的微信会话
+
+        Returns:
+            True 表示发送成功，False 表示发送失败（pending_ask 仍然会被调用方 clear）。
+        """
+        username = original_msg.username or ""
+
+        # 选择正确的账号（参考 check_tool_use_results 的逻辑）
+        target_account = None
+        to_user_id = username
+
+        if username in self.username_to_wxid:
+            target_wxid = self.username_to_wxid.get(username)
+            for account in self.accounts:
+                if account.wxid == target_wxid:
+                    target_account = account
+                    break
+            to_user_id = username
+        elif len(self.accounts) == 1:
+            target_account = self.accounts[0]
+            to_user_id = username
+        else:
+            # 多账号且无法确定：用第一个有 context_token 的账号
+            if self.context_tokens.get(username) is not None:
+                target_account = self.accounts[0]
+                to_user_id = username
+            else:
+                log.log(f"⚠️ [AskUserQuestion][微信] 无法确定账号: username={username}")
+                return False
+
+        if not target_account:
+            log.log(f"⚠️ [AskUserQuestion][微信] 找不到目标账号: username={username}")
+            return False
+
+        client = self.clients.get(target_account.bot_id)
+        if not client:
+            log.log(f"⚠️ [AskUserQuestion][微信] 找不到 client: bot_id={target_account.bot_id}")
+            return False
+
+        context_token = self.context_tokens.get(username) or original_msg.context_token or ""
+
+        # 微信消息长度限制：分割发送（每段最多 500 字符）
+        MAX_LEN = 500
+        chunks: list[str] = []
+        if len(text) <= MAX_LEN:
+            chunks.append(text)
+        else:
+            # 按行分割，累积不超过 MAX_LEN
+            buf = ""
+            for line in text.split("\n"):
+                if len(buf) + len(line) + 1 > MAX_LEN:
+                    if buf:
+                        chunks.append(buf)
+                    buf = line
+                else:
+                    buf = buf + "\n" + line if buf else line
+            if buf:
+                chunks.append(buf)
+
+        try:
+            for i, chunk in enumerate(chunks):
+                await client.send_message(
+                    to_user_id=to_user_id,
+                    text=chunk,
+                    context_token=context_token,
+                )
+            return True
+        except Exception as send_error:
+            log.log(f"❌ [AskUserQuestion][微信] 发送展示失败: {send_error}")
+            return False
 
     async def check_tool_use_results(self):
         """定期检查工具执行结果并发送工具调用通知"""
@@ -121,6 +292,11 @@ class WeixinPollersMixin:
                         tool_use = tool_uses[tool_use_index]
                         tool_name = tool_use.get('name', '')
                         tool_input = tool_use.get('input', {})
+
+                        # AskUserQuestion 由 check_pending_asks_loop 接管，跳过默认工具通知
+                        if tool_name == 'AskUserQuestion':
+                            self.message_queue.mark_tool_use_result_processed(message_id, tool_use_index)
+                            continue
 
                         # 构建工具调用通知文本
 

@@ -897,6 +897,112 @@ class MessageQueue:
         """删除指定会话（代理到 SessionManager）"""
         return self._sessions.delete_session(session_key, working_dir)
 
+    # ========== AskUserQuestion 挂起/恢复相关（代理到 SessionManager） ==========
+
+    def set_pending_ask(self, session_key: str, payload: dict) -> bool:
+        """设置 session 的 pending_ask（代理到 SessionManager）"""
+        return self._sessions.set_pending_ask(session_key, payload)
+
+    def get_pending_ask(self, session_key: str) -> Optional[dict]:
+        """读取 pending_ask（代理到 SessionManager）"""
+        return self._sessions.get_pending_ask(session_key)
+
+    def clear_pending_ask(self, session_key: str) -> bool:
+        """清除 pending_ask（代理到 SessionManager）"""
+        return self._sessions.clear_pending_ask(session_key)
+
+    def list_pending_asks(self) -> list[dict]:
+        """列出所有 pending_ask 非空的 session（代理到 SessionManager）
+
+        Returns:
+            [{session_key, pending_ask}, ...]，按 last_used_at 升序。
+        """
+        return self._sessions.list_pending_asks()
+
+    def set_ask_view_message_id(self, session_key: str, message_id: int) -> bool:
+        """记录已发送的 AskUserQuestion View 卡片消息 ID（代理到 SessionManager）"""
+        return self._sessions.set_ask_view_message_id(session_key, message_id)
+
+    def get_ask_view_message_id(self, session_key: str):
+        """读取已发送的 View 卡片消息 ID（代理到 SessionManager）
+
+        Returns:
+            Discord 消息 ID (int)，未发送过返回 None
+        """
+        return self._sessions.get_ask_view_message_id(session_key)
+
+    def clear_ask_view(self, session_key: str) -> bool:
+        """同时清除 pending_ask 和 ask_view_message_id（代理到 SessionManager）"""
+        return self._sessions.clear_ask_view(session_key)
+
+    def get_message_by_id(self, message_id: int) -> Optional[Message]:
+        """根据消息 ID 查询消息（完整字段）
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            Message 对象，找不到返回 None。
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT id, direction, content, status,
+                       discord_channel_id, discord_message_id,
+                       discord_user_id, username,
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                FROM messages
+                WHERE id = ?
+            """, (message_id,))
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            return None
+
+        # 解析附件
+        attachments = None
+        if row[15]:
+            try:
+                attachments_list = json.loads(row[15])
+                attachments = [
+                    AttachmentInfo(
+                        id=a.get("id"),
+                        filename=a.get("filename", ""),
+                        size=a.get("size", 0),
+                        url=a.get("url", ""),
+                        local_filename=a.get("local_filename"),
+                        description=a.get("description"),
+                    )
+                    for a in attachments_list
+                ]
+            except Exception:
+                attachments = None
+
+        return Message(
+            id=row[0],
+            direction=row[1],
+            content=row[2],
+            status=row[3],
+            discord_channel_id=row[4],
+            discord_message_id=row[5],
+            discord_user_id=row[6],
+            username=row[7],
+            response=row[8],
+            error=row[9],
+            is_dm=bool(row[10]),
+            is_external=bool(row[11]),
+            tag=row[12] or MessageTag.DEFAULT.value,
+            channel_type=row[13] or ChannelType.DISCORD.value,
+            context_token=row[14],
+            attachments=attachments,
+            created_at=row[16],
+            updated_at=row[17],
+        )
+
+
     def add_file_download_request(self, download_request: FileDownloadRequest) -> int:
         """添加文件下载请求到队列"""
         conn = sqlite3.connect(self.db_path)

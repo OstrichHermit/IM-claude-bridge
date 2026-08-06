@@ -221,6 +221,22 @@ MIGRATIONS: List[Dict] = [
             "ALTER TABLE channel_settings ADD COLUMN message_splitting BOOLEAN",
         ]
     },
+
+    # Version 7: sessions 表 - 添加 pending_ask 字段（AskUserQuestion 挂起/恢复用）
+    {
+        "version": 7,
+        "alterations": [
+            "ALTER TABLE sessions ADD COLUMN pending_ask TEXT",  # JSON: {tool_use_id, questions, asked_at}
+        ]
+    },
+
+    # Version 8: sessions 表 - 添加 ask_view_message_id 字段（持久化 Discord View 消息 ID, 阶段三）
+    {
+        "version": 8,
+        "alterations": [
+            "ALTER TABLE sessions ADD COLUMN ask_view_message_id INTEGER",  # Discord View 卡片消息 ID（持久化去重 + 启动恢复用）
+        ]
+    },
 ]
 
 

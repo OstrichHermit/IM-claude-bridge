@@ -23,6 +23,7 @@ from bot.discord.discord_commands import DiscordCommandsMixin
 from bot.discord.discord_message_handlers import DiscordMessageHandlersMixin
 from bot.discord.discord_pollers import DiscordPollersMixin
 from bot.discord.discord_sequence_sender import DiscordSequenceSenderMixin
+from bot.discord.ask_question_view import AskQuestionView, build_ask_embed
 
 log = get_logger("DiscordBot", "discord")
 
@@ -101,6 +102,13 @@ class DiscordBot(
 
         # 🔥 启动工具执行结果检查任务
         self.tool_result_check_task = asyncio.create_task(self.check_tool_use_results())
+
+        # 🔥 恢复 AskUserQuestion 的 Persistent Views（必须在轮询任务启动前）
+        # 重启后 View 实例都已丢失，旧按钮消息会变成死按钮；用 add_view 重新注册
+        await self._restore_ask_views()
+
+        # 🔥 启动 AskUserQuestion 挂起扫描任务
+        self.pending_ask_check_task = asyncio.create_task(self.check_pending_asks_loop())
 
         # ⏰ 启动定时任务调度器
         try:
@@ -188,6 +196,182 @@ class DiscordBot(
 
         except Exception as e:
             log.log(f"⚠️ 清理卡住消息时出错: {e}")
+
+    async def _restore_ask_views(self):
+        """重启后重新注册所有挂起的 AskUserQuestion View，让旧按钮可点击
+
+        discord.py 的 View 实例存在内存里，Bot 重启后旧 View 消息的按钮会变成死按钮。
+        通过 client.add_view(view, message_id=...) 重新注册 View 实例，Discord 端的旧
+        按钮消息 interaction 会被路由到新 View 的对应 callback。
+        只恢复已发送过 View 的（有 ask_view_message_id）。
+        """
+        try:
+            pending_list = self.message_queue.list_pending_asks()
+            restored = 0
+            for item in pending_list:
+                try:
+                    session_key = item.get("session_key")
+                    payload = item.get("pending_ask") or {}
+                    questions = payload.get("questions") or []
+                    tool_use_id = payload.get("tool_use_id", "")
+                    asked_at = payload.get("asked_at", "")
+                    message_id = payload.get("message_id")  # 原始触发 AskUserQuestion 的消息 ID
+
+                    if not questions:
+                        continue
+
+                    # 只恢复已发送过 View 的（有 ask_view_message_id）
+                    view_msg_id = self.message_queue.get_ask_view_message_id(session_key)
+                    if view_msg_id is None:
+                        # 还没发送过，让 check_pending_asks_loop 处理
+                        continue
+
+                    # 查原消息拿元数据（频道、用户等）
+                    original_msg = (
+                        self.message_queue.get_message_by_id(message_id)
+                        if message_id
+                        else None
+                    )
+                    if not original_msg:
+                        log.log(
+                            f"⚠️ [AskUserQuestion] 恢复失败: 找不到原消息 #{message_id}"
+                        )
+                        continue
+
+                    view = AskQuestionView(
+                        session_key=session_key,
+                        questions=questions,
+                        message_queue=self.message_queue,
+                        channel_id=original_msg.discord_channel_id,
+                        channel_type=original_msg.channel_type or ChannelType.DISCORD.value,
+                        is_dm=original_msg.is_dm,
+                        user_id=original_msg.discord_user_id,
+                        username=original_msg.username or "",
+                        tool_use_id=tool_use_id,
+                        asked_at=asked_at,
+                    )
+                    self.add_view(view, message_id=view_msg_id)
+                    restored += 1
+                except Exception as e:
+                    log.log(f"❌ [AskUserQuestion] 恢复单个 View 失败: {e}")
+
+            if restored:
+                log.log(f"🔄 [AskUserQuestion] 恢复了 {restored} 个挂起的 View")
+            else:
+                log.log("✓ [AskUserQuestion] 没有需要恢复的 View")
+        except Exception as e:
+            log.log(f"❌ [AskUserQuestion] 恢复 View 失败: {e}")
+
+    async def check_pending_asks_loop(self):
+        """扫描 sessions.pending_ask，发送 AskUserQuestion View
+
+        工作流程：
+        1. 轮询 message_queue.list_pending_asks() 拿到所有挂起的 ask
+        2. 对每个 ask，按 message_id 找原消息（拿 channel_id / user_id 等）
+        3. 渲染 Embed + View 发送到原频道
+        4. 用 sessions.ask_view_message_id 字段做持久化去重
+           （DB 字段不随 Bot 重启丢失，避免重复发送）
+
+        注意：不在这里 clear pending_ask。View 的 _submit_answers 会通过 clear_ask_view
+        同时清掉 pending_ask 和 ask_view_message_id。
+        """
+        await self.wait_until_ready()
+        log.log("🤔 AskUserQuestion 挂起扫描任务已启动")
+
+        while not self.is_closed():
+            try:
+                pending_list = self.message_queue.list_pending_asks()
+
+                if not pending_list:
+                    await asyncio.sleep(1.0)
+                    continue
+
+                for item in pending_list:
+                    try:
+                        session_key = item.get("session_key")
+                        payload = item.get("pending_ask") or {}
+                        questions = payload.get("questions") or []
+                        tool_use_id = payload.get("tool_use_id", "")
+                        asked_at = payload.get("asked_at", "")
+                        message_id = payload.get("message_id")
+
+                        if not questions:
+                            continue
+
+                        # 去重：DB 里已记录过 View 消息 ID 则跳过（重启后仍生效）
+                        if message_id is None:
+                            continue
+                        existing_view_msg_id = self.message_queue.get_ask_view_message_id(session_key)
+                        if existing_view_msg_id is not None:
+                            # 已发送过；启动恢复时已 add_view，这里直接跳过
+                            continue
+
+                        # 通过 message_id 查原消息
+                        original_msg = self.message_queue.get_message_by_id(message_id)
+                        if not original_msg:
+                            log.log(f"⚠️ [AskUserQuestion] 找不到原消息 #{message_id}，跳过")
+                            continue
+
+                        channel_id = original_msg.discord_channel_id
+                        is_dm = original_msg.is_dm
+                        user_id = original_msg.discord_user_id
+                        username = original_msg.username or ""
+                        channel_type = original_msg.channel_type or ChannelType.DISCORD.value
+
+                        # 解析频道
+                        channel = None
+                        if is_dm:
+                            user = self.get_user(user_id)
+                            if not user:
+                                try:
+                                    user = await self.fetch_user(user_id)
+                                except (discord.NotFound, Exception):
+                                    user = None
+                            if user:
+                                try:
+                                    channel = await user.create_dm()
+                                except (discord.NotFound, discord.Forbidden):
+                                    channel = None
+                        else:
+                            channel = self.get_channel(channel_id)
+
+                        if channel is None:
+                            log.log(
+                                f"⚠️ [AskUserQuestion] 无法解析频道 (is_dm={is_dm}, "
+                                f"channel_id={channel_id}, user_id={user_id})，跳过"
+                            )
+                            continue
+
+                        # 渲染 Embed + View
+                        embed = build_ask_embed(questions)
+                        view = AskQuestionView(
+                            session_key=session_key,
+                            questions=questions,
+                            message_queue=self.message_queue,
+                            channel_id=channel_id,
+                            channel_type=channel_type,
+                            is_dm=is_dm,
+                            user_id=user_id,
+                            username=username,
+                            tool_use_id=tool_use_id,
+                            asked_at=asked_at,
+                        )
+
+                        sent_message = await channel.send(embed=embed, view=view)
+                        # 持久化 View 卡片消息 ID（用于启动恢复 + 去重）
+                        self.message_queue.set_ask_view_message_id(session_key, sent_message.id)
+                        log.log(
+                            f"✅ [AskUserQuestion] 已发送 View 到 session={session_key} "
+                            f"(message #{message_id}, view_msg #{sent_message.id}, "
+                            f"{len(questions)} 个问题)"
+                        )
+                    except Exception as e:
+                        log.log(f"❌ [AskUserQuestion] 处理挂起项失败: {e}")
+
+            except Exception as e:
+                log.log(f"❌ check_pending_asks_loop 错误: {e}")
+
+            await asyncio.sleep(1.0)
 
     async def _send_long_message(self, channel, content: str):
         """发送长消息，自动分割超过 2000 字符的消息"""
@@ -405,6 +589,8 @@ class DiscordBot(
             self.sequence_check_task.cancel()
         if hasattr(self, 'tool_result_check_task') and self.tool_result_check_task:
             self.tool_result_check_task.cancel()
+        if hasattr(self, 'pending_ask_check_task') and self.pending_ask_check_task:
+            self.pending_ask_check_task.cancel()
 
         # ⏰ 停止定时任务调度器
         if self.cron_scheduler:

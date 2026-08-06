@@ -317,3 +317,222 @@ class SessionManager:
                 log.log(f"⚠️ 删除 Claude 会话文件时出错: {e}")
 
         return deleted
+
+    # ========== AskUserQuestion 挂起/恢复相关方法 ==========
+
+    def set_pending_ask(self, session_key: str, payload: dict) -> bool:
+        """设置 session 的 pending_ask（覆盖式）
+
+        Args:
+            session_key: 会话标识
+            payload: 挂起信息，格式 {tool_use_id, questions, asked_at}
+
+        Returns:
+            是否成功设置（找不到 session 时返回 False）
+        """
+        try:
+            payload_json = json.dumps(payload, ensure_ascii=False)
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE sessions SET pending_ask = ?, last_used_at = ?
+                WHERE session_key = ?
+            """, (payload_json, datetime.now().isoformat(), session_key))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+
+            if updated:
+                log.log(f"✅ pending_ask 已设置: {session_key}")
+            else:
+                log.log(f"⚠️ 设置 pending_ask 失败: 找不到 session {session_key}")
+            return updated
+        except Exception as e:
+            log.log(f"❌ 设置 pending_ask 失败: {e}")
+            return False
+
+    def get_pending_ask(self, session_key: str):
+        """读取 pending_ask
+
+        Args:
+            session_key: 会话标识
+
+        Returns:
+            pending_ask 字典，无则返回 None
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pending_ask FROM sessions WHERE session_key = ?
+            """, (session_key,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row or not row[0]:
+                return None
+
+            return json.loads(row[0])
+        except Exception as e:
+            log.log(f"❌ 读取 pending_ask 失败: {e}")
+            return None
+
+    def clear_pending_ask(self, session_key: str) -> bool:
+        """清除 pending_ask
+
+        Args:
+            session_key: 会话标识
+
+        Returns:
+            是否成功清除（找不到 session 时返回 False）
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE sessions SET pending_ask = NULL, last_used_at = ?
+                WHERE session_key = ?
+            """, (datetime.now().isoformat(), session_key))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+
+            if updated:
+                log.log(f"✅ pending_ask 已清除: {session_key}")
+            else:
+                log.log(f"⚠️ 清除 pending_ask 失败: 找不到 session {session_key}")
+            return updated
+        except Exception as e:
+            log.log(f"❌ 清除 pending_ask 失败: {e}")
+            return False
+
+    def list_pending_asks(self) -> list[dict]:
+        """列出所有 pending_ask 非空的 session
+
+        用于 Discord Bot 轮询渲染 AskUserQuestion View。
+
+        Returns:
+            list of dict, 每个元素形如：
+            {
+                "session_key": "channel_xxx",
+                "pending_ask": {tool_use_id, questions, asked_at, message_id},
+            }
+            按 last_used_at 升序（旧的优先）。
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT session_key, pending_ask FROM sessions
+                WHERE pending_ask IS NOT NULL AND pending_ask != ''
+                ORDER BY last_used_at ASC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+
+            result = []
+            for row in rows:
+                session_key = row[0]
+                try:
+                    payload = json.loads(row[1])
+                except Exception:
+                    continue
+                result.append({
+                    "session_key": session_key,
+                    "pending_ask": payload,
+                })
+            return result
+        except Exception as e:
+            log.log(f"❌ list_pending_asks 失败: {e}")
+            return []
+
+    # ========== AskUserQuestion View 持久化相关（阶段三）==========
+
+    def set_ask_view_message_id(self, session_key: str, message_id: int) -> bool:
+        """记录已发送给用户的 AskUserQuestion View 卡片消息 ID（持久化去重 + 启动恢复用）
+
+        Args:
+            session_key: 会话标识
+            message_id: Discord 上 View 卡片的消息 ID
+
+        Returns:
+            是否成功设置（找不到 session 时返回 False）
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE sessions SET ask_view_message_id = ?, last_used_at = ?
+                WHERE session_key = ?
+            """, (int(message_id), datetime.now().isoformat(), session_key))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+
+            if updated:
+                log.log(f"✅ ask_view_message_id 已记录: {session_key} -> {message_id}")
+            else:
+                log.log(f"⚠️ 设置 ask_view_message_id 失败: 找不到 session {session_key}")
+            return updated
+        except Exception as e:
+            log.log(f"❌ 设置 ask_view_message_id 失败: {e}")
+            return False
+
+    def get_ask_view_message_id(self, session_key: str):
+        """读取已发送的 View 卡片消息 ID（如有）
+
+        Args:
+            session_key: 会话标识
+
+        Returns:
+            Discord 消息 ID (int)，未发送过返回 None
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ask_view_message_id FROM sessions WHERE session_key = ?
+            """, (session_key,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row or row[0] is None:
+                return None
+            return int(row[0])
+        except Exception as e:
+            log.log(f"❌ 读取 ask_view_message_id 失败: {e}")
+            return None
+
+    def clear_ask_view(self, session_key: str) -> bool:
+        """同时清除 pending_ask 和 ask_view_message_id（事务式）
+
+        用户提交回答后调用，确保两个字段同时清零，避免轮询任务误判残留状态。
+
+        Args:
+            session_key: 会话标识
+
+        Returns:
+            是否成功清除（找不到 session 时返回 False）
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE sessions
+                SET pending_ask = NULL,
+                    ask_view_message_id = NULL,
+                    last_used_at = ?
+                WHERE session_key = ?
+            """, (datetime.now().isoformat(), session_key))
+            updated = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+
+            if updated:
+                log.log(f"✅ ask_view 已清除（pending_ask + ask_view_message_id）: {session_key}")
+            else:
+                log.log(f"⚠️ 清除 ask_view 失败: 找不到 session {session_key}")
+            return updated
+        except Exception as e:
+            log.log(f"❌ 清除 ask_view 失败: {e}")
+            return False
