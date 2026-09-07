@@ -37,7 +37,40 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchStatus();
     connectStatusWS();
     components.forEach(comp => connectLogWS(comp));
+    initMobileLogTabs();
 });
+
+// 移动端日志标签页：点击标签切换单个日志面板
+function initMobileLogTabs() {
+    const grid = document.querySelector('.log-grid');
+    if (!grid) return;
+
+    let bar = document.getElementById('mobileTabBar');
+    if (bar) bar.remove();
+    bar = document.createElement('div');
+    bar.id = 'mobileTabBar';
+    bar.className = 'mobile-tab-bar';
+
+    const panels = grid.querySelectorAll('.log-panel');
+    panels.forEach((panel, i) => {
+        const titleEl = panel.querySelector('.log-title');
+        const btn = document.createElement('button');
+        btn.className = 'mobile-tab' + (i === 0 ? ' active' : '');
+        btn.textContent = titleEl ? titleEl.textContent.trim() : `日志 ${i + 1}`;
+        btn.onclick = () => {
+            bar.querySelectorAll('.mobile-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            panels.forEach(p => p.classList.remove('active'));
+            panel.classList.add('active');
+            const content = panel.querySelector('.log-content');
+            if (content) content.scrollTop = content.scrollHeight;
+        };
+        bar.appendChild(btn);
+    });
+
+    grid.parentElement.insertBefore(bar, grid);
+    if (panels.length) panels[0].classList.add('active');
+}
 
 // WebSocket: 状态
 function connectStatusWS() {
