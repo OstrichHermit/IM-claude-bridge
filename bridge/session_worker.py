@@ -501,6 +501,11 @@ class SessionWorker:
                                                 f"session {session_key}, will kill process"
                                             )
 
+                    # wait_for 轮询式读取：stdout 静默（工具长时间执行）时也能定期醒来检查中止信号，
+                    # 避免 abort 标志被无限期阻塞的 read 卡住；超时取消 read 不会丢已到达的数据
+                    abort_poll_interval = 0.5
+                    claude_start_deadline = time.monotonic() + float(self.config.claude_timeout)
+
                     while True:
                         # 检查是否收到中止信号
                         if message_id and self.message_queue.is_aborting(message_id):
@@ -511,18 +516,15 @@ class SessionWorker:
                         if pending_ask_signal is not None:
                             break
 
-                        read_timeout = None if ai_started_notified else float(self.config.claude_timeout)
-
                         try:
-                            if read_timeout is None:
-                                chunk = await process.stdout.read(chunk_size)
-                            else:
-                                chunk = await asyncio.wait_for(
-                                    process.stdout.read(chunk_size),
-                                    timeout=read_timeout
-                                )
+                            chunk = await asyncio.wait_for(
+                                process.stdout.read(chunk_size),
+                                timeout=abort_poll_interval
+                            )
                         except asyncio.TimeoutError:
-                            raise Exception(f"Claude Code 启动超时（超过 {self.config.claude_timeout} 秒）")
+                            if not ai_started_notified and time.monotonic() > claude_start_deadline:
+                                raise Exception(f"Claude Code 启动超时（超过 {self.config.claude_timeout} 秒）")
+                            continue
 
                         if not chunk:
                             break
