@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IM-Claude-Bridge 控制台</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=4">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=5">
 </head>
 <body>
     <!-- 左侧边栏 -->
@@ -26,7 +26,7 @@
         </div>
 
         <div class="component-list">
-            <div class="component-item">
+            <div class="component-item" data-component="web_server">
                 <div>
                     <div class="component-name">Web</div>
                     <div class="component-pid" id="web_server_pid"></div>
@@ -37,7 +37,7 @@
                 </div>
             </div>
 
-            <div class="component-item">
+            <div class="component-item" data-component="manager">
                 <div>
                     <div class="component-name">Manager</div>
                     <div class="component-pid" id="manager_pid"></div>
@@ -48,7 +48,7 @@
                 </div>
             </div>
 
-            <div class="component-item">
+            <div class="component-item" data-component="mcp_server">
                 <div>
                     <div class="component-name">MCP</div>
                     <div class="component-pid" id="mcp_server_pid"></div>
@@ -59,7 +59,7 @@
                 </div>
             </div>
 
-            <div class="component-item">
+            <div class="component-item" data-component="discord_bot">
                 <div>
                     <div class="component-name">Discord</div>
                     <div class="component-pid" id="discord_bot_pid"></div>
@@ -70,7 +70,7 @@
                 </div>
             </div>
 
-            <div class="component-item">
+            <div class="component-item" data-component="weixin_bot">
                 <div>
                     <div class="component-name">Weixin</div>
                     <div class="component-pid" id="weixin_bot_pid"></div>
@@ -81,7 +81,7 @@
                 </div>
             </div>
 
-            <div class="component-item">
+            <div class="component-item" data-component="claude_bridge">
                 <div>
                     <div class="component-name">Bridge</div>
                     <div class="component-pid" id="claude_bridge_pid"></div>
@@ -189,6 +189,6 @@
         </div>
     </div>
 
-    <script src="/static/js/dashboard.js?v=2"></script>
+    <script src="/static/js/dashboard.js?v=3"></script>
 </body>
 </html>
