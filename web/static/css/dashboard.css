@@ -464,12 +464,7 @@ body {
     }
 }
 
-/* 移动端日志标签栏（仅手机端显示） */
-.mobile-tab-bar {
-    display: none;
-}
-
-/* 极窄屏（手机）：紧凑顶栏 + 服务芯片横滑 + 日志标签页 */
+/* 极窄屏（手机）：紧凑顶栏 + 服务芯片横滑（点击切换日志面板） */
 @media (max-width: 700px) {
     body {
         flex-direction: column;
@@ -546,6 +541,13 @@ body {
         padding: 8px 10px;
         min-width: 104px;
         flex-shrink: 0;
+        cursor: pointer;
+    }
+
+    /* 当前查看日志的进程芯片高亮 */
+    .component-item.active {
+        background: var(--bg-hover);
+        border-color: var(--text-quaternary);
     }
 
     /* 控制区：标签行在上，两个按钮并排 */
@@ -568,44 +570,12 @@ body {
         padding: 9px 12px;
     }
 
-    /* 日志区：标签页 + 单面板占满剩余高度 */
+    /* 日志区：单面板占满剩余高度 */
     .main-content {
         flex: 1;
         min-height: 0;
         padding: 10px;
         overflow: hidden;
-    }
-
-    .mobile-tab-bar {
-        display: flex;
-        gap: 6px;
-        overflow-x: auto;
-        padding-bottom: 8px;
-        flex-shrink: 0;
-        scrollbar-width: none;
-    }
-
-    .mobile-tab-bar::-webkit-scrollbar {
-        display: none;
-    }
-
-    .mobile-tab {
-        padding: 7px 14px;
-        font-size: 0.78rem;
-        background: var(--bg-quaternary);
-        border: 1px solid var(--border-color);
-        border-radius: 16px;
-        cursor: pointer;
-        color: var(--text-tertiary);
-        white-space: nowrap;
-        flex-shrink: 0;
-        transition: all 0.15s ease;
-    }
-
-    .mobile-tab.active {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        font-weight: 500;
     }
 
     .log-grid {
