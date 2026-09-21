@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 import asyncio
 import sys
+import time
 import sqlite3
 from pathlib import Path
 from typing import Dict, List
@@ -604,20 +605,32 @@ def main():
     try:
         # 加载配置
         config = Config()
-
-        # 创建并启动 Bot
-        bot = DiscordBot(config)
-        bot.run(config.discord_token)
-
     except FileNotFoundError as e:
         log.log(f"❌ 配置错误: {e}")
         sys.exit(1)
     except ValueError as e:
         log.log(f"❌ 配置错误: {e}")
         sys.exit(1)
-    except Exception as e:
-        log.log(f"❌ 启动失败: {e}")
-        sys.exit(1)
+
+    # 启动重试：discord.py 在首次连接网关失败时会在重连逻辑中
+    # 访问尚未建立的 self.ws.sequence 导致 NoneType 崩溃，这里兜底重试
+    max_retries = 10
+    retry_delay = 3
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            bot = DiscordBot(config)
+            bot.run(config.discord_token)
+            # run() 正常返回说明是被正常关闭，不再重试
+            return
+        except Exception as e:
+            log.log(f"❌ 启动失败（第 {attempt}/{max_retries} 次）: {e}")
+            if attempt < max_retries:
+                log.log(f"⏳ {retry_delay} 秒后自动重试...")
+                time.sleep(retry_delay)
+            else:
+                log.log("❌ 已达最大重试次数，放弃启动")
+                sys.exit(1)
 
 
 if __name__ == "__main__":
