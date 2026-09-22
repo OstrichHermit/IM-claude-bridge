@@ -305,10 +305,16 @@ class WeixinCommandsMixin:
 
     async def _cmd_abort(self, from_user_id: str, account_bot_id: str):
         """中止当前正在处理的响应"""
-        # 查找正在处理的消息（匹配发送命令的私聊或群聊）
+        # 消息表的 discord_user_id 存的是数字 ID（与入队时一致），需先转换
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
+            return
+
+        # 查找正在处理的消息（匹配发送命令的私聊）
         processing_messages = self.message_queue.get_processing_messages(
             channel_type=ChannelType.WEIXIN.value,
-            user_id=from_user_id
+            user_id=user_id_int
         )
 
         if not processing_messages:
