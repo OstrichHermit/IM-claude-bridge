@@ -125,10 +125,27 @@ class DiscordMessageHandlersMixin:
                 self.pending_attachments[cache_key].extend(attachment_infos)
                 log.log(f"[附件缓存] cache_key={cache_key} 新增 {len(attachment_infos)} 个附件，当前共 {len(self.pending_attachments[cache_key])} 个")
 
-            # 纯附件消息：附件已加入缓存，不触发 AI
+            # 纯附件消息：附件已加入缓存
+            # 语音条且开关开启时：构造语音描述文本直接触发 AI；其他纯附件保持旧行为（仅缓存不触发）
             if not content:
-                log.log(f"[消息缓存] 用户 {message.author.display_name} 发送了纯附件，已缓存不发 AI")
-                return
+                if self.config.voice_message_direct_trigger:
+                    voice_att = self._find_voice_attachment(message, downloaded_files)
+                    if voice_att is not None:
+                        local_path, duration = voice_att
+                        if duration:
+                            duration_str = f"{duration:.1f}"
+                            if duration_str.endswith(".0"):
+                                duration_str = duration_str[:-2]
+                            content = f"[Discord 语音消息] 时长约{duration_str}秒，文件已保存在：{local_path}"
+                        else:
+                            content = f"[Discord 语音消息] 文件已保存在：{local_path}"
+                        log.log(f"🎤 [消息] 语音条直接触发: {Path(local_path).name}")
+                    else:
+                        log.log(f"[消息缓存] 用户 {message.author.display_name} 发送了纯附件，已缓存不发 AI")
+                        return
+                else:
+                    log.log(f"[消息缓存] 用户 {message.author.display_name} 发送了纯附件，已缓存不发 AI")
+                    return
 
             # 获取会话信息，检查是否为首次对话
             session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
@@ -193,6 +210,38 @@ class DiscordMessageHandlersMixin:
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
+
+    def _find_voice_attachment(self, message: discord.Message, downloaded_files: list) -> tuple | None:
+        """识别语音条附件
+
+        Returns:
+            (本地文件绝对路径, 时长秒数或None)，不是语音条返回 None
+        """
+        is_voice_msg = False
+        try:
+            flags = message.flags
+            # discord.py >= 2.3 的语音条 flag（不同版本属性名为 is_voice_message 或 voice）
+            is_voice = getattr(flags, "is_voice_message", None)
+            if is_voice is None:
+                is_voice = getattr(flags, "voice", None)
+            if is_voice is True:
+                is_voice_msg = True
+        except Exception:
+            pass
+
+        for f in downloaded_files:
+            filename = str(f.get("filename", ""))
+            if is_voice_msg or ("voice-message" in filename.lower() and filename.lower().endswith(".ogg")):
+                # 从对应 attachment 对象容错读取时长
+                duration = None
+                for att in message.attachments:
+                    if att.filename == filename:
+                        duration = getattr(att, "duration_secs", None)
+                        if duration is None:
+                            duration = getattr(att, "duration", None)
+                        break
+                return (f.get("local_path"), duration)
+        return None
 
     async def handle_file_download_command(self, message: discord.Message):
         """处理附件引用消息（转发/回复消息）"""

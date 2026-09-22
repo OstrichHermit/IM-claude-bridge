@@ -26,6 +26,8 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Reference attachment metadata (extract attachment info and send to Claude)
 - Auto download attachments from Discord/WeChat to local configured directory
 - Auto handle filename conflicts (auto rename)
+- **Voice message direct trigger** (WeChat voice messages + Discord voice messages: auto-downloaded and sent to AI as a file path description — configure your own speech-to-text tools for the AI, the bridge itself has zero audio dependencies)
+- **WeChat voice auto-transcription** (WeChat voice comes with server-side transcription; the transcript is injected into the prompt automatically, so the AI understands voice content with no extra setup)
 - Send files to Discord/WeChat via MCP
 - Batch file transfer support
 
@@ -300,6 +302,9 @@ queue:
 
 message_splitting:
   enabled: true                        # Enable message splitting by empty lines (Make replies more natural and personified)
+
+voice_message:
+  enabled: true                        # Voice message direct trigger (auto-trigger AI with file path after download; configure your own speech-to-text tools for the AI; WeChat voice additionally includes automatic transcription injected into the prompt; when disabled, old behavior is restored: WeChat voice ignored, voice messages cached as normal attachments)
 
 auto_load:
   enabled: true                        # Auto-inject prompt for first message of a new session
