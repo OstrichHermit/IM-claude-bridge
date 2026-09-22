@@ -66,9 +66,38 @@ class WeixinMessageHandlersMixin:
                     ))
                 log.log(f"[附件缓存] 用户 {from_user_id} 新增 {len(downloaded_files)} 个媒体到缓存，当前共 {len(self.pending_attachments[from_user_id])} 个")
 
-            # 如果没有内容（只有文件消息），不发送给 AI（但媒体已加入缓存）
+            # 如果没有内容：纯语音消息且开关开启时，构造语音描述文本直接触发 AI；
+            # 其他纯媒体消息（图片/文件/视频）保持旧行为，仅缓存不触发
             if not content:
-                return
+                if self.config.voice_message_direct_trigger:
+                    voice_files = [f for f in downloaded_files if str(f.get("filename", "")).lower().endswith(".silk")]
+                    if voice_files:
+                        voice_file = voice_files[0]
+                        duration = voice_file.get("duration")
+                        if duration:
+                            try:
+                                duration = f"{float(duration):.1f}"
+                                if duration.endswith(".0"):
+                                    duration = duration[:-2]
+                            except (TypeError, ValueError):
+                                pass
+                        # 微信自带转写结果：非空时直接带给 AI（省去转写）；为空时 AI 自行转写兜底
+                        # 转写自带结尾标点，换行后再接文件路径，避免标点叠加
+                        voice_text = str(voice_file.get("text") or "").strip()
+                        parts = []
+                        if duration:
+                            parts.append(f"时长约{duration}秒")
+                        if voice_text:
+                            parts.append(f"微信自动转写：{voice_text}")
+                        header = "[微信语音消息]"
+                        if parts:
+                            header += " " + "，".join(parts)
+                        content = header + f"\n文件已保存在：{voice_file['file_path']}"
+                        log.log(f"🎤 [{from_user_id}] 语音消息直接触发: {voice_file['filename']}")
+                    else:
+                        return
+                else:
+                    return
 
             log.log(f"📨 [{from_user_id}] 收到消息: {content[:50]}...")
             if ref_files:
@@ -224,9 +253,32 @@ class WeixinMessageHandlersMixin:
                         downloaded_files.append({"file_path": filepath, "filename": filename})
                     # 图片消息不返回内容，不发送给 AI
 
-                # 语音消息（不处理）
+                # 语音消息
                 elif item_type == MediaType.VOICE:
-                    pass  # 语音不返回内容
+                    if self.config.voice_message_direct_trigger:
+                        filepath = await self.media_handler.download_media_item(
+                            item,
+                            label=f"inbound_{message_id}"
+                        )
+                        if filepath:
+                            filename = Path(filepath).name
+                            # 用入站 message_id 作为映射 key（与其他媒体一致，支持引用消息回查）
+                            self.file_mapping.add_file(str(message_id), filename)
+                            duration = None
+                            try:
+                                # 微信语音时长在 voice_item.playtime（毫秒），转秒
+                                playtime = item.get("voice_item", {}).get("playtime")
+                                if playtime is not None:
+                                    duration = float(playtime) / 1000.0
+                            except (TypeError, ValueError):
+                                duration = None
+                            # 微信自带转写结果（服务端转写，实测准确）
+                            voice_text = str(item.get("voice_item", {}).get("text") or "").strip()
+                            if voice_text:
+                                log.log(f"🔍 语音自带转写: {voice_text[:50]}")
+                            log.log(f"🎤 语音已下载: {filename} (message_id={message_id}, playtime={duration})")
+                            downloaded_files.append({"file_path": filepath, "filename": filename, "duration": duration, "text": voice_text})
+                    # 开关关闭时不下载，保持旧行为（静默忽略）
 
                 # 文件消息（只下载保存，不加入返回列表）
                 elif item_type == MediaType.FILE:

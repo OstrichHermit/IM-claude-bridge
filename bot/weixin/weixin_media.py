@@ -88,10 +88,22 @@ class WeixinMediaDownloader:
         return plaintext
 
     def _parse_aes_key(self, aes_key: str) -> bytes:
-        """解析 AES 密钥（支持 base64 和 hex 格式）"""
+        """解析 AES 密钥（支持 base64 和 hex 格式）
+
+        特殊情况：微信语音的 key 是 base64(hex) 双层编码 —— base64 解码后
+        得到的是 32 字符 hex 字符串，需要再 fromhex 一次才是 16 字节真 key。
+        """
         # 尝试 base64
         try:
-            return base64.b64decode(aes_key)
+            decoded = base64.b64decode(aes_key)
+            # base64 解码结果若是 hex 字符串（AES key 长度），再解一层
+            try:
+                hex_str = decoded.decode('ascii')
+                if len(hex_str) in (32, 48, 64) and all(c in '0123456789abcdefABCDEF' for c in hex_str):
+                    return bytes.fromhex(hex_str)
+            except (UnicodeDecodeError, ValueError):
+                pass
+            return decoded
         except Exception:
             pass
 
@@ -221,12 +233,27 @@ class WeixinMediaHandler:
         media = voice_item.get("media", {})
 
         encrypt_param = media.get("encrypt_query_param")
-        aes_key = media.get("aes_key")
+        # 获取 AES key（对齐图片逻辑：优先 voice_item.aeskey，其次 media.aes_key）
+        aes_key = voice_item.get("aeskey") or media.get("aes_key")
 
         if not encrypt_param or not aes_key:
+            log.log(f"⚠️ [{label}] 语音缺少下载参数: voice_item keys={list(voice_item.keys())}, media keys={list(media.keys())}")
             return None
 
+        # 调试日志：排查语音解密失败问题（key 只打前 8 位，防泄漏）
+        key_source = "voice_item.aeskey" if voice_item.get("aeskey") else "media.aes_key"
+        log.log(f"🔍 [{label}] 语音字段: voice_item keys={list(voice_item.keys())}, media keys={list(media.keys())}, "
+                f"encrypt_type={media.get('encrypt_type')}, key来源={key_source}, key[:8]={str(aes_key)[:8]}, key长度={len(str(aes_key))}")
+
         try:
+            # aeskey 通常是 hex 格式，归一化为 base64（与图片处理一致）
+            if voice_item.get("aeskey"):
+                try:
+                    key_bytes = bytes.fromhex(aes_key)
+                    aes_key = base64.b64encode(key_bytes).decode()
+                except Exception:
+                    pass
+
             content = await self.downloader.download_and_decrypt(encrypt_param, aes_key)
 
             # 保存为 SILK 格式

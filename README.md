@@ -26,6 +26,8 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - 引用文件信息（自动提取文件信息发送给 Claude Code）
 - 自动从 Discord/微信下载文件到本地配置的目录
 - 自动处理文件名冲突（自动重命名）
+- **语音消息直接触发**（微信语音消息 + Discord 语音条：下载后自动以文件路径描述文本触发 AI 处理，用户可自行给 AI 配置转文字工具，bridge 本身不依赖任何音频库）
+- **微信语音自动转写**（微信语音自带服务端转写，转写文本自动注入提示词，无需额外配置 AI 即可理解语音内容）
 - 通过 MCP 发送文件到 Discord/微信
 - 批量文件传输支持
 
@@ -300,6 +302,9 @@ queue:
 
 message_splitting:
   enabled: true                        # 是否启用消息按空行分割功能（让回复更自然拟人）
+
+voice_message:
+  enabled: true                        # 语音消息直接触发（下载后以文件路径自动触发 AI，用户可自行给 AI 配置转文字工具；微信语音额外自带自动转写，转写文本直接注入提示词；关闭则恢复旧行为：微信语音忽略、语音条按普通附件缓存）
 
 auto_load:
   enabled: true                        # 首次对话提示词注入（会添加到新会话第一条消息前面）

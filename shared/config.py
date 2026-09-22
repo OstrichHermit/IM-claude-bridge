@@ -230,6 +230,13 @@ class Config:
         """获取是否启用消息按空行分割功能"""
         return self._config.get('message_splitting', {}).get('enabled', True)
 
+    # 语音消息配置
+
+    @property
+    def voice_message_direct_trigger(self) -> bool:
+        """获取是否启用语音消息直接触发（微信语音 + Discord 语音条）"""
+        return self._config.get('voice_message', {}).get('enabled', True)
+
     # 微信配置
 
     @property
