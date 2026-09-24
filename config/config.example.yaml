@@ -172,6 +172,7 @@ tool_use_notification:
     jina-mcp-server: "🌐"
     brave-search: "🌐"
     im-claude-bridge: "💬"
+    audio-transcribe: "🎙️"
     
     # ==================== MCP 具体工具 emoji 映射 ====================
     # MCP 具体工具 emoji 映射（优先级高于服务器映射）
