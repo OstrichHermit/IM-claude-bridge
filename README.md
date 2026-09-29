@@ -18,6 +18,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - 使用消息队列机制统一处理响应（保证消息顺序正确）
 - 工具调用通知（在 Discord 中以 Embed 卡片形式发送）
 - 图片表情包（自动检测 `<:文件名.扩展名>` 格式并发送图片）
+- **微信主动通知与额度提示**（`notify_weixin` 让 AI 随时发微信消息，自动带引用块来源前缀；每条发出的微信消息末尾实时拼接"剩余可发送消息数量：x"，回消息即重置 10 条额度）
 
 **📁 文件传输**
 - 支持所有文件类型（图片、文档、压缩包等）
@@ -254,13 +255,9 @@ MCP 服务器会随 `start.bat` / `restart.bat` 自动启动，访问 Web 控制
 
 ### MCP 工具
 
-**Discord 文件传输**：
-1. **send_file_to_discord** - 发送文件到 Discord（支持私聊/频道）
-2. **send_multiple_files_to_discord** - 批量发送文件到 Discord（最多10个）
-
-**微信文件传输**：
-1. **send_file_to_weixin** - 发送文件到微信（支持私聊/群聊）
-2. **send_multiple_files_to_weixin** - 批量发送文件到微信（最多9个）
+**消息与文件发送**：
+1. **send_files** - 发送文件到当前对话（Discord/微信通用，单次最多 10/9 个）
+2. **notify_weixin** - 发送微信文本通知（自动带引用块来源前缀，如 `来自 Discord 频道＃频道名`，与剩余额度提示）
 
 **定时任务**：
 1. **add_cron** - 添加定时任务（支持 cron 表达式）
@@ -332,6 +329,8 @@ tool_use_notification:
 weixin:
   enabled: false                       # 是否启用微信 Bot
   accounts_file: "./config/weixin_accounts.json"  # 微信账号存储文件路径
+  notify_weixin_username: ""           # notify_weixin 默认通知目标联系人 username（对应账号文件中的 username 字段）
+  quota_hint_enabled: true             # 微信消息末尾拼接"剩余可发送消息数量：x"（微信 context_token 每条 10 条额度，回消息重置；关闭后只计数不拼提示）
 ```
 
 ### 微信 Bot 配置（可选）

@@ -183,6 +183,13 @@ class DiscordMessageHandlersMixin:
             # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
             message_id = self.message_queue.add_message(msg)
 
+            # 频道消息：缓存频道名（notify_weixin 来源前缀用）
+            if not is_dm:
+                try:
+                    self.message_queue.upsert_channel_name(message.channel.id, message.channel.name)
+                except Exception as e:
+                    log.log(f"⚠️ 缓存频道名失败: {e}")
+
             # 打印日志，包含附件信息
             total_files = len(final_attachments) if final_attachments else 0
             attach_info = f" (+{total_files}个附件)" if total_files else ""
@@ -356,6 +363,13 @@ class DiscordMessageHandlersMixin:
 
                 # 添加到消息队列
                 message_id = self.message_queue.add_message(msg)
+
+                # 频道消息：缓存频道名（notify_weixin 来源前缀用）
+                if not is_dm:
+                    try:
+                        self.message_queue.upsert_channel_name(message.channel.id, message.channel.name)
+                    except Exception as e:
+                        log.log(f"⚠️ 缓存频道名失败: {e}")
 
                 log.log(f"[消息 #{message_id}] 收到来自 {message.author.display_name} 的附件引用消息 ({'私聊' if is_dm else '频道'})")
 

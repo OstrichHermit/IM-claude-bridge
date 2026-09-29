@@ -285,6 +285,16 @@ class Config:
         return str(mapping_file)
 
     @property
+    def notify_weixin_username(self) -> str:
+        """获取 notify_weixin 工具默认通知目标联系人的 username"""
+        return self._config.get('weixin', {}).get('notify_weixin_username', '')
+
+    @property
+    def quota_hint_enabled(self) -> bool:
+        """获取微信剩余额度提示开关（默认开启；关闭后只计数不拼提示）"""
+        return bool(self._config.get('weixin', {}).get('quota_hint_enabled', True))
+
+    @property
     def file_mapping_path(self) -> str:
         """获取文件映射表路径"""
         mapping_file = self._config.get('file_mapping', {}).get('path', './file_mapping.json')

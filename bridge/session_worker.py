@@ -487,6 +487,32 @@ class SessionWorker:
                                                 )
                                                 sequence_index += 1
 
+                                        # 微信主动通知工具：写入 outbox，由微信 Bot 轮询发送（username=None 由 Bot 端用默认配置补齐）
+                                        if tool_name in ('notify_weixin', 'mcp__im-claude-bridge__notify_weixin'):
+                                            notify_content = (tool_input.get('content') or '').strip()
+                                            if notify_content:
+                                                # 拼接来源前缀（半角">"引用块格式，微信端可渲染；拼在正文最前面）
+                                                try:
+                                                    if channel_type == 'weixin':
+                                                        source_desc = "> 来自微信私聊的消息："
+                                                    elif channel_type == 'discord' and is_dm:
+                                                        source_desc = "> 来自 Discord 私聊的消息："
+                                                    elif channel_type == 'discord':
+                                                        channel_name = self.message_queue.get_channel_name(channel_id)
+                                                        if channel_name:
+                                                            source_desc = f"> 来自 Discord 频道`＃{channel_name}`的消息："
+                                                        else:
+                                                            source_desc = f"> 来自 Discord 频道`＃{channel_id}`的消息："
+                                                    else:
+                                                        source_desc = f"> 来自会话 {session_key} 的消息："
+                                                except Exception:
+                                                    source_desc = None
+                                                self.message_queue.add_notify(username=None, content=notify_content, source_desc=source_desc)
+                                                self._log.log(
+                                                    f"[NotifyWeixin] 已受理微信通知, message #{message_id}, "
+                                                    f"session {session_key}"
+                                                )
+
                                         # ====== AskUserQuestion 拦截（阶段一） ======
                                         # Claude Code 在 -p 模式下调用 AskUserQuestion 时会被内部立即注入"用户拒绝"的 tool_result，
                                         # 进程随即退出。这里拦截该工具调用，触发 kill，并保留 questions 数据用于后续 Discord 投票。

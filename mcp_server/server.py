@@ -17,6 +17,7 @@ Discord Bridge MCP Server - 基于消息队列的架构
 """
 import asyncio
 import io
+import json
 import os
 import sys
 import traceback
@@ -188,6 +189,39 @@ async def send_files(
         - 不存在的文件会被自动跳过
     """
     return await _send_files(file_paths=file_paths)
+
+
+@mcp.tool
+async def notify_weixin(content: str) -> str:
+    """
+    发一条文本消息到爸爸的微信（支持多行）
+
+    用于任务完成通知、需要提醒爸爸的事情等；不需要爸爸在微信回复。
+    本工具只做受理，真正的发送由 SessionWorker 通过微信完成。
+
+    Args:
+        content: 要发送的文本内容（必需，支持多行）
+
+    Returns:
+        JSON 格式的受理结果
+
+    Examples:
+        # 任务完成通知
+        notify_weixin(content="任务已完成，共处理 10 个文件")
+
+        # 多行提醒
+        notify_weixin(content="提醒：\\n- 下午 3 点开会\\n- 记得查看报告")
+
+    Note:
+        - 内容支持多行文本
+        - 不需要爸爸在微信回复
+        - 已受理后由 SessionWorker 异步通过微信发送，无需等待发送结果
+    """
+    return json.dumps({
+        "success": True,
+        "message": "已受理，将由 SessionWorker 通过微信发送",
+        "content": content
+    }, ensure_ascii=False, indent=2)
 
 
 @mcp.tool
@@ -559,6 +593,7 @@ def run_server(
     log.log("      7. update_cron                  - 更新定时任务")
     log.log("    其他:")
     log.log("      8. get_current_time             - 获取当前时间（支持多时区）")
+    log.log("      9. notify_weixin                - 发送微信通知给爸爸")
     log.log("")
     log.log("  架构说明:")
     log.log("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")

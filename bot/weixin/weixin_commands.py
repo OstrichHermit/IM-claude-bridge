@@ -357,6 +357,16 @@ class WeixinCommandsMixin:
         if not context_token:
             raise Exception(f"context_token is required but missing for user {to_user_id}")
 
+        # 命令响应也消耗发送额度：计数并拼接额度提示（开关关闭时只计数不拼提示）
+        try:
+            from bot.weixin.weixin_pollers import WEIXIN_QUOTA_LIMIT
+            quota_used = self.message_queue.incr_weixin_quota(to_user_id, context_token)
+            if self.config.quota_hint_enabled:
+                remaining = WEIXIN_QUOTA_LIMIT - quota_used
+                text = f"{text}\n\n`剩余可发送消息数量：{remaining}`"
+        except Exception as e:
+            log.log(f"⚠️ [命令响应] 累加额度失败，不拼额度提示: {e}")
+
         await client.send_message(
             to_user_id=to_user_id,
             text=text,

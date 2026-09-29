@@ -129,6 +129,36 @@ TABLES: Dict[str, str] = {
             sent_at
         )
     """,
+
+    "weixin_notify_outbox": """
+        CREATE TABLE IF NOT EXISTS weixin_notify_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            content TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            error TEXT,
+            created_at TEXT,
+            sent_at TEXT,
+            source_desc TEXT
+        )
+    """,
+
+    "discord_channels": """
+        CREATE TABLE IF NOT EXISTS discord_channels (
+            channel_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """,
+
+    "weixin_quota": """
+        CREATE TABLE IF NOT EXISTS weixin_quota (
+            username TEXT PRIMARY KEY,
+            token TEXT,
+            used INTEGER DEFAULT 0,
+            updated_at TEXT
+        )
+    """,
 }
 
 # ========== 索引 SQL（按表分组）==========
@@ -235,6 +265,14 @@ MIGRATIONS: List[Dict] = [
         "version": 8,
         "alterations": [
             "ALTER TABLE sessions ADD COLUMN ask_view_message_id INTEGER",  # Discord View 卡片消息 ID（持久化去重 + 启动恢复用）
+        ]
+    },
+
+    # Version 9: weixin_notify_outbox 表 - 添加 source_desc 字段（notify_weixin 来源前缀）
+    {
+        "version": 9,
+        "alterations": [
+            "ALTER TABLE weixin_notify_outbox ADD COLUMN source_desc TEXT",  # 来源描述（如"＞来自 Discord 频道＃xxx发来的消息："）
         ]
     },
 ]

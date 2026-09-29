@@ -1373,6 +1373,140 @@ class MessageQueue:
         conn.commit()
         conn.close()
 
+    # ========== 微信通知 outbox（notify_weixin） ==========
+
+    def add_notify(self, username: Optional[str], content: str, source_desc: Optional[str] = None) -> int:
+        """添加微信通知到 outbox"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO weixin_notify_outbox (username, content, status, created_at, source_desc)
+            VALUES (?, ?, 'pending', ?, ?)
+        """, (username, content, datetime.now().isoformat(), source_desc))
+
+        notify_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return notify_id
+
+    def get_pending_notifies(self, limit: int = 5) -> List[dict]:
+        """获取待发送的微信通知（按 id 升序）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, username, content, status, source_desc
+            FROM weixin_notify_outbox
+            WHERE status = 'pending'
+            ORDER BY id ASC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {"id": row[0], "username": row[1], "content": row[2], "status": row[3], "source_desc": row[4]}
+            for row in rows
+        ]
+
+    # ========== Discord 频道名缓存（notify_weixin 来源前缀用） ==========
+
+    def upsert_channel_name(self, channel_id: int, name: str):
+        """更新 Discord 频道名缓存（存在则更新，不存在则插入）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO discord_channels (channel_id, name, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                name = excluded.name,
+                updated_at = excluded.updated_at
+        """, (channel_id, name, datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+
+    def get_channel_name(self, channel_id: int) -> Optional[str]:
+        """获取 Discord 频道名缓存"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT name FROM discord_channels WHERE channel_id = ?
+        """, (channel_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return row[0] if row else None
+
+    # ========== 微信发送额度计数（context_token 每条 10 条额度） ==========
+
+    def reset_weixin_quota(self, username: str, token: str):
+        """重置微信发送额度（用户发新消息 = 新 token = 额度重置）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO weixin_quota (username, token, used, updated_at)
+            VALUES (?, ?, 0, ?)
+        """, (username, token, datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+
+    def incr_weixin_quota(self, username: str, token: str) -> int:
+        """累加微信发送额度并返回已用条数
+
+        规则：无记录或 token 与存量不一致（新 token = 新额度）时按 used=0 起算并更新 token。
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT token, used FROM weixin_quota WHERE username = ?
+        """, (username,))
+        row = cursor.fetchone()
+
+        if row is None or row[0] != token:
+            used = 0
+        else:
+            used = row[1] or 0
+
+        used += 1
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO weixin_quota (username, token, used, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (username, token, used, datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+        return used
+
+    def mark_notify_finished(self, notify_id: int, error: Optional[str] = None):
+        """标记微信通知为终态（error 为空 → sent，否则 failed）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        if error:
+            cursor.execute("""
+                UPDATE weixin_notify_outbox
+                SET status = 'failed', error = ?, sent_at = ?
+                WHERE id = ?
+            """, (error, now, notify_id))
+        else:
+            cursor.execute("""
+                UPDATE weixin_notify_outbox
+                SET status = 'sent', sent_at = ?
+                WHERE id = ?
+            """, (now, notify_id))
+
+        conn.commit()
+        conn.close()
+
     # ========== 消息序列相关方法 ==========
 
     def add_message_sequence(self, message_id: int, sequence_index: int, content_block_index: int,
