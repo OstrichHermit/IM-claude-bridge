@@ -13,6 +13,9 @@ from shared.message_queue import ChannelType
 
 log = get_logger("WeixinBot", "weixin")
 
+# 微信 context_token 每条 token 的可发送消息上限（用户发新消息会刷新 token 重置额度）
+WEIXIN_QUOTA_LIMIT = 10
+
 
 class WeixinPollersMixin:
     """轮询任务 Mixin"""
@@ -186,6 +189,76 @@ class WeixinPollersMixin:
         except Exception as send_error:
             log.log(f"❌ [AskUserQuestion][微信] 发送展示失败: {send_error}")
             return False
+
+    async def check_notify_outbox_loop(self):
+        """轮询 weixin_notify_outbox，把 pending 通知发送到微信（全部终态化，不重试）"""
+        log.log("📣 [NotifyWeixin] 通知 outbox 轮询任务已启动")
+        while self.running:
+            try:
+                pending_notifies = self.message_queue.get_pending_notifies(limit=5)
+
+                for item in pending_notifies:
+                    try:
+                        username = item.get("username") or self.config.notify_weixin_username
+                        content = item.get("content", "")
+
+                        # 解析 target_account：优先按 username_to_wxid 匹配，找不到且只有单账号就用 accounts[0]
+                        target_account = None
+                        if username and username in self.username_to_wxid:
+                            target_wxid = self.username_to_wxid.get(username)
+                            for account in self.accounts:
+                                if account.wxid == target_wxid:
+                                    target_account = account
+                                    break
+                        elif len(self.accounts) == 1:
+                            target_account = self.accounts[0]
+
+                        if not target_account:
+                            self.message_queue.mark_notify_finished(item["id"], error="no target account")
+                            continue
+
+                        client = self.clients.get(target_account.bot_id)
+                        if not client:
+                            self.message_queue.mark_notify_finished(item["id"], error="no client")
+                            continue
+
+                        token = self.context_tokens.get(username)
+                        if not token:
+                            self.message_queue.mark_notify_finished(item["id"], error="no context_token")
+                            continue
+
+                        # 拼接来源前缀（来源描述非空时拼在正文最前面；前缀后空一行让引用块独立结束，避免吞掉正文）
+                        source_desc = item.get("source_desc")
+                        if source_desc:
+                            content = f"{source_desc}\n\n{content}"
+
+                        # 累加额度并拼接额度提示（x = 本条发完后剩余条数；开关关闭时只计数不拼提示）
+                        try:
+                            used = self.message_queue.incr_weixin_quota(username, token)
+                            if self.config.quota_hint_enabled:
+                                remaining = WEIXIN_QUOTA_LIMIT - used
+                                content = f"{content}\n\n`剩余可发送消息数量：{remaining}`"
+                        except Exception as e:
+                            log.log(f"⚠️ [NotifyWeixin] 累加额度失败，不拼额度提示: {e}")
+
+                        try:
+                            await client.send_message(
+                                to_user_id=username,
+                                text=content,
+                                context_token=token
+                            )
+                            self.message_queue.mark_notify_finished(item["id"])
+                            log.log(f"📣 [NotifyWeixin] 已发送通知 #{item['id']} -> {username}")
+                        except Exception as e:
+                            self.message_queue.mark_notify_finished(item["id"], error=str(e))
+                            log.log(f"❌ [NotifyWeixin] 发送通知 #{item['id']} 失败: {e}")
+                    except Exception as e:
+                        self.message_queue.mark_notify_finished(item["id"], error=str(e))
+                        log.log(f"❌ [NotifyWeixin] 处理通知 #{item.get('id')} 失败: {e}")
+            except Exception as e:
+                log.log(f"❌ check_notify_outbox_loop 错误: {e}")
+
+            await asyncio.sleep(0.5)
 
     async def check_tool_use_results(self):
         """定期检查工具执行结果并发送工具调用通知"""

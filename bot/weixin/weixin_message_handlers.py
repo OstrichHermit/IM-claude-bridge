@@ -31,6 +31,11 @@ class WeixinMessageHandlersMixin:
             # 无论消息类型，都保存最新的 context_token
             if context_token:
                 self.context_tokens.set(from_user_id, context_token)
+                # 用户发新消息 = 新 token = 发送额度重置
+                try:
+                    self.message_queue.reset_weixin_quota(from_user_id, context_token)
+                except Exception as e:
+                    log.log(f"⚠️ [{from_user_id}] 重置微信发送额度失败: {e}")
 
             # 只处理用户消息 (message_type = 1)
             if message_type != 1:

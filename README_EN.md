@@ -18,6 +18,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Unified message queue mechanism for all responses (guarantee correct message order)
 - Tool use notification (forward as Embed cards in Discord)
 - Image Stickers (auto-detect `<:filename.extension>` format and send images)
+- **WeChat proactive notification & quota hint** (`notify_weixin` lets the AI send WeChat messages anytime, with a blockquote source prefix added automatically; every outgoing WeChat message gets a real-time "remaining messages" hint at the end, resetting to 10 when the user replies)
 
 **📁 File Transfer**
 - Support all file types (images, documents, archives, etc.)
@@ -254,13 +255,9 @@ MCP server starts automatically with `start.bat` / `restart.bat`. Visit Web Cont
 
 ### MCP Tools
 
-**Discord File Transfer**:
-1. **send_file_to_discord** - Send file to Discord (supports DM/channels)
-2. **send_multiple_files_to_discord** - Batch send files to Discord (up to 10 files)
-
-**WeChat File Transfer**:
-1. **send_file_to_weixin** - Send file to WeChat (supports DM/groups)
-2. **send_multiple_files_to_weixin** - Batch send files to WeChat (up to 9 files)
+**Message & File Sending**:
+1. **send_files** - Send files to the current conversation (Discord/WeChat, up to 10/9 files per call)
+2. **notify_weixin** - Send a WeChat text notification (with a blockquote source prefix like `Discord channel #name` and a remaining-quota hint)
 
 **Scheduled Tasks**:
 1. **add_cron** - Add scheduled task (supports cron expressions)
@@ -332,6 +329,8 @@ tool_use_notification:
 weixin:
   enabled: false                       # Enable WeChat Bot
   accounts_file: "./config/weixin_accounts.json"  # WeChat account storage file path
+  notify_weixin_username: ""           # Default notify_weixin target contact username (from the accounts file)
+  quota_hint_enabled: true             # Append a "remaining messages" hint to outgoing WeChat messages (each context_token allows 10 messages, reset on user reply; disabled = counting only without appending)
 ```
 
 ### WeChat Bot Configuration (Optional)

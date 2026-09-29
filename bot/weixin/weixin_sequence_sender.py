@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import MessageStatus
 from shared.logger import get_logger
+from bot.weixin.weixin_pollers import WEIXIN_QUOTA_LIMIT
 
 log = get_logger("WeixinBot", "weixin")
 
@@ -270,10 +271,20 @@ class WeixinSequenceSenderMixin:
                                 # 调试日志
 
                                 try:
+                                    # 组装发送文本：每段都计数并拼接额度提示（开关关闭时只计数不拼提示）
+                                    send_text = text.strip()
+                                    try:
+                                        quota_used = self.message_queue.incr_weixin_quota(username, context_token)
+                                        if self.config.quota_hint_enabled:
+                                            remaining = WEIXIN_QUOTA_LIMIT - quota_used
+                                            send_text = f"{send_text}\n\n`剩余可发送消息数量：{remaining}`"
+                                    except Exception as quota_error:
+                                        log.log(f"⚠️ [消息 #{message_id}] 累加额度失败，不拼额度提示: {quota_error}")
+
                                     # 直接发送文本
                                     await client.send_message(
                                         to_user_id=to_user_id,
-                                        text=text.strip(),
+                                        text=send_text,
                                         context_token=context_token
                                     )
                                     log.log(f"✅ [消息 #{message_id}] 已发送: {text[:30]}...")
@@ -292,6 +303,11 @@ class WeixinSequenceSenderMixin:
                                 try:
                                     await self._send_sticker_image(client, to_user_id, sticker_path, context_token)
                                     log.log(f"✅ [消息 #{message_id}] 已发送表情包: {os.path.basename(sticker_path)}")
+                                    # 表情包发送成功：计数
+                                    try:
+                                        self.message_queue.incr_weixin_quota(username, context_token)
+                                    except Exception:
+                                        pass
                                 except Exception as e:
                                     log.log(f"❌ [消息 #{message_id}] 表情包发送失败: {sticker_path} - {e}")
                             else:
@@ -329,6 +345,12 @@ class WeixinSequenceSenderMixin:
                                         log.log(f"❌ [消息 #{message_id}] 文件发送失败: {fp} - {e}")
                             if sent_count == 0:
                                 log.log(f"⚠️ [消息 #{message_id}] 没有有效的文件可发送")
+                            else:
+                                # 文件发送成功（至少一个）：按序列项计数
+                                try:
+                                    self.message_queue.incr_weixin_quota(username, context_token)
+                                except Exception:
+                                    pass
 
                         # 标记为已发送
                         self.message_queue.mark_sequence_sent(seq_id)
