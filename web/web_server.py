@@ -3,6 +3,7 @@ IM-Claude-Bridge Web 控制界面
 基于 FastAPI 的 Web 服务器，提供日志监控和系统控制功能
 """
 import asyncio
+import hmac
 import json
 import os
 import sqlite3
@@ -14,8 +15,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Request, Header
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.logger import get_logger, LOG_DIR, cleanup_logs
 from shared.config import Config
+from web.external_api import inject_external_message
 
 log = get_logger("WebServer", "manager")
 
@@ -264,6 +266,75 @@ async def control_action(action: str, component: str = "all"):
     except Exception as e:
         log.log(f"❌ 控制命令执行失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# 外部消息注入 API（供 hs watch 等外部程序调用）
+# ============================================================================
+
+def _verify_external_api_token(authorization: Optional[str], expected_token: str) -> bool:
+    """校验外部 API 的 Bearer token（hmac.compare_digest 防时序攻击，不回显 token）"""
+    if not authorization:
+        return False
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return False
+    # 用 bytes 比较：非 ASCII 输入也不会抛异常
+    return hmac.compare_digest(parts[1].strip().encode("utf-8"), expected_token.encode("utf-8"))
+
+
+@app.post("/api/external/message")
+async def post_external_message(request: Request, authorization: Optional[str] = Header(None)):
+    """外部消息注入接口
+
+    Header: Authorization: Bearer <token>
+    Body(JSON): {"channel_id": "1477362651859255326", "content": "<提示词>", "source": "hs-watch"}
+    """
+    # 1. 鉴权（token 未配置时直接拒绝）
+    expected_token = Config().external_api_token
+    if not expected_token:
+        log.log("⚠️ 未配置 external_api.token，拒绝外部 API 请求")
+        return JSONResponse(status_code=401, content={"success": False, "error": "unauthorized"})
+    if not _verify_external_api_token(authorization, expected_token):
+        return JSONResponse(status_code=401, content={"success": False, "error": "unauthorized"})
+
+    # 2. 解析 JSON body
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"success": False, "error": "invalid JSON body"})
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"success": False, "error": "invalid JSON body"})
+
+    # 3. 参数校验
+    channel_id_raw = body.get("channel_id")
+    content = body.get("content")
+    source = body.get("source")
+
+    if channel_id_raw is None or str(channel_id_raw).strip() == "":
+        return JSONResponse(status_code=400, content={"success": False, "error": "channel_id is required"})
+    try:
+        channel_id = int(str(channel_id_raw).strip())
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"success": False, "error": "channel_id must be an integer"})
+
+    if not isinstance(content, str) or content.strip() == "":
+        return JSONResponse(status_code=400, content={"success": False, "error": "content is required"})
+
+    # 4. 来源白名单校验（source 任意值可能改变 session 路由，如 task/reminder 会走临时会话）
+    allowed_sources = Config().external_api_allowed_sources
+    if allowed_sources and (not source or source not in allowed_sources):
+        return JSONResponse(status_code=400, content={"success": False, "error": f"source not allowed: {source}"})
+
+    # 5. 注入消息队列
+    try:
+        message_id, session_key = inject_external_message(channel_id, content, source)
+    except Exception as e:
+        log.log(f"❌ 外部消息注入失败 (channel={channel_id}): {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    log.log(f"📨 外部消息注入成功: #{message_id} -> {session_key} (source={source})")
+    return {"success": True, "message_id": message_id, "session_key": session_key}
 
 
 # ============================================================================
