@@ -331,6 +331,20 @@ class Config:
         """获取 Web 服务器监听端口"""
         return self._config.get('web_server', {}).get('port', 8088)
 
+    # 外部 API 配置
+
+    @property
+    def external_api_token(self) -> str:
+        """获取外部 API 鉴权 token（为空表示未配置，外部 API 将拒绝所有请求）"""
+        token = self._config.get('external_api', {}).get('token', '')
+        return str(token).strip() if token else ''
+
+    @property
+    def external_api_allowed_sources(self) -> List[str]:
+        """获取外部 API 允许的来源列表（空列表表示不限制）"""
+        sources = self._config.get('external_api', {}).get('allowed_sources', [])
+        return [str(s) for s in sources if s] if sources else []
+
     def update_discord_mention_required(self, value: bool):
         """更新 Discord mention_required 配置并持久化到文件"""
         # 更新内存中的配置

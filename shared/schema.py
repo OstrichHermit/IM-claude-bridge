@@ -290,10 +290,10 @@ class SchemaManager:
         try:
             # 1. 执行建表
             self._create_tables(conn)
-            # 2. 执行索引
-            self._create_indexes(conn)
-            # 3. 执行迁移
+            # 2. 执行迁移（必须先于索引：部分索引引用迁移新增的列，如 last_stream_update）
             self._run_migrations(conn)
+            # 3. 执行索引
+            self._create_indexes(conn)
         finally:
             conn.close()
 
