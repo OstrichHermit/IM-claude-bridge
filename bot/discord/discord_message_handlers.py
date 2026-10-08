@@ -147,6 +147,19 @@ class DiscordMessageHandlersMixin:
                     log.log(f"[消息缓存] 用户 {message.author.display_name} 发送了纯附件，已缓存不发 AI")
                     return
 
+            # retain 模式：取出该频道暂存的未@历史消息，格式化为补发历史块
+            # 存入 Message.pending_history 独立字段（不拼进 content），由 session_worker 拼在 sender_info 之前
+            pending_history = None
+            if not is_dm:
+                try:
+                    pending_msgs = self.message_queue.get_pending_unmentioned(message.channel.id)
+                    if pending_msgs:
+                        pending_history = self._format_pending_history(pending_msgs)
+                        removed = self.message_queue.clear_pending_unmentioned(message.channel.id)
+                        log.log(f"[历史补发] 频道 {message.channel.id} 合并 {removed} 条未@历史消息")
+                except Exception as e:
+                    log.log(f"❌ 取出未@历史消息失败: {e}")
+
             # 获取会话信息，检查是否为首次对话
             session_key, session_id, session_created, _ = self.message_queue.get_or_create_session(
                 self.config.working_directory,
@@ -177,7 +190,8 @@ class DiscordMessageHandlersMixin:
                 is_dm=is_dm,
                 tag=MessageTag.DEFAULT.value,
                 channel_type=ChannelType.DISCORD.value,  # Discord 频道
-                attachments=final_attachments  # 传入合并后的附件信息
+                attachments=final_attachments,  # 传入合并后的附件信息
+                pending_history=pending_history  # 未@历史补发块（独立字段，None 表示无）
             )
 
             # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
@@ -217,6 +231,23 @@ class DiscordMessageHandlersMixin:
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
+
+    def _format_pending_history(self, pending_msgs: list) -> str:
+        """把暂存的未@消息格式化为补发历史块；同一个人连续发送的多条消息合并到同一个"说："前缀下，逐行排列"""
+        lines = ["[历史消息补发：以下是本频道中在你被 @ 之前、未被转发而暂存的消息，按时间顺序排列，同一个人连续发送的消息合并在同一个前缀下。", ""]
+        groups = []  # 每组 [user_id, username, [contents]]
+        for m in pending_msgs:
+            if groups and groups[-1][0] == m["user_id"]:
+                groups[-1][2].append(m["content"])
+            else:
+                groups.append([m["user_id"], m["username"], [m["content"]]])
+        for i, (user_id, username, contents) in enumerate(groups):
+            lines.append(f"{username}（{user_id}）说：")
+            lines.extend(contents)
+            if i < len(groups) - 1:
+                lines.append("")
+        lines.append("]")
+        return "\n".join(lines)
 
     def _find_voice_attachment(self, message: discord.Message, downloaded_files: list) -> tuple | None:
         """识别语音条附件

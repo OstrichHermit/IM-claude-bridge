@@ -83,6 +83,17 @@ TABLES: Dict[str, str] = {
         )
     """,
 
+    "pending_unmentioned_messages": """
+        CREATE TABLE IF NOT EXISTS pending_unmentioned_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
+            discord_user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+""",
+
     "file_download_requests": """
         CREATE TABLE IF NOT EXISTS file_download_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +202,9 @@ INDEXES: Dict[str, List[str]] = {
         "CREATE INDEX IF NOT EXISTS idx_message_sequence_status ON message_sequence(status)",
         "CREATE INDEX IF NOT EXISTS idx_message_sequence_sequence_index ON message_sequence(sequence_index)",
     ],
+    "pending_unmentioned_messages": [
+        "CREATE INDEX IF NOT EXISTS idx_pending_unmentioned_channel ON pending_unmentioned_messages(channel_id)",
+    ],
 }
 
 # ========== 迁移脚本（按版本管理）==========
@@ -273,6 +287,22 @@ MIGRATIONS: List[Dict] = [
         "version": 9,
         "alterations": [
             "ALTER TABLE weixin_notify_outbox ADD COLUMN source_desc TEXT",  # 来源描述（如"＞来自 Discord 频道＃xxx发来的消息："）
+        ]
+    },
+
+    # Version 10: channel_settings 表 - 添加 retain_unmentioned（保留未@消息开关）
+    {
+        "version": 10,
+        "alterations": [
+            "ALTER TABLE channel_settings ADD COLUMN retain_unmentioned BOOLEAN",
+        ]
+    },
+
+    # Version 11: messages 表 - 添加 pending_history（retain 模式暂存的未@历史补发块）
+    {
+        "version": 11,
+        "alterations": [
+            "ALTER TABLE messages ADD COLUMN pending_history TEXT",
         ]
     },
 ]
