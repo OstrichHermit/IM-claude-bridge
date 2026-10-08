@@ -487,7 +487,7 @@ class DiscordBot(
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/retain` - 切换保留未@消息\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
@@ -553,6 +553,12 @@ class DiscordBot(
             )
             if mention_required:
                 if self.user not in message.mentions:
+                    # retain 模式：未@消息暂存，等下一条 @ 消息时一并补发
+                    try:
+                        if self.message_queue.get_channel_retain_unmentioned(message.channel.id):
+                            self._cache_unmentioned_message(message)
+                    except Exception as e:
+                        log.log(f"❌ 暂存未@消息失败: {e}")
                     return
 
         # 检查频道权限（仅对频道消息生效，私聊不受限）
@@ -575,6 +581,19 @@ class DiscordBot(
         else:
             # 处理普通消息
             await self.handle_user_message(message)
+
+    def _cache_unmentioned_message(self, message: discord.Message):
+        """暂存一条未@消息到数据库（retain 模式）"""
+        content = message.content.strip()
+        if message.attachments:
+            names = "、".join(a.filename for a in message.attachments)
+            content = f"{content}\n[含附件：{names}]" if content else f"[含附件：{names}]"
+        if not content:
+            return
+        self.message_queue.add_pending_unmentioned(
+            message.channel.id, message.author.id, message.author.display_name, content
+        )
+        log.log(f"[历史暂存] 频道 {message.channel.id} 暂存 {message.author.display_name} 的未@消息: {content[:50]}")
 
     async def on_close(self):
         """Bot 关闭时的清理"""

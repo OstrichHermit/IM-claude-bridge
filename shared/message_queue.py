@@ -94,6 +94,7 @@ class Message:
     context_token: Optional[str] = None  # 微信消息上下文 token（用于回复）
     attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
     streaming_response: Optional[str] = None  # 流式响应内容
+    pending_history: Optional[str] = None  # retain 模式暂存的未@历史补发块（session_worker 拼在 sender_info 之前）
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -211,8 +212,8 @@ class MessageQueue:
                 direction, content, status,
                 discord_channel_id, discord_message_id,
                 discord_user_id, username,
-                response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                response, error, is_dm, is_external, tag, channel_type, context_token, attachments, pending_history, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             message.direction,
             message.content,
@@ -229,6 +230,7 @@ class MessageQueue:
             message.channel_type,
             message.context_token,
             attachments_json,
+            message.pending_history,
             message.created_at,
             message.updated_at
         ))
@@ -257,7 +259,8 @@ class MessageQueue:
             SELECT id, direction, content, status,
                    discord_channel_id, discord_message_id,
                    discord_user_id, username,
-                   response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                   response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at,
+                   pending_history
             FROM messages
             WHERE status = ? AND direction = ?
             ORDER BY created_at ASC
@@ -306,7 +309,8 @@ class MessageQueue:
                 context_token=row[14],
                 attachments=attachments,
                 created_at=row[16],
-                updated_at=row[17]
+                updated_at=row[17],
+                pending_history=row[18]
             )
 
             # 计算 session_key
@@ -855,6 +859,164 @@ class MessageQueue:
         finally:
             conn.close()
 
+    # ========== 频道设置管理（retain_unmentioned 按频道独立管理） ==========
+
+    def get_channel_retain_unmentioned(self, channel_id: int, default: bool = False) -> bool:
+        """获取指定频道的 retain_unmentioned 设置（未配置或 NULL 时返回 default=False）
+
+        Args:
+            channel_id: 频道 ID
+            default: 频道未配置时的默认值
+
+        Returns:
+            该频道的 retain_unmentioned 值，未配置时返回 default
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT retain_unmentioned FROM channel_settings WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+
+        if row is None or row[0] is None:
+            return default
+        return bool(row[0])
+
+    def set_channel_retain_unmentioned(self, channel_id: int, value: bool):
+        """设置指定频道的 retain_unmentioned 值
+
+        Args:
+            channel_id: 频道 ID
+            value: 是否保留未@消息
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO channel_settings (channel_id, mention_required, retain_unmentioned, updated_at)
+                   VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(channel_id) DO UPDATE SET
+                       retain_unmentioned = excluded.retain_unmentioned,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (str(channel_id), int(value))
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # ========== 暂存未@消息管理（retain 模式） ==========
+
+    def add_pending_unmentioned(self, channel_id: int, user_id: int, username: str, content: str) -> int:
+        """暂存一条未@消息，返回新记录 id
+
+        Args:
+            channel_id: 频道 ID
+            user_id: 用户 Discord ID
+            username: 用户显示名
+            content: 消息内容（含附件名注释）
+
+        Returns:
+            新记录 id
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO pending_unmentioned_messages (channel_id, discord_user_id, username, content)
+                   VALUES (?, ?, ?, ?)""",
+                (channel_id, user_id, username, content)
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def get_pending_unmentioned(self, channel_id: int, limit: int = 50) -> list:
+        """取出指定频道暂存的未@消息（按时间正序），并顺带清理 24 小时前的旧记录
+
+        Args:
+            channel_id: 频道 ID
+            limit: 最多返回条数
+
+        Returns:
+            list of dict: [{"user_id": int, "username": str, "content": str}, ...]
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            # 清理该频道 24 小时前的旧记录（created_at 为 CURRENT_TIMESTAMP 即 UTC 时间）
+            cursor.execute(
+                "DELETE FROM pending_unmentioned_messages WHERE channel_id = ? AND created_at < datetime('now', '-24 hours')",
+                (channel_id,)
+            )
+            cursor.execute(
+                """SELECT discord_user_id, username, content FROM pending_unmentioned_messages
+                   WHERE channel_id = ? ORDER BY id DESC LIMIT ?""",
+                (channel_id, limit)
+            )
+            rows = cursor.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+
+        return [
+            {"user_id": row[0], "username": row[1], "content": row[2]}
+            for row in reversed(rows)
+        ]
+
+    def clear_pending_unmentioned(self, channel_id: int) -> int:
+        """删除指定频道全部暂存记录，返回删除条数
+
+        Args:
+            channel_id: 频道 ID
+
+        Returns:
+            删除的记录条数
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM pending_unmentioned_messages WHERE channel_id = ?",
+                (channel_id,)
+            )
+            deleted = cursor.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
+    def count_pending_unmentioned(self, channel_id: int) -> int:
+        """统计指定频道暂存条数
+
+        Args:
+            channel_id: 频道 ID
+
+        Returns:
+            暂存记录条数
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM pending_unmentioned_messages WHERE channel_id = ?",
+                (channel_id,)
+            )
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
     def get_or_create_session(
         self,
         base_working_dir: str,
@@ -951,7 +1113,8 @@ class MessageQueue:
                 SELECT id, direction, content, status,
                        discord_channel_id, discord_message_id,
                        discord_user_id, username,
-                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at
+                       response, error, is_dm, is_external, tag, channel_type, context_token, attachments, created_at, updated_at,
+                       pending_history
                 FROM messages
                 WHERE id = ?
             """, (message_id,))
@@ -1000,6 +1163,7 @@ class MessageQueue:
             attachments=attachments,
             created_at=row[16],
             updated_at=row[17],
+            pending_history=row[18],
         )
 
 

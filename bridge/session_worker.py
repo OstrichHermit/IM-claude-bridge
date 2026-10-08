@@ -187,7 +187,8 @@ class SessionWorker:
                 channel_id=message.discord_channel_id,
                 message_tag=message.tag,
                 attachments=message.attachments,
-                channel_type=message.channel_type
+                channel_type=message.channel_type,
+                pending_history=message.pending_history
             )
 
             # ====== AskUserQuestion 拦截后处理：保留 PROCESSING + 写 pending_ask ======
@@ -273,7 +274,8 @@ class SessionWorker:
         channel_id: int = None,
         message_tag: str = None,
         attachments: list = None,
-        channel_type: str = 'discord'
+        channel_type: str = 'discord',
+        pending_history: str = None
     ) -> Optional[str]:
         """
         调用 Claude Code CLI（从 ClaudeBridge 迁移）
@@ -297,10 +299,12 @@ class SessionWorker:
         else:
             sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments, channel_type)
 
+            # retain 模式：未@历史补发块拼在最前面（sender_info 之前），与当前消息间以空行分隔
+            history_prefix = f"{pending_history}\n\n" if pending_history else ""
             if self.config.auto_load_enabled and not session_created:
-                prompt = f"{self.config.auto_load_prompt_text}{sender_info}{prompt}"
+                prompt = f"{self.config.auto_load_prompt_text}{history_prefix}{sender_info}{prompt}"
             else:
-                prompt = f"{sender_info}{prompt}"
+                prompt = f"{history_prefix}{sender_info}{prompt}"
 
         while retries < max_attempts:
             try:

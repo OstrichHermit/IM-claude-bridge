@@ -221,6 +221,13 @@ class DiscordCommandsMixin:
                 split_status = "已开启" if splitting else "已关闭"
             embed.add_field(name="✂️ 换行分割", value=split_status, inline=False)
 
+            if is_dm:
+                retain_status = "不适用（私聊）"
+            else:
+                retain = self.message_queue.get_channel_retain_unmentioned(interaction.channel.id, default=False)
+                retain_status = "已开启（未@消息暂存，@时补发）" if retain else "已关闭"
+            embed.add_field(name="🗂️ 历史保留", value=retain_status, inline=False)
+
             await interaction.response.send_message(embed=embed)
 
         @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
@@ -535,6 +542,56 @@ class DiscordCommandsMixin:
 
             await interaction.response.send_message(embed=embed)
             log.log(f"[Split命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 message_splitting 为 {new_value}")
+
+        @self.tree.command(name="retain", description="切换当前频道是否保留未@消息（@时补发）")
+        async def retain_command(interaction: discord.Interaction):
+            """切换当前频道的 retain_unmentioned 设置"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.display_name}，您没有权限执行此操作。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+            # 私聊中不可用
+            if isinstance(interaction.channel, discord.DMChannel):
+                embed = discord.Embed(
+                    title="不可用",
+                    description="私聊中无需此设置，私聊始终直接对话。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+            # 切换当前频道的设置
+            channel_id = interaction.channel.id
+            current = self.message_queue.get_channel_retain_unmentioned(channel_id, default=False)
+            new_value = not current
+            self.message_queue.set_channel_retain_unmentioned(channel_id, new_value)
+
+            # 构建响应
+            status_text = "开启（保留未@消息）" if new_value else "关闭（未@消息直接丢弃）"
+            target = f"频道 #{interaction.channel.name}"
+
+            desc = f"{target} 的历史保留模式已切换为：**{status_text}**"
+            if new_value:
+                note = "现在未 @ 机器人的消息会被暂存，下一条 @ 消息到达时一并补发给 Claude（同一个人连续的消息会合并显示）"
+            else:
+                note = "现在未 @ 机器人的消息会被直接丢弃，不保留"
+
+            embed = discord.Embed(
+                title="🗂️ 历史保留模式",
+                description=desc,
+                color=discord.Color.green()
+            )
+            embed.add_field(name="说明", value=note, inline=False)
+
+            await interaction.response.send_message(embed=embed)
+            log.log(f"[Retain命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 retain_unmentioned 为 {new_value}")
 
         @self.tree.context_menu(name="下载附件")
         async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
