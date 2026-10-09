@@ -225,7 +225,7 @@ class DiscordCommandsMixin:
                 retain_status = "不适用（私聊）"
             else:
                 retain = self.message_queue.get_channel_retain_unmentioned(interaction.channel.id, default=False)
-                retain_status = "已开启（未@消息暂存，@时补发）" if retain else "已关闭"
+                retain_status = "已开启" if retain else "已关闭"
             embed.add_field(name="🗂️ 历史保留", value=retain_status, inline=False)
 
             await interaction.response.send_message(embed=embed)
@@ -574,7 +574,7 @@ class DiscordCommandsMixin:
             self.message_queue.set_channel_retain_unmentioned(channel_id, new_value)
 
             # 构建响应
-            status_text = "开启（保留未@消息）" if new_value else "关闭（未@消息直接丢弃）"
+            status_text = "已开启" if new_value else "已关闭"
             target = f"频道 #{interaction.channel.name}"
 
             desc = f"{target} 的历史保留模式已切换为：**{status_text}**"
