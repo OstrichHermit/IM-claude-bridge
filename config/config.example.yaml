@@ -59,6 +59,10 @@ queue:
   poll_interval: 500
   # 消息保留时间（小时，0 = 永久保留）
   message_retention_hours: 24
+  # 未@消息暂存保留时间（小时，0 = 永久保留；读取时清理超时记录）
+  pending_unmentioned_retention_hours: 24
+  # 未@消息暂存单次补发最大条数（0 = 不限制）
+  pending_unmentioned_max_count: 0
   # 消息发送间隔（秒）
   send_interval: 1.5
 
