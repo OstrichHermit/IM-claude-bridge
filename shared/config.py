@@ -98,6 +98,16 @@ class Config:
         return self._config.get('queue', {}).get('message_retention_hours', 24)
 
     @property
+    def pending_unmentioned_retention_hours(self) -> int:
+        """获取未@消息暂存保留时间（小时，0 = 永久保留，不自动清理）"""
+        return self._config.get('queue', {}).get('pending_unmentioned_retention_hours', 24)
+
+    @property
+    def pending_unmentioned_max_count(self) -> int:
+        """获取单次补发未@暂存消息的最大条数（0 = 不限制）"""
+        return self._config.get('queue', {}).get('pending_unmentioned_max_count', 0)
+
+    @property
     def startup_notification_channel(self) -> str:
         """获取启动通知频道 ID"""
         return self._config.get('discord', {}).get('startup_notification_channel', '')

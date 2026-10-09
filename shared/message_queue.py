@@ -938,12 +938,13 @@ class MessageQueue:
         finally:
             conn.close()
 
-    def get_pending_unmentioned(self, channel_id: int, limit: int = 50) -> list:
-        """取出指定频道暂存的未@消息（按时间正序），并顺带清理 24 小时前的旧记录
+    def get_pending_unmentioned(self, channel_id: int, limit: int = 0, retention_hours: int = 24) -> list:
+        """取出指定频道暂存的未@消息（按时间正序），并顺带清理超时的旧记录
 
         Args:
             channel_id: 频道 ID
-            limit: 最多返回条数
+            limit: 单次最多返回条数（0 = 不限制）
+            retention_hours: 暂存保留时长（小时，超时记录在读取时清理，0 = 永久保留）
 
         Returns:
             list of dict: [{"user_id": int, "username": str, "content": str}, ...]
@@ -952,16 +953,25 @@ class MessageQueue:
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.cursor()
-            # 清理该频道 24 小时前的旧记录（created_at 为 CURRENT_TIMESTAMP 即 UTC 时间）
-            cursor.execute(
-                "DELETE FROM pending_unmentioned_messages WHERE channel_id = ? AND created_at < datetime('now', '-24 hours')",
-                (channel_id,)
-            )
-            cursor.execute(
-                """SELECT discord_user_id, username, content FROM pending_unmentioned_messages
-                   WHERE channel_id = ? ORDER BY id DESC LIMIT ?""",
-                (channel_id, limit)
-            )
+            # 清理该频道超时的旧记录（created_at 为 CURRENT_TIMESTAMP 即 UTC 时间）
+            if retention_hours > 0:
+                cursor.execute(
+                    "DELETE FROM pending_unmentioned_messages WHERE channel_id = ? AND created_at < datetime('now', ?)",
+                    (channel_id, f'-{int(retention_hours)} hours')
+                )
+            # limit <= 0 表示不限制条数，全部取出
+            if limit and limit > 0:
+                cursor.execute(
+                    """SELECT discord_user_id, username, content FROM pending_unmentioned_messages
+                       WHERE channel_id = ? ORDER BY id DESC LIMIT ?""",
+                    (channel_id, limit)
+                )
+            else:
+                cursor.execute(
+                    """SELECT discord_user_id, username, content FROM pending_unmentioned_messages
+                       WHERE channel_id = ? ORDER BY id DESC""",
+                    (channel_id,)
+                )
             rows = cursor.fetchall()
             conn.commit()
         finally:

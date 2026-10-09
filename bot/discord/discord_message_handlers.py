@@ -152,7 +152,11 @@ class DiscordMessageHandlersMixin:
             pending_history = None
             if not is_dm:
                 try:
-                    pending_msgs = self.message_queue.get_pending_unmentioned(message.channel.id)
+                    pending_msgs = self.message_queue.get_pending_unmentioned(
+                        message.channel.id,
+                        limit=self.config.pending_unmentioned_max_count,
+                        retention_hours=self.config.pending_unmentioned_retention_hours
+                    )
                     if pending_msgs:
                         pending_history = self._format_pending_history(pending_msgs)
                         removed = self.message_queue.clear_pending_unmentioned(message.channel.id)
