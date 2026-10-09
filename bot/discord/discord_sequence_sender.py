@@ -443,12 +443,13 @@ class DiscordSequenceSenderMixin:
                                 # 保存消息引用（用于后续更新）
                                 if sent_message:
                                     # 使用正确的tool_use_index（而不是sequence_index）
+                                    # 私聊时 channel_id 为 None，需存 user_id 供轮询器 get_user 定位 DM 频道
                                     ref_tool_use_index = tool_use_index if tool_use_index is not None else seq_index
                                     self.message_queue.save_tool_use_message_ref(
                                         message_id,
                                         ref_tool_use_index,
                                         sent_message.id,
-                                        channel_id,
+                                        user_id if is_dm else channel_id,
                                         is_dm,
                                         channel_type='discord'
                                     )
