@@ -105,10 +105,9 @@ class DiscordMessageHandlersMixin:
                         ))
                     log.log(f"[附件处理] 成功处理 {len(attachment_infos)} 个附件")
 
-            # 如果没有内容也没有附件，返回错误
+            # 单独 @ bot（无内容无附件）：作为有效触发消息转发给 Claude，而不是报错
             if not content and not attachment_infos:
-                await message.channel.send("❌ 请提供消息内容或附件。")
-                return
+                content = "[该用户只发送了 @ 提及，没有附带文字内容]"
 
             # 检测是否为私聊消息
             is_dm = isinstance(message.channel, discord.DMChannel)
@@ -360,10 +359,9 @@ class DiscordMessageHandlersMixin:
                     break
             content = content.strip()
 
-            # 检查是否为空消息
+            # 单独 @ bot 引用附件消息：作为有效触发消息转发给 Claude，而不是报错
             if not content:
-                await message.channel.send("❌ 请提供消息内容。")
-                return
+                content = "[该用户引用了带附件的消息，没有附带文字内容]"
 
             # 检测是否为私聊消息
             is_dm = isinstance(message.channel, discord.DMChannel)
