@@ -552,7 +552,10 @@ class DiscordBot(
                 default=self.config.mention_required
             )
             if mention_required:
-                if self.user not in message.mentions:
+                # message.mentions 只含用户提及，@ bot 的身份组走 role_mentions
+                bot_role_ids = {r.id for r in message.guild.me.roles} if message.guild else set()
+                role_mentioned = any(r.id in bot_role_ids for r in message.role_mentions)
+                if self.user not in message.mentions and not role_mentioned:
                     # retain 模式：未@消息暂存，等下一条 @ 消息时一并补发
                     try:
                         if self.message_queue.get_channel_retain_unmentioned(message.channel.id):
