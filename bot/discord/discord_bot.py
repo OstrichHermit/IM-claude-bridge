@@ -545,6 +545,18 @@ class DiscordBot(
         if message.author == self.user:
             return
 
+        # 检查私聊权限（私聊白名单，仅对私聊消息生效）
+        if isinstance(message.channel, discord.DMChannel):
+            if self.config.allowed_dm_users:
+                if message.author.id not in self.config.allowed_dm_users:
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{message.author.mention}，您没有权限与我私聊。",
+                        color=discord.Color.red()
+                    )
+                    await message.reply(embed=embed)
+                    return
+
         # 检查是否需要 @提及（频道级别独立管理）
         if not isinstance(message.channel, discord.DMChannel):
             mention_required = self.message_queue.get_channel_mention_required(

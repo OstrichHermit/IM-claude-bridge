@@ -6,6 +6,12 @@ discord:
   allowed_channels: []
   # 允许的用户 ID 列表（空列表表示所有用户）
   allowed_users: []
+  # 私聊白名单用户 ID 列表（空列表表示所有用户可私聊；仅对私聊消息生效，非白名单用户静默忽略）
+  allowed_dm_users: []
+  # 核心命令列表（这些命令仅允许 core_allowed_users 中的用户执行）
+  core_commands: ["restart", "stop"]
+  # 核心命令白名单用户 ID 列表（空列表表示核心命令不限制）
+  core_allowed_users: []
   # 启动通知配置（可选，留空则不发送启动通知）
   startup_notification_channel: ""  # 频道 ID（留空）
   startup_notification_user: ""  # 用户 ID（私聊）
