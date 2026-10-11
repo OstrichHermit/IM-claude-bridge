@@ -36,60 +36,10 @@ class DiscordMessageHandlersMixin:
 
             # 检查并处理附件
             attachment_infos = None
+            downloaded_files = []
             if message.attachments:
                 log.log(f"[附件检测] 用户 {message.author.display_name} 发送了 {len(message.attachments)} 个附件")
-
-                # 使用配置的默认下载目录
-                save_dir = Path(self.config.default_download_directory)
-                save_dir.mkdir(parents=True, exist_ok=True)
-
-                downloaded_files = []
-
-                # 下载所有附件
-                async with aiohttp.ClientSession() as session:
-                    for attachment in message.attachments:
-                        try:
-                            # 检查映射表中是否已有该附件的本地文件名
-                            mapped_filename = self.file_mapping.get_local_filename(attachment.id)
-                            if mapped_filename:
-                                # 使用映射表中的文件名
-                                local_path = save_dir / mapped_filename
-                                log.log(f"[附件下载] 使用已映射文件名: {mapped_filename}")
-                            else:
-                                # 处理文件名冲突
-                                local_path = save_dir / attachment.filename
-                                counter = 1
-                                original_stem = Path(attachment.filename).stem
-                                original_suffix = Path(attachment.filename).suffix
-
-                                # 检查文件是否存在，如存在则添加后缀
-                                while local_path.exists():
-                                    local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
-                                    counter += 1
-
-                                # 记录映射关系
-                                self.file_mapping.set_local_filename(attachment.id, local_path.name)
-
-                            # 下载文件
-                            async with session.get(attachment.url) as resp:
-                                if resp.status == 200:
-                                    file_content = await resp.read()
-                                    with open(local_path, 'wb') as f:
-                                        f.write(file_content)
-
-                                    downloaded_files.append({
-                                        "id": attachment.id,
-                                        "filename": attachment.filename,
-                                        "local_filename": local_path.name,
-                                        "local_path": str(local_path),
-                                        "size": len(file_content)
-                                    })
-                                    log.log(f"[附件下载] ✓ 已下载: {attachment.filename} -> {local_path}")
-                                else:
-                                    raise ValueError(f"HTTP {resp.status}")
-
-                        except Exception as e:
-                            log.log(f"[附件下载] ✗ 下载失败: {attachment.filename} - {e}")
+                downloaded_files = await self._download_message_attachments(message)
 
                 # 构建附件信息对象列表
                 if downloaded_files:
@@ -234,6 +184,59 @@ class DiscordMessageHandlersMixin:
             import traceback
             traceback.print_exc()
             await message.channel.send(f"❌ 处理消息时出错: {str(e)}")
+
+    async def _download_message_attachments(self, message: discord.Message) -> list[dict]:
+        """下载消息的所有附件到本地下载目录，返回下载结果列表（下载失败的附件自动跳过）"""
+        save_dir = Path(self.config.default_download_directory)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        downloaded_files = []
+        async with aiohttp.ClientSession() as session:
+            for attachment in message.attachments:
+                try:
+                    # 检查映射表中是否已有该附件的本地文件名
+                    mapped_filename = self.file_mapping.get_local_filename(attachment.id)
+                    if mapped_filename:
+                        # 使用映射表中的文件名
+                        local_path = save_dir / mapped_filename
+                        log.log(f"[附件下载] 使用已映射文件名: {mapped_filename}")
+                    else:
+                        # 处理文件名冲突
+                        local_path = save_dir / attachment.filename
+                        counter = 1
+                        original_stem = Path(attachment.filename).stem
+                        original_suffix = Path(attachment.filename).suffix
+
+                        # 检查文件是否存在，如存在则添加后缀
+                        while local_path.exists():
+                            local_path = save_dir / f"{original_stem}_{counter}{original_suffix}"
+                            counter += 1
+
+                        # 记录映射关系
+                        self.file_mapping.set_local_filename(attachment.id, local_path.name)
+
+                    # 下载文件
+                    async with session.get(attachment.url) as resp:
+                        if resp.status == 200:
+                            file_content = await resp.read()
+                            with open(local_path, 'wb') as f:
+                                f.write(file_content)
+
+                            downloaded_files.append({
+                                "id": attachment.id,
+                                "filename": attachment.filename,
+                                "local_filename": local_path.name,
+                                "local_path": str(local_path),
+                                "size": len(file_content)
+                            })
+                            log.log(f"[附件下载] ✓ 已下载: {attachment.filename} -> {local_path}")
+                        else:
+                            raise ValueError(f"HTTP {resp.status}")
+
+                except Exception as e:
+                    log.log(f"[附件下载] ✗ 下载失败: {attachment.filename} - {e}")
+
+        return downloaded_files
 
     def _format_pending_history(self, pending_msgs: list) -> str:
         """把暂存的未@消息格式化为补发历史块；同一个人连续发送的多条消息合并到同一个"说："前缀下，逐行排列"""

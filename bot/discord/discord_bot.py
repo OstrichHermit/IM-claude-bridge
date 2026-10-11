@@ -559,7 +559,7 @@ class DiscordBot(
                     # retain 模式：未@消息暂存，等下一条 @ 消息时一并补发
                     try:
                         if self.message_queue.get_channel_retain_unmentioned(message.channel.id):
-                            self._cache_unmentioned_message(message)
+                            await self._cache_unmentioned_message(message)
                     except Exception as e:
                         log.log(f"❌ 暂存未@消息失败: {e}")
                     return
@@ -585,11 +585,32 @@ class DiscordBot(
             # 处理普通消息
             await self.handle_user_message(message)
 
-    def _cache_unmentioned_message(self, message: discord.Message):
-        """暂存一条未@消息到数据库（retain 模式）"""
+    async def _cache_unmentioned_message(self, message: discord.Message):
+        """暂存一条未@消息到数据库（retain 模式）；附件同时下载进 pending_attachments，等下一条 @ 消息触发时合并发送"""
         content = message.content.strip()
         if message.attachments:
-            names = "、".join(a.filename for a in message.attachments)
+            try:
+                downloaded = await self._download_message_attachments(message)
+                if downloaded:
+                    cache_key = message.channel.id
+                    if cache_key not in self.pending_attachments:
+                        self.pending_attachments[cache_key] = []
+                    for d in downloaded:
+                        self.pending_attachments[cache_key].append(AttachmentInfo(
+                            id=d['id'],
+                            filename=d['local_filename'],
+                            local_filename=d['local_filename'],
+                            size=d['size'],
+                            url=f"file://{d['local_path']}",
+                            description=None
+                        ))
+                    log.log(f"[附件缓存] cache_key={cache_key} 未@消息附件已缓存 {len(downloaded)} 个，当前共 {len(self.pending_attachments[cache_key])} 个")
+                    names = "、".join(d['local_filename'] for d in downloaded)
+                else:
+                    names = "、".join(a.filename for a in message.attachments)
+            except Exception as e:
+                log.log(f"❌ 未@消息附件下载失败: {e}")
+                names = "、".join(a.filename for a in message.attachments)
             content = f"{content}\n[含附件：{names}]" if content else f"[含附件：{names}]"
         if not content:
             return
