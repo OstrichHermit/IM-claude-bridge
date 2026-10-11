@@ -24,6 +24,40 @@ log = get_logger("DiscordBot", "discord")
 class DiscordCommandsMixin:
     """斜杠命令 Mixin"""
 
+    async def _check_core_command_permission(self, interaction: discord.Interaction, command_name: str) -> bool:
+        """核心命令权限检查：命令在 core_commands 列表中时，仅 core_allowed_users 白名单用户可执行。
+        通过返回 True；不通过时发送无权限提示并返回 False。"""
+        if command_name not in self.config.core_commands:
+            return True
+        if not self.config.core_allowed_users:
+            return True
+        if interaction.user.id in self.config.core_allowed_users:
+            return True
+        embed = discord.Embed(
+            title="核心命令无权限",
+            description=f"{interaction.user.mention}，`{command_name}` 是核心命令，仅限管理员使用。",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return False
+
+    async def _check_dm_permission(self, interaction: discord.Interaction) -> bool:
+        """私聊白名单检查：仅对发生在私聊中的命令生效，非白名单用户拒绝执行。
+        通过返回 True；不通过时发送无权限提示并返回 False。"""
+        if not isinstance(interaction.channel, discord.DMChannel):
+            return True
+        if not self.config.allowed_dm_users:
+            return True
+        if interaction.user.id in self.config.allowed_dm_users:
+            return True
+        embed = discord.Embed(
+            title="无权限",
+            description=f"{interaction.user.mention}，您没有权限在此私聊中使用命令。",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return False
+
     async def add_commands(self):
         """注册斜杠命令"""
 
@@ -40,6 +74,10 @@ class DiscordCommandsMixin:
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
+
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
 
             # 判断当前是频道还是私聊
             is_dm = isinstance(interaction.channel, discord.DMChannel)
@@ -172,6 +210,10 @@ class DiscordCommandsMixin:
         @self.tree.command(name="status", description="查看当前会话和系统状态")
         async def status_command(interaction: discord.Interaction):
             """查看当前会话状态"""
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
             # 判断当前是频道还是私聊
             is_dm = isinstance(interaction.channel, discord.DMChannel)
 
@@ -243,6 +285,14 @@ class DiscordCommandsMixin:
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
+
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
+            # 检查核心命令权限
+            if not await self._check_core_command_permission(interaction, "stop"):
+                return
 
             import time
             user_id = interaction.user.id
@@ -331,6 +381,14 @@ class DiscordCommandsMixin:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
+            # 检查核心命令权限
+            if not await self._check_core_command_permission(interaction, "restart"):
+                return
+
             # 发送确认消息
             embed = discord.Embed(
                 title="正在重启服务",
@@ -392,6 +450,10 @@ class DiscordCommandsMixin:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
             # 查找正在处理的消息（匹配发送命令的频道或私聊）
             if interaction.channel.type == discord.ChannelType.private:
                 processing_messages = self.message_queue.get_processing_messages(
@@ -451,6 +513,10 @@ class DiscordCommandsMixin:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
             # 私聊中不可用
             if isinstance(interaction.channel, discord.DMChannel):
                 embed = discord.Embed(
@@ -503,6 +569,10 @@ class DiscordCommandsMixin:
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
+
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
 
             # 私聊中不可用
             if isinstance(interaction.channel, discord.DMChannel):
@@ -557,6 +627,10 @@ class DiscordCommandsMixin:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
             # 私聊中不可用
             if isinstance(interaction.channel, discord.DMChannel):
                 embed = discord.Embed(
@@ -600,6 +674,10 @@ class DiscordCommandsMixin:
             from pathlib import Path
 
             log.log(f"[下载命令] 用户 {interaction.user.display_name} 右键点击消息 {message.id}")
+
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
 
             # 检查消息是否有附件
             if not message.attachments:

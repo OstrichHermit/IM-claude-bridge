@@ -50,6 +50,21 @@ class Config:
         return self._config.get('discord', {}).get('allowed_users', [])
 
     @property
+    def allowed_dm_users(self) -> List[int]:
+        """获取私聊白名单用户 ID 列表（空列表表示所有用户可私聊）"""
+        return self._config.get('discord', {}).get('allowed_dm_users', [])
+
+    @property
+    def core_commands(self) -> List[str]:
+        """获取核心命令列表（这些命令只允许 core_allowed_users 中的用户执行）"""
+        return self._config.get('discord', {}).get('core_commands', [])
+
+    @property
+    def core_allowed_users(self) -> List[int]:
+        """获取核心命令白名单用户 ID 列表（空列表表示核心命令不限制）"""
+        return self._config.get('discord', {}).get('core_allowed_users', [])
+
+    @property
     def claude_executable(self) -> str:
         """获取 Claude Code 可执行文件路径"""
         return self._config.get('claude', {}).get('executable', 'claude')
