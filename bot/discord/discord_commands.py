@@ -286,7 +286,7 @@ class DiscordCommandsMixin:
             if summary:
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description=f"`{summary}`",
+                    description=summary,
                     color=discord.Color.green()
                 )
             else:
