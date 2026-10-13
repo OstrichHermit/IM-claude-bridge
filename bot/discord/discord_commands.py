@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.logger import get_logger
+from shared.quota_monitor import fetch_quota_summary
 
 log = get_logger("DiscordBot", "discord")
 
@@ -271,6 +272,29 @@ class DiscordCommandsMixin:
             embed.add_field(name="🗂️ 历史保留", value=retain_status, inline=False)
 
             await interaction.response.send_message(embed=embed)
+
+        @self.tree.command(name="quota", description="查询 GLM Coding Plan 剩余额度")
+        async def quota_command(interaction: discord.Interaction):
+            """查询智谱 GLM Coding Plan 剩余额度"""
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
+            # 额度接口最长 10 秒，先 defer 避免交互超时
+            await interaction.response.defer()
+            summary = await asyncio.to_thread(fetch_quota_summary)
+            if summary:
+                embed = discord.Embed(
+                    title="🔋 剩余额度查询",
+                    description=f"`{summary}`",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title="⚠️ 额度查询失败",
+                    color=discord.Color.red()
+                )
+            await interaction.followup.send(embed=embed)
 
         @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
         async def stop_command(interaction: discord.Interaction):
