@@ -69,12 +69,12 @@ class WeixinCommandsMixin:
         # 未知命令
         else:
             help_text = (
-                "**📋 可用命令**\n"
-                "`/new` - 重置当前会话\n"
-                "`/status` - 查看会话状态\n"
-                "`/abort` - 中止当前响应\n"
-                "`/quota` - 查询剩余额度\n"
-                "`/stop` - 停止服务（需确认）\n"
+                "**📋 可用命令**\n\n"
+                "`/new` - 重置当前会话\n\n"
+                "`/status` - 查看会话状态\n\n"
+                "`/abort` - 中止当前响应\n\n"
+                "`/quota` - 查询剩余额度\n\n"
+                "`/stop` - 停止服务（需确认）\n\n"
                 "`/restart` - 重启服务"
             )
             await self._send_direct_message(from_user_id, account_bot_id, help_text)
@@ -160,7 +160,7 @@ class WeixinCommandsMixin:
         if deleted:
             msg = (
                 f"**✅ 会话已重置**\n\n"
-                f"旧 Session ID: `{old_session_id[:8]}...` (已删除)\n"
+                f"旧 Session ID: `{old_session_id[:8]}...` (已删除)\n\n"
                 f"新 Session ID: `{new_session_id[:8]}...`\n\n"
                 f"下次对话将使用新的会话 ID 创建全新上下文。"
             )
@@ -217,10 +217,10 @@ class WeixinCommandsMixin:
         msg = (
             f"**📊 IM-Claude-Bridge 状态**\n\n"
             f"**📋 会话类型**\n私聊会话\n\n"
-            f"**{'✅' if session_created else '⏳'} 当前会话**\n"
+            f"**{'✅' if session_created else '⏳'} 当前会话**\n\n"
             f"Session ID: `{session_id[:8] if session_id else '未生成'}...`\n"
             f"状态: {'已创建' if session_created else '未创建'}\n\n"
-            f"**📂 工作目录**\n`{working_dir}`\n\n"
+            f"**📂 工作目录**\n\n`{working_dir}`\n\n"
             f"**💬 对话模式**\n不需要 @（私聊）"
         )
 
@@ -347,7 +347,7 @@ class WeixinCommandsMixin:
 
             msg = (
                 f"**🛑 已请求中止**\n\n"
-                f"已请求中止消息 `#{message_to_abort.id}` 的处理\n"
+                f"已请求中止消息 `#{message_to_abort.id}` 的处理\n\n"
                 f"Claude 响应将在几秒内停止..."
             )
             await self._send_direct_message(from_user_id, account_bot_id, msg)
