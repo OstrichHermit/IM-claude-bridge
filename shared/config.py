@@ -320,6 +320,11 @@ class Config:
         return bool(self._config.get('weixin', {}).get('quota_hint_enabled', True))
 
     @property
+    def quota_monitor_enabled(self) -> bool:
+        """获取智谱额度提示开关（每次响应发送完后追加智谱额度提示，默认开启）"""
+        return bool(self._config.get('quota_monitor_enabled', True))
+
+    @property
     def file_mapping_path(self) -> str:
         """获取文件映射表路径"""
         mapping_file = self._config.get('file_mapping', {}).get('path', './file_mapping.json')

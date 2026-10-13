@@ -13,12 +13,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import MessageStatus
 from shared.logger import get_logger
+from shared.quota_monitor import fetch_quota_summary
 
 log = get_logger("DiscordBot", "discord")
 
 
 class DiscordSequenceSenderMixin:
     """消息序列发送 Mixin"""
+
+    async def _send_quota_notice(self, channel):
+        """响应全部发送完后追加智谱额度提示（失败静默）"""
+        try:
+            if not channel or not self.config.quota_monitor_enabled:
+                return
+            summary = await asyncio.to_thread(fetch_quota_summary)
+            if not summary:
+                return
+            await channel.send(f"```\n{summary}\n```")
+        except Exception as e:
+            log.log(f"⚠️ 额度提示发送失败（已忽略）: {e}")
 
     async def check_message_sequences(self):
         """检查并发送消息序列（统一的发送任务）"""
@@ -41,6 +54,9 @@ class DiscordSequenceSenderMixin:
 
                         # 检查 AI 响应是否已完成，且所有序列都已发送
                         if stats["total"] > 0 and stats["total"] == stats["sent"] and self.message_queue.is_ai_response_complete(message_id):
+                            # 先取 channel 引用（必须在清理缓存前），发送智谱额度提示
+                            channel = (self.pending_messages.get(message_id) or {}).get("channel")
+                            await self._send_quota_notice(channel)
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
@@ -129,6 +145,9 @@ class DiscordSequenceSenderMixin:
                         # 检查 AI 响应是否已完成，且所有序列都已发送
                         if stats["total"] > 0 and stats["pending"] == 0 and self.message_queue.is_ai_response_complete(message_id):
                             log.log(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
+                            # 先取 channel 引用（必须在清理缓存前），发送智谱额度提示
+                            channel = (self.pending_messages.get(message_id) or {}).get("channel")
+                            await self._send_quota_notice(channel)
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列

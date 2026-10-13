@@ -79,6 +79,9 @@ message_splitting:
   # 禁用后会将整个消息作为一个 block 发送
   enabled: true
 
+# 每次 AI 响应发送完后追加智谱额度提示
+quota_monitor_enabled: true
+
 # 语音消息直接触发配置
 voice_message:
   # 是否启用语音消息直接触发（微信语音消息 + Discord 语音条）

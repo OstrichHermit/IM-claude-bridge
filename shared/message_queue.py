@@ -1711,3 +1711,7 @@ class MessageQueue:
     def cleanup_message_sequences(self, message_id: int):
         """清理已发送的消息序列（代理到 MessageSequenceManager）"""
         return self._sequences.cleanup_message_sequences(message_id)
+
+    def is_last_text_sequence(self, message_id: int, sequence_id: int) -> bool:
+        """判断是否为该消息最后一条 text 序列（代理到 MessageSequenceManager）"""
+        return self._sequences.is_last_text_sequence(message_id, sequence_id)
