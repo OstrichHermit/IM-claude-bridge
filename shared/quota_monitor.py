@@ -46,8 +46,8 @@ def fetch_quota_summary() -> Optional[str]:
                 next_reset = item.get("nextResetTime")
                 if percentage is None or next_reset is None:
                     break
-                bar = "￭" * round(percentage / 10)
-                bar = bar + "･" * max(0, 10 - len(bar))
+                bar = "▓" * round(percentage / 10)
+                bar = bar + "░" * max(0, 10 - len(bar))
                 reset_str = datetime.fromtimestamp(next_reset / 1000).strftime("%H:%M")
                 return f"{bar} 已用 {percentage}% / {reset_str} 重置"
 
