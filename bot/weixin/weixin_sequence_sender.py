@@ -295,7 +295,7 @@ class WeixinSequenceSenderMixin:
                                         if self.config.quota_monitor_enabled and self.message_queue.is_last_text_sequence(message_id, seq_id):
                                             summary = await asyncio.to_thread(fetch_quota_summary)
                                             if summary:
-                                                send_text = f"{send_text}\n`{summary}`"
+                                                send_text = f"{send_text}\n\n`{summary}`"
                                     except Exception as e:
                                         log.log(f"⚠️ [消息 #{message_id}] 拼接智谱额度失败（已忽略）: {e}")
 
