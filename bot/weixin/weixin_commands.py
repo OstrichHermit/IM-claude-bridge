@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 from shared.logger import get_logger
+from shared.quota_monitor import fetch_quota_summary
 
 log = get_logger("WeixinBot", "weixin")
 
@@ -61,6 +62,10 @@ class WeixinCommandsMixin:
         elif cmd == "/abort":
             await self._cmd_abort(from_user_id, account_bot_id)
 
+        # /quota - 查询智谱 GLM Coding Plan 剩余额度
+        elif cmd == "/quota":
+            await self._cmd_quota(from_user_id, account_bot_id)
+
         # 未知命令
         else:
             help_text = (
@@ -68,6 +73,7 @@ class WeixinCommandsMixin:
                 "`/new` - 重置当前会话\n"
                 "`/status` - 查看会话状态\n"
                 "`/abort` - 中止当前响应\n"
+                "`/quota` - 查询剩余额度\n"
                 "`/stop` - 停止服务（需确认）\n"
                 "`/restart` - 重启服务"
             )
@@ -218,6 +224,15 @@ class WeixinCommandsMixin:
             f"**💬 对话模式**\n不需要 @（私聊）"
         )
 
+        await self._send_direct_message(from_user_id, account_bot_id, msg)
+
+    async def _cmd_quota(self, from_user_id: str, account_bot_id: str):
+        """查询智谱 GLM Coding Plan 剩余额度"""
+        summary = await asyncio.to_thread(fetch_quota_summary)
+        if summary:
+            msg = f"**🔋 剩余额度查询**\n\n`{summary}`"
+        else:
+            msg = "**⚠️ 额度查询失败**"
         await self._send_direct_message(from_user_id, account_bot_id, msg)
 
     async def _cmd_stop(self, from_user_id: str, account_bot_id: str):

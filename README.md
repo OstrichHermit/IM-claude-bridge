@@ -47,7 +47,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 
 **🎯 服务管理**
 - Windows 守护进程（自动监控重启）
-- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`、`/mention`、`/split`）
+- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`、`/quota`、`/mention`、`/split`）
 - 上下文菜单（右键消息下载附件）
 - 消息队列系统（SQLite 持久化）
 - **并行 Bot 架构**（Discord Bot 和微信 Bot 独立运行）
@@ -149,6 +149,7 @@ Bot 会接收消息并显示正在输入，并在响应完成后停止。
 - `/new` - 重置会话，开始新的对话上下文
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
 - `/abort` - 中止当前正在处理的输出
+- `/quota` - 查询 GLM Coding Plan 剩余额度
 - `/mention` - 切换当前频道是否需要 @机器人 才能触发对话（每个频道独立管理）
 - `/split` - 切换当前频道的换行分割模式（每个频道独立管理）
 - `/restart` - 重启服务
