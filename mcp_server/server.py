@@ -192,34 +192,40 @@ async def send_files(
 
 
 @mcp.tool
-async def notify_weixin(content: str) -> str:
+async def notify_weixin(content: str, username: Optional[str] = None) -> str:
     """
-    发一条文本消息到爸爸的微信（支持多行）
+    发一条文本消息到微信（支持多行），默认发给爸爸（鸵鸟居士）
 
-    用于任务完成通知、需要提醒爸爸的事情等；不需要爸爸在微信回复。
+    用于任务完成通知、需要提醒对方的事情等；不需要对方在微信回复。
     本工具只做受理，真正的发送由 SessionWorker 通过微信完成。
 
     Args:
         content: 要发送的文本内容（必需，支持多行）
+        username: 接收者的微信备注名（可选，默认发爸爸）。如"猪猪大王"（妈妈）、"鸵鸟居士"（爸爸），以 USER.md 中的 WeiXin 备注为准
 
     Returns:
         JSON 格式的受理结果
 
     Examples:
-        # 任务完成通知
+        # 任务完成通知（发给爸爸）
         notify_weixin(content="任务已完成，共处理 10 个文件")
+
+        # 发给妈妈
+        notify_weixin(content="提醒妈妈的事项", username="猪猪大王")
 
         # 多行提醒
         notify_weixin(content="提醒：\\n- 下午 3 点开会\\n- 记得查看报告")
 
     Note:
         - 内容支持多行文本
-        - 不需要爸爸在微信回复
+        - 不需要对方在微信回复
         - 已受理后由 SessionWorker 异步通过微信发送，无需等待发送结果
+        - 当前对话本身就在微信里时，回复会自动发到微信，不要调用本工具（避免重复）
     """
     return json.dumps({
         "success": True,
         "message": "已受理，将由 SessionWorker 通过微信发送",
+        "username": username,
         "content": content
     }, ensure_ascii=False, indent=2)
 
