@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import MessageStatus
 from shared.logger import get_logger
+from shared.quota_monitor import fetch_quota_summary
 from bot.weixin.weixin_pollers import WEIXIN_QUOTA_LIMIT
 
 log = get_logger("WeixinBot", "weixin")
@@ -280,6 +281,15 @@ class WeixinSequenceSenderMixin:
                                             send_text = f"{send_text}\n\n`剩余可发送消息数量：{remaining}`"
                                     except Exception as quota_error:
                                         log.log(f"⚠️ [消息 #{message_id}] 累加额度失败，不拼额度提示: {quota_error}")
+
+                                    # 最后一条 text 序列末尾拼接智谱额度
+                                    try:
+                                        if self.config.quota_monitor_enabled and self.message_queue.is_last_text_sequence(message_id, seq_id):
+                                            summary = await asyncio.to_thread(fetch_quota_summary)
+                                            if summary:
+                                                send_text = f"{send_text}\n{summary}"
+                                    except Exception as e:
+                                        log.log(f"⚠️ [消息 #{message_id}] 拼接智谱额度失败（已忽略）: {e}")
 
                                     # 直接发送文本
                                     await client.send_message(

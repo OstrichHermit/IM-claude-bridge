@@ -252,3 +252,28 @@ class MessageSequenceManager:
         conn.close()
 
         return deleted_count
+
+    def is_last_text_sequence(self, message_id: int, sequence_id: int) -> bool:
+        """
+        判断指定序列是否为该消息最后一条 text 类型序列
+
+        Args:
+            message_id: 消息ID
+            sequence_id: 序列项ID
+
+        Returns:
+            如果 sequence_id 等于该消息下 item_type='text' 的最大 id 则返回 True
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT MAX(id) FROM message_sequence
+            WHERE message_id = ? AND item_type = 'text'
+        """, (message_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        max_id = result[0] if result else None
+        return max_id is not None and sequence_id == max_id
