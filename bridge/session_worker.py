@@ -511,7 +511,9 @@ class SessionWorker:
                                                         source_desc = f"> 来自会话 {session_key} 的消息："
                                                 except Exception:
                                                     source_desc = None
-                                                self.message_queue.add_notify(username=None, content=notify_content, source_desc=source_desc)
+                                                # username 为空时由 Bot 端用默认配置（notify_weixin_username）补齐
+                                                notify_username = (tool_input.get('username') or '').strip() or None
+                                                self.message_queue.add_notify(username=notify_username, content=notify_content, source_desc=source_desc)
                                                 self._log.log(
                                                     f"[NotifyWeixin] 已受理微信通知, message #{message_id}, "
                                                     f"session {session_key}"
