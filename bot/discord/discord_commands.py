@@ -284,9 +284,10 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             summary = await asyncio.to_thread(fetch_quota_summary)
             if summary:
+                bar, _, text = summary.partition(" ")
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description=summary,
+                    description=f"`{bar}` {text}",
                     color=discord.Color.green()
                 )
             else:
