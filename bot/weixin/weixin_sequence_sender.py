@@ -237,6 +237,14 @@ class WeixinSequenceSenderMixin:
                             # 发送文本消息
                             text = item_data.get("text", "")
                             if text and text.strip():
+                                # 智谱额度拼在最后一条 text：若该段是当前最大 text 序列但 AI 还没跑完，先等下一轮
+                                # （多轮回复时每段写入后 AI 还要跑工具，此时它暂时是 MAX，直接发会被误判为最后一句而重复拼额度）
+                                if (self.config.quota_monitor_enabled
+                                        and self.message_queue.is_last_text_sequence(message_id, seq_id)
+                                        and not self.message_queue.is_ai_response_complete(message_id)):
+                                    await asyncio.sleep(0.3)
+                                    continue
+
                                 # 确保 typing_ticket 存在（如果不存在，自动获取）
                                 if username not in self.typing_tickets:
                                     try:
