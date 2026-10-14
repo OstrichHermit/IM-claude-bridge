@@ -159,12 +159,12 @@ class SessionWorker:
 
             lines = []
             if recovered:
-                lines.append(f"[此前被自动打断的消息] 以下是引导模式下被后续消息打断、AI 未处理到的 {len(recovered)} 条用户消息，请一并了解：")
+                entries = []
                 for m in recovered:
-                    lines.append(f"{m.username} 说：{m.content}")
-                    if m.attachments:
-                        for att in m.attachments:
-                            lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+                    entries.extend(self._flatten_recovered_entries(m))
+                entry_count = sum(e.count(" 说：") for e in entries)
+                lines.append(f"[此前被自动打断的消息] 以下是引导模式下被后续消息打断、AI 未处理到的 {entry_count} 条用户消息，请一并了解：")
+                lines.extend(entries)
             if merged:
                 lines.append(f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理：")
                 for m in merged:
@@ -194,6 +194,34 @@ class SessionWorker:
 
         except Exception as e:
             self._log.log(f"⚠️ 排队消息合并失败（按原样单独处理）: {e}")
+
+    @staticmethod
+    def _flatten_recovered_entries(m: Message) -> list:
+        """把被捞回消息的累积 content 拍平为「X 说：」条目列表
+
+        被捞回消息的 content 形如"净原文 + 若干历史块"，历史块之间以同一
+        标记层层嵌套；按标记 split 后即可逐层拍平，合并为一个标题 + 平铺条目。
+        """
+        parts = m.content.split("\n\n[此前被自动打断的消息] ")
+        entries = []
+        net = parts[0].strip()
+        if net:
+            entries.append(f"{m.username} 说：{net}")
+            if m.attachments:
+                for att in m.attachments:
+                    entries.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+        for part in parts[1:]:
+            if not part.strip():
+                continue
+            body = part.split("\n", 1)
+            if body[0].startswith("以下是引导模式下被后续消息打断、AI 未处理到的 ") and len(body) > 1:
+                body_text = body[1].strip()
+            else:
+                # 非标准块头（如用户原文里碰巧含标记），原样保留不丢内容
+                body_text = part.strip()
+            if body_text:
+                entries.append(body_text)
+        return entries
 
     async def _process_message(self, message: Message) -> bool:
         """
