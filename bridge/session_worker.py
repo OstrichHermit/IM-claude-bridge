@@ -173,12 +173,14 @@ class SessionWorker:
                         for att in m.attachments:
                             lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
             message.content = message.content + "\n\n" + "\n".join(lines)
+            # 持久化合并内容：本条若再被自动打断，下一条捞回时才能带回完整链条
+            self.message_queue.update_message_content(message.id, message.content)
 
             if recovered:
                 self._log.log(f"🔗 [消息 #{message.id}] 已捞回 {len(recovered)} 条被自动打断的消息合并处理: {[m.id for m in recovered]}")
 
-            # 微信回复使用最新的 context_token（最后一条消息携带）
-            if message.channel_type == 'weixin' and merged[-1].context_token:
+            # 微信回复使用最新的 context_token（最后一条消息携带；无排队合并时沿用本条自己的）
+            if message.channel_type == 'weixin' and merged and merged[-1].context_token:
                 message.context_token = merged[-1].context_token
 
             for m in merged:

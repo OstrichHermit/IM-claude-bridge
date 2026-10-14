@@ -373,6 +373,19 @@ class MessageQueue:
         conn.commit()
         conn.close()
 
+    def update_message_content(self, message_id: int, content: str):
+        """更新消息内容（捞回合并后持久化，保证被再次打断时链式捞回不丢内容）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE messages
+            SET content = ?, updated_at = ?
+            WHERE id = ?
+        """, (content, now, message_id))
+        conn.commit()
+        conn.close()
+
     def update_streaming_response(self, message_id: int, streaming_response: str):
         """更新流式响应（实时更新部分响应内容）
 
