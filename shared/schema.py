@@ -305,6 +305,14 @@ MIGRATIONS: List[Dict] = [
             "ALTER TABLE messages ADD COLUMN pending_history TEXT",
         ]
     },
+
+    # Version 12: channel_settings 表 - 添加 queue_mode（排队模式：guide 引导/queue 排队）
+    {
+        "version": 12,
+        "alterations": [
+            "ALTER TABLE channel_settings ADD COLUMN queue_mode TEXT",
+        ]
+    },
 ]
 
 

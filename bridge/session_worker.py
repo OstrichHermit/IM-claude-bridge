@@ -217,6 +217,13 @@ class SessionWorker:
                 self._pending_ask_payload = None
                 return True  # 处理"成功"（被拦截不视为失败）
 
+            # 引导模式自动打断且无部分响应：中止分支已将消息标记 COMPLETED，直接返回（不写占位响应）
+            if response is None and message.id:
+                status = self.message_queue.get_message_status(message.id)
+                if status == MessageStatus.COMPLETED:
+                    self._log.log(f"[消息 #{message.id}] 自动打断静默完成，跳过响应发送")
+                    return True
+
             if response:
                 # 判断是否为外部消息（task/reminder）
                 if message.is_external:
@@ -622,13 +629,23 @@ class SessionWorker:
                             self._log.log(f"✅ [消息 #{message_id}] 进程已强制终止")
 
                         if message_id:
+                            abort_status = self.message_queue.get_message_status(message_id)
+                            is_auto_abort = abort_status == MessageStatus.AUTO_ABORTING
                             partial_response = '\n'.join(response_lines).strip()
+                            if is_auto_abort and not partial_response:
+                                # 引导模式自动打断且无部分响应：静默完成，不发送占位提示
+                                self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
+                                self._log.log(f"🤫 [消息 #{message_id}] 自动打断且无部分响应，静默完成")
+                                return None
+
                             abort_msg = partial_response if partial_response else "(响应被用户中止)"
                             self.message_queue.update_status(
                                 message_id,
                                 MessageStatus.COMPLETED,
                                 response=abort_msg
                             )
+
+                            return partial_response if partial_response else "(响应被用户中止)"
 
                         return partial_response if partial_response else "(响应被用户中止)"
 

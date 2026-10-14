@@ -150,6 +150,40 @@ class DiscordMessageHandlersMixin:
             # 添加到消息队列（状态为 PENDING，等待 Claude Bridge 接收）
             message_id = self.message_queue.add_message(msg)
 
+            # ====== 排队模式处理（guide 引导：自动静默打断；queue 排队：发提醒卡片） ======
+            try:
+                queue_mode = self.message_queue.get_channel_queue_mode(msg.discord_channel_id)
+                state = self.message_queue.get_session_queue_state(msg)
+
+                if queue_mode == self.message_queue.QUEUE_MODE_QUEUE:
+                    # 排队模式：会话忙碌且这是第一条排队消息时，发送提醒卡片
+                    if state["busy"] and state["waiting"] == 1:
+                        notice_embed = discord.Embed(
+                            title="📋 消息已排队",
+                            description="当前有消息正在处理，这条消息已加入队列，前面处理完后会自动开始",
+                            color=discord.Color.orange()
+                        )
+                        await message.channel.send(embed=notice_embed)
+                        log.log(f"[排队模式] 消息 #{message_id} 已排队，已发送提醒卡片")
+                elif state["busy"]:
+                    # 引导模式：会话忙碌且无挂起提问时，自动静默打断当前处理
+                    session_key = self.message_queue._calculate_session_key(msg)
+                    if not self.message_queue.get_pending_ask(session_key):
+                        processing_messages = self.message_queue.get_processing_messages(
+                            channel_type=ChannelType.DISCORD.value,
+                            channel_id=None if is_dm else message.channel.id,
+                            user_id=message.author.id if is_dm else None
+                        )
+                        for processing_msg in processing_messages:
+                            if self.message_queue._calculate_session_key(processing_msg) != session_key:
+                                continue
+                            if self.message_queue.request_abort(processing_msg.id, auto=True):
+                                self.stop_typing_indicator(processing_msg.id)
+                                log.log(f"[引导模式] 新消息 #{message_id} 自动静默打断消息 #{processing_msg.id}")
+                            break
+            except Exception as e:
+                log.log(f"⚠️ 排队模式处理失败: {e}")
+
             # 频道消息：缓存频道名（notify_weixin 来源前缀用）
             if not is_dm:
                 try:

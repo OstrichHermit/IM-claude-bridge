@@ -171,6 +171,37 @@ class WeixinMessageHandlersMixin:
             message_id = self.message_queue.add_message(queue_msg)
             queue_msg.id = message_id
 
+            # ====== 排队模式处理（guide 引导：自动静默打断；queue 排队：发提醒） ======
+            try:
+                queue_mode = self.message_queue.get_channel_queue_mode(user_id_int)
+                state = self.message_queue.get_session_queue_state(queue_msg)
+
+                if queue_mode == self.message_queue.QUEUE_MODE_QUEUE:
+                    # 排队模式：会话忙碌且这是第一条排队消息时，发送提醒
+                    if state["busy"] and state["waiting"] == 1:
+                        await self._send_direct_message(
+                            from_user_id, account_id,
+                            "**📋 消息已排队**\n\n当前有消息正在处理，处理完后会自动处理这条"
+                        )
+                        log.log(f"[排队模式] 消息 #{message_id} 已排队，已发送提醒")
+                elif state["busy"]:
+                    # 引导模式：会话忙碌且无挂起提问时，自动静默打断当前处理
+                    session_key = self.message_queue._calculate_session_key(queue_msg)
+                    if not self.message_queue.get_pending_ask(session_key):
+                        processing_messages = self.message_queue.get_processing_messages(
+                            channel_type=ChannelType.WEIXIN.value,
+                            user_id=user_id_int
+                        )
+                        for processing_msg in processing_messages:
+                            if self.message_queue._calculate_session_key(processing_msg) != session_key:
+                                continue
+                            if self.message_queue.request_abort(processing_msg.id, auto=True):
+                                await self.stop_typing_indicator(processing_msg.id)
+                                log.log(f"[引导模式] 新消息 #{message_id} 自动静默打断消息 #{processing_msg.id}")
+                            break
+            except Exception as e:
+                log.log(f"⚠️ 排队模式处理失败: {e}")
+
             # 获取 typing ticket（如果还没有的话）
             if from_user_id not in self.typing_tickets:
                 client = self.clients.get(account_id)
