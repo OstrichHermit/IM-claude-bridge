@@ -145,9 +145,11 @@ class SessionWorker:
         晚到的消息正常排队，等本条处理完再被取出合并。
         同时捞回此前被引导模式自动打断、内容未送达 AI 的消息（避免连发时丢消息）。
 
-        合并块以"[排队消息合并]"/"[此前被自动打断的消息]"前缀追加到当前消息
-        content 末尾，被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器
-        走完完成流程（停 typing、标 COMPLETED），复用现有清理机制。
+        拼接按发送时间排列：更早块（捞回）→ 主消息 → 更晚块（合并），
+        块内条目也是旧→新。合并时把完整条目时序持久化到 recovered_groups，
+        本条若再被自动打断，下一条捞回时直接按存储还原（不依赖字符串解析）。
+        被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器走完完成流程
+        （停 typing、标 COMPLETED），复用现有清理机制。
         """
         try:
             merged = self._drain_queue()
@@ -157,24 +159,44 @@ class SessionWorker:
             if not merged and not recovered:
                 return
 
-            lines = []
+            self_net = message.content.strip()
+            parts = []
+            groups = []
+
             if recovered:
                 entries = []
                 for m in recovered:
                     entries.extend(self._flatten_recovered_entries(m))
                 entry_count = sum(e.count(" 说：") for e in entries)
-                lines.append(f"[此前被自动打断的消息] 以下是引导模式下被后续消息打断、AI 未处理到的 {entry_count} 条用户消息，请一并了解：")
-                lines.extend(entries)
+                parts.append(
+                    f"[此前被自动打断的消息] 以下是引导模式下被后续消息打断、AI 未处理到的 {entry_count} 条用户消息，请一并了解："
+                    + "\n" + "\n".join(entries)
+                )
+                groups.extend(entries)
+
+            if self_net:
+                parts.append(self_net)
+                groups.append(f"{message.username} 说：{self_net}")
+                if message.attachments:
+                    for att in message.attachments:
+                        groups.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+
             if merged:
-                lines.append(f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理：")
+                merged_lines = []
                 for m in merged:
-                    lines.append(f"{m.username} 说：{m.content}")
+                    merged_lines.append(f"{m.username} 说：{m.content}")
                     if m.attachments:
                         for att in m.attachments:
-                            lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
-            message.content = message.content + "\n\n" + "\n".join(lines)
-            # 持久化合并内容：本条若再被自动打断，下一条捞回时才能带回完整链条
-            self.message_queue.update_message_content(message.id, message.content)
+                            merged_lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+                parts.append(
+                    f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理："
+                    + "\n" + "\n".join(merged_lines)
+                )
+                groups.extend(merged_lines)
+
+            message.content = "\n\n".join(parts)
+            # 持久化合并内容与完整条目时序：本条若再被自动打断，下一条捞回时才能带回完整链条
+            self.message_queue.update_message_content(message.id, message.content, recovered_groups=groups)
 
             if recovered:
                 self._log.log(f"🔗 [消息 #{message.id}] 已捞回 {len(recovered)} 条被自动打断的消息合并处理: {[m.id for m in recovered]}")
@@ -189,19 +211,22 @@ class SessionWorker:
                     error=f"已合并到消息 #{message.id} 一起处理"
                 )
                 self.message_queue.add_message_sequence(m.id, 0, 0, 'text', {'text': ''})
-
-            self._log.log(f"🔗 [消息 #{message.id}] 已合并 {len(merged)} 条排队消息一起处理: {[m.id for m in merged]}")
+            if merged:
+                self._log.log(f"🔗 [消息 #{message.id}] 已合并 {len(merged)} 条排队消息一起处理: {[m.id for m in merged]}")
 
         except Exception as e:
             self._log.log(f"⚠️ 排队消息合并失败（按原样单独处理）: {e}")
 
     @staticmethod
     def _flatten_recovered_entries(m: Message) -> list:
-        """把被捞回消息的累积 content 拍平为「X 说：」条目列表
+        """把被捞回消息的累积内容拍平为「X 说：」条目列表（旧→新）
 
-        被捞回消息的 content 形如"净原文 + 若干历史块"，历史块之间以同一
-        标记层层嵌套；按标记 split 后即可逐层拍平，合并为一个标题 + 平铺条目。
+        优先用合并时持久化的 recovered_groups（完整条目时序）；
+        无（未合并过或旧数据）时按字符串标记解析降级：旧布局 content 为
+        "净原文 + 若干历史块"（越靠后的块越早），反转后即旧→新。
         """
+        if m.recovered_groups:
+            return list(m.recovered_groups)
         parts = m.content.split("\n\n[此前被自动打断的消息] ")
         entries = []
         net = parts[0].strip()
@@ -210,6 +235,7 @@ class SessionWorker:
             if m.attachments:
                 for att in m.attachments:
                     entries.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+        older = []
         for part in parts[1:]:
             if not part.strip():
                 continue
@@ -220,8 +246,9 @@ class SessionWorker:
                 # 非标准块头（如用户原文里碰巧含标记），原样保留不丢内容
                 body_text = part.strip()
             if body_text:
-                entries.append(body_text)
-        return entries
+                older.append(body_text)
+        # 旧布局中块体越靠后越早，反转得到旧→新，排在净原文（本条，最新）之前
+        return list(reversed(older)) + entries
 
     async def _process_message(self, message: Message) -> bool:
         """
