@@ -141,9 +141,9 @@ class SessionWorker:
     async def _merge_queued_messages(self, message: Message):
         """把队列中等待的其余消息合并进当前消息，一次性处理
 
-        当前消息出队时，同 session 的后续消息可能：
-        a) 已在 worker 队列中（调度器已分配）——直接取出
-        b) 刚入库还是 PENDING（调度器尚未扫描）——等一轮调度周期后再收集一次
+        静默窗口收集：消息出队后循环收集队列中后续到达的消息（调度器会持续把
+        刚入库的 PENDING 分配进来），连续 2 轮无新消息（或达到上限）才开始处理，
+        保证连发的消息都能合并到一起。
 
         合并块以"[排队消息合并]"前缀追加到当前消息 content 末尾（时序在后），
         被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器走完完成流程
@@ -152,9 +152,17 @@ class SessionWorker:
         try:
             merged = self._drain_queue()
 
-            # 等一轮调度周期，收走刚入库还没被调度器分配的消息
-            await asyncio.sleep(self.config.poll_interval / 1000)
-            merged.extend(self._drain_queue())
+            # 静默窗口：连续 2 轮无新消息才结束；收到新消息则重新计时；最长等 8 秒
+            idle_rounds = 0
+            deadline = time.monotonic() + 8.0
+            while idle_rounds < 2 and time.monotonic() < deadline:
+                await asyncio.sleep(self.config.poll_interval / 1000)
+                drained = self._drain_queue()
+                if drained:
+                    merged.extend(drained)
+                    idle_rounds = 0
+                else:
+                    idle_rounds += 1
 
             if not merged:
                 return
