@@ -70,6 +70,10 @@ class WeixinCommandsMixin:
         elif cmd == "/queuemode":
             await self._cmd_queuemode(from_user_id, account_bot_id)
 
+        # /split - 切换换行分割模式
+        elif cmd == "/split":
+            await self._cmd_split(from_user_id, account_bot_id)
+
         # 未知命令
         else:
             help_text = (
@@ -79,6 +83,7 @@ class WeixinCommandsMixin:
                 "`/abort` - 中止当前响应\n\n"
                 "`/quota` - 查询剩余额度\n\n"
                 "`/queuemode` - 切换排队模式\n\n"
+                "`/split` - 切换换行分割\n\n"
                 "`/stop` - 停止服务（需确认）\n\n"
                 "`/restart` - 重启服务"
             )
@@ -223,6 +228,11 @@ class WeixinCommandsMixin:
         queue_mode = self.message_queue.get_channel_queue_mode(user_id_int)
         queue_status = "排队模式" if queue_mode == self.message_queue.QUEUE_MODE_QUEUE else "引导模式"
 
+        # 换行分割（微信按用户独立设置，默认走全局微信配置）
+        splitting = self.message_queue.get_channel_message_splitting(
+            user_id_int, default=self.config.weixin_message_splitting_enabled
+        )
+
         msg = (
             f"**📊 IM-Claude-Bridge 状态**\n\n"
             f"**📋 会话类型**\n\n私聊会话\n\n"
@@ -231,6 +241,7 @@ class WeixinCommandsMixin:
             f"状态: {'已创建' if session_created else '未创建'}\n\n"
             f"**📂 工作目录**\n\n`{working_dir}`\n\n"
             f"**💬 对话模式**\n\n不需要 @（私聊）\n\n"
+            f"**✂️ 换行分割**\n\n{'已开启' if splitting else '已关闭'}\n\n"
             f"**🚦 消息排队**\n\n{queue_status}"
         )
 
@@ -394,6 +405,34 @@ class WeixinCommandsMixin:
         )
         await self._send_direct_message(from_user_id, account_bot_id, msg)
         log.log(f"[QueueMode命令] 用户 {from_user_id} 切换 queue_mode 为 {new_mode}")
+
+    async def _cmd_split(self, from_user_id: str, account_bot_id: str):
+        """切换换行分割模式（微信按用户独立设置）"""
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
+            return
+
+        current = self.message_queue.get_channel_message_splitting(
+            user_id_int, default=self.config.weixin_message_splitting_enabled
+        )
+        new_value = not current
+        self.message_queue.set_channel_message_splitting(user_id_int, new_value)
+
+        if new_value:
+            status_text = "已开启"
+            note = "回复将按空行分割成多条消息发送（长回复会消耗更多消息额度）"
+        else:
+            status_text = "已关闭"
+            note = "回复将作为一条完整消息发送"
+
+        msg = (
+            f"**✂️ 换行分割**\n\n"
+            f"已切换为：**{status_text}**\n\n"
+            f"{note}"
+        )
+        await self._send_direct_message(from_user_id, account_bot_id, msg)
+        log.log(f"[Split命令] 用户 {from_user_id} 切换 message_splitting 为 {new_value}")
 
     async def _send_direct_message(self, to_user_id: str, account_bot_id: str, text: str):
         """直接发送消息到微信（绕过消息队列）
