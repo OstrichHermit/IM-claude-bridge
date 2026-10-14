@@ -129,6 +129,92 @@ class ClaudeBridge:
         except Exception as e:
             log.log(f"⚠️ 清理 PENDING 消息时出错: {e}")
 
+    async def cleanup_stale_messages(self):
+        """清理上次运行残留的中间状态消息（queued/processing/ai_started/aborting/auto_aborting）
+
+        bridge 重启后这些消息已无对应的工作进程，会永远卡在中间状态（僵尸消息），
+        污染排队位次等统计查询，统一标记为 SKIPPED。
+        - AskUserQuestion 挂起 session 的消息保留（等用户回答后续接）
+        - PENDING 不在此列（调度器重启后会重新扫描处理）
+        """
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.message_queue.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, is_dm, is_external, tag, discord_channel_id, discord_user_id
+                FROM messages
+                WHERE direction = 'to_claude'
+                  AND status IN ('queued', 'processing', 'ai_started', 'aborting', 'auto_aborting')
+            """)
+            rows = cursor.fetchall()
+
+            if not rows:
+                log.log("✓ 没有残留的中间状态消息")
+                conn.close()
+                return
+
+            log.log(f"🧹 发现 {len(rows)} 条残留的中间状态消息（queued/processing 等），正在清理...")
+
+            # 收集挂起中（pending_ask 非空）的 session_key，其消息保留等续接
+            cursor.execute("""
+                SELECT session_key FROM sessions
+                WHERE pending_ask IS NOT NULL AND pending_ask != ''
+            """)
+            hung_session_keys = {row[0] for row in cursor.fetchall()}
+
+            from shared.message_queue import MessageTag
+
+            ids_to_clean: list[int] = []
+            kept_due_to_pending = 0
+
+            for row in rows:
+                msg_id = row[0]
+                is_dm = bool(row[1])
+                is_external = bool(row[2])
+                tag = row[3]
+                channel_id = row[4]
+                user_id = row[5]
+
+                if is_external and tag in (MessageTag.TASK.value, MessageTag.REMINDER.value):
+                    sk = f"temp_{msg_id}"
+                elif is_dm:
+                    sk = f"dm_{user_id}"
+                else:
+                    sk = f"channel_{channel_id}"
+
+                if sk in hung_session_keys:
+                    kept_due_to_pending += 1
+                else:
+                    ids_to_clean.append(msg_id)
+
+            if ids_to_clean:
+                placeholders = ",".join("?" * len(ids_to_clean))
+                cursor.execute(
+                    f"""
+                    UPDATE messages
+                    SET status = 'skipped',
+                        updated_at = CURRENT_TIMESTAMP,
+                        error = 'Bridge 重启：中间状态残留消息已跳过'
+                    WHERE id IN ({placeholders})
+                    """,
+                    ids_to_clean,
+                )
+                conn.commit()
+                log.log(f"✅ 已清理 {cursor.rowcount} 条残留消息")
+
+            if kept_due_to_pending > 0:
+                log.log(
+                    f"⚠️  保留 {kept_due_to_pending} 条挂起 session 的消息"
+                    f"（AskUserQuestion 仍在等用户输入）"
+                )
+
+            conn.close()
+
+        except Exception as e:
+            log.log(f"⚠️ 清理残留消息时出错: {e}")
+
     async def run(self):
         """
         运行桥接服务主循环（并发架构）
@@ -147,6 +233,9 @@ class ClaudeBridge:
 
         # 启动时清理旧的 PENDING 消息
         await self.cleanup_pending_messages()
+
+        # 启动时清理残留的中间状态消息（queued/processing 等，防僵尸污染统计）
+        await self.cleanup_stale_messages()
 
         # 🔥 启动并发架构的任务
         scheduler_task = asyncio.create_task(self._scheduler_loop())
