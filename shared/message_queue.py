@@ -96,6 +96,7 @@ class Message:
     attachments: Optional[List[AttachmentInfo]] = None  # 附件信息列表
     streaming_response: Optional[str] = None  # 流式响应内容
     pending_history: Optional[str] = None  # retain 模式暂存的未@历史补发块（session_worker 拼在 sender_info 之前）
+    recovered_groups: Optional[List[str]] = None  # 捞回合并后的完整条目时序（旧→新，含"说："前缀行与附件行），链式捞回时优先用它还原
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -373,16 +374,27 @@ class MessageQueue:
         conn.commit()
         conn.close()
 
-    def update_message_content(self, message_id: int, content: str):
-        """更新消息内容（捞回合并后持久化，保证被再次打断时链式捞回不丢内容）"""
+    def update_message_content(self, message_id: int, content: str, recovered_groups: list = None):
+        """更新消息内容（捞回合并后持久化，保证被再次打断时链式捞回不丢内容）
+
+        recovered_groups: 合并后的完整条目时序（旧→新）一并持久化；
+                          传 None 表示不变更该列。
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         now = datetime.now().isoformat()
-        cursor.execute("""
-            UPDATE messages
-            SET content = ?, updated_at = ?
-            WHERE id = ?
-        """, (content, now, message_id))
+        if recovered_groups is not None:
+            cursor.execute("""
+                UPDATE messages
+                SET content = ?, recovered_groups = ?, updated_at = ?
+                WHERE id = ?
+            """, (content, json.dumps(recovered_groups, ensure_ascii=False), now, message_id))
+        else:
+            cursor.execute("""
+                UPDATE messages
+                SET content = ?, updated_at = ?
+                WHERE id = ?
+            """, (content, now, message_id))
         conn.commit()
         conn.close()
 
@@ -1029,7 +1041,7 @@ class MessageQueue:
             cursor = conn.cursor()
             if message.is_dm:
                 cursor.execute("""
-                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments, recovered_groups
                     FROM messages
                     WHERE error = 'auto_aborted_pending_merge'
                       AND tag = 'default'
@@ -1039,7 +1051,7 @@ class MessageQueue:
                 """, (message.channel_type, message.discord_user_id))
             else:
                 cursor.execute("""
-                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments, recovered_groups
                     FROM messages
                     WHERE error = 'auto_aborted_pending_merge'
                       AND tag = 'default'
@@ -1071,13 +1083,22 @@ class MessageQueue:
                             ]
                         except (json.JSONDecodeError, KeyError):
                             pass
+                    recovered_groups = None
+                    if row[7]:
+                        try:
+                            parsed = json.loads(row[7])
+                            if isinstance(parsed, list):
+                                recovered_groups = parsed
+                        except json.JSONDecodeError:
+                            pass
                     recovered.append(Message(
                         id=row[0], direction=MessageDirection.TO_CLAUDE.value,
                         content=row[5], status=MessageStatus.SKIPPED.value,
                         discord_channel_id=row[2], discord_message_id=0,
                         discord_user_id=row[3], username=row[4],
                         is_dm=bool(row[1]), tag=MessageTag.DEFAULT.value,
-                        channel_type=message.channel_type, attachments=attachments
+                        channel_type=message.channel_type, attachments=attachments,
+                        recovered_groups=recovered_groups
                     ))
             conn.commit()
         finally:

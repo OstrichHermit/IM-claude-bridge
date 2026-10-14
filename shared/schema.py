@@ -313,6 +313,14 @@ MIGRATIONS: List[Dict] = [
             "ALTER TABLE channel_settings ADD COLUMN queue_mode TEXT",
         ]
     },
+
+    # Version 13: messages 表 - 添加 recovered_groups（捞回条目时序：JSON 行列表，旧→新）
+    {
+        "version": 13,
+        "alterations": [
+            "ALTER TABLE messages ADD COLUMN recovered_groups TEXT",  # 合并后完整条目时序，链式捞回时直接还原，免字符串解析
+        ]
+    },
 ]
 
 
