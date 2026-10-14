@@ -22,7 +22,8 @@ class MessageStatus(Enum):
     QUEUED = "queued"        # 已加入处理队列（防止重复扫描）
     PROCESSING = "processing" # 正在处理
     AI_STARTED = "ai_started" # AI 开始工作（新的中间状态）
-    ABORTING = "aborting"     # 正在中止
+    ABORTING = "aborting"     # 正在中止（用户手动 /abort）
+    AUTO_ABORTING = "auto_aborting"  # 正在中止（引导模式新消息自动打断）
     COMPLETED = "completed"   # 已完成
     FAILED = "failed"        # 失败
     SKIPPED = "skipped"      # 已跳过（服务重启时清理旧消息）
@@ -429,24 +430,40 @@ class MessageQueue:
         """标记工具执行结果为已处理（代理到 ToolUseTracker）"""
         self._tool_uses.mark_tool_use_result_processed(message_id, tool_use_index)
 
-    def request_abort(self, message_id: int) -> bool:
+    def request_abort(self, message_id: int, auto: bool = False) -> bool:
         """请求中止消息处理
+
+        原子操作：仅当消息仍处于 PROCESSING/AI_STARTED 时才会置为中止状态，
+        避免与处理完成的状态更新发生竞态（覆盖 COMPLETED 导致发送流程卡死）。
 
         Args:
             message_id: 消息 ID
+            auto: 是否为引导模式自动打断（无部分响应时不发送占位提示）
 
         Returns:
             是否成功请求中止
         """
         try:
-            self.update_status(message_id, MessageStatus.ABORTING)
-            return True
+            target = MessageStatus.AUTO_ABORTING if auto else MessageStatus.ABORTING
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE messages SET status = ?, updated_at = ? WHERE id = ? AND status IN (?, ?)",
+                    (target.value, datetime.now().isoformat(), message_id,
+                     MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+            finally:
+                conn.close()
         except Exception as e:
             log.log(f"❌ 请求中止失败: {e}")
             return False
 
     def is_aborting(self, message_id: int) -> bool:
-        """检查消息是否正在中止
+        """检查消息是否正在中止（手动或自动）
 
         Args:
             message_id: 消息 ID
@@ -460,7 +477,7 @@ class MessageQueue:
         cursor.execute("SELECT status FROM messages WHERE id = ?", (message_id,))
         row = cursor.fetchone()
         conn.close()
-        return row and row[0] == MessageStatus.ABORTING.value
+        return bool(row) and row[0] in (MessageStatus.ABORTING.value, MessageStatus.AUTO_ABORTING.value)
 
     def get_message_status(self, message_id: int) -> Optional[MessageStatus]:
         """获取消息状态
@@ -858,6 +875,123 @@ class MessageQueue:
             conn.commit()
         finally:
             conn.close()
+
+    # ========== 频道设置管理（queue_mode 排队模式：guide 引导 / queue 排队） ==========
+
+    QUEUE_MODE_GUIDE = "guide"  # 引导模式：新消息自动静默打断当前处理（默认）
+    QUEUE_MODE_QUEUE = "queue"  # 排队模式：新消息排队等待，第一条排队消息发提醒
+
+    def get_channel_queue_mode(self, channel_id: int, default: str = QUEUE_MODE_GUIDE) -> str:
+        """获取指定频道的排队模式
+
+        Args:
+            channel_id: 频道 ID（微信端为发送者数字 ID）
+            default: 频道未配置时的默认值
+
+        Returns:
+            'guide' 或 'queue'，未配置时返回 default
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT queue_mode FROM channel_settings WHERE channel_id = ?",
+                (str(channel_id),)
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+
+        if row is None or row[0] is None:
+            return default
+        return row[0] if row[0] in (self.QUEUE_MODE_GUIDE, self.QUEUE_MODE_QUEUE) else default
+
+    def set_channel_queue_mode(self, channel_id: int, value: str):
+        """设置指定频道的排队模式
+
+        Args:
+            channel_id: 频道 ID（微信端为发送者数字 ID）
+            value: 'guide' 或 'queue'
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO channel_settings (channel_id, mention_required, queue_mode, updated_at)
+                   VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(channel_id) DO UPDATE SET
+                       queue_mode = excluded.queue_mode,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (str(channel_id), value)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_session_queue_state(self, message: Message) -> dict:
+        """查询消息所属会话的队列状态（忙碌 + 排队数）
+
+        仅统计 tag='default' 的消息；task/reminder 走独立临时会话，不参与判断。
+
+        Args:
+            message: 刚入队的消息（用于计算目标 session_key）
+
+        Returns:
+            {"busy": 同会话是否有 PROCESSING/AI_STARTED 消息,
+             "waiting": 同会话 PENDING/QUEUED 状态消息数（含刚入队的这条）}
+        """
+        import sqlite3
+
+        target_key = self._calculate_session_key(message)
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            if message.is_dm:
+                cursor.execute("""
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status
+                    FROM messages
+                    WHERE status IN (?, ?, ?, ?)
+                      AND tag = ?
+                      AND channel_type = ?
+                      AND discord_user_id = ?
+                """, (MessageStatus.PENDING.value, MessageStatus.QUEUED.value,
+                      MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value,
+                      MessageTag.DEFAULT.value, message.channel_type, message.discord_user_id))
+            else:
+                cursor.execute("""
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status
+                    FROM messages
+                    WHERE status IN (?, ?, ?, ?)
+                      AND tag = ?
+                      AND channel_type = ?
+                      AND discord_channel_id = ?
+                """, (MessageStatus.PENDING.value, MessageStatus.QUEUED.value,
+                      MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value,
+                      MessageTag.DEFAULT.value, message.channel_type, message.discord_channel_id))
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        busy = False
+        waiting = 0
+        for row in rows:
+            row_message = Message(
+                id=row[0], direction=MessageDirection.TO_CLAUDE.value, content="",
+                status=row[5], discord_channel_id=row[2], discord_message_id=0,
+                discord_user_id=row[3], username="", is_dm=bool(row[1]), tag=row[4],
+                channel_type=message.channel_type
+            )
+            if self._calculate_session_key(row_message) != target_key:
+                continue
+            if row[5] in (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value):
+                busy = True
+            else:
+                waiting += 1
+
+        return {"busy": busy, "waiting": waiting}
 
     # ========== 频道设置管理（retain_unmentioned 按频道独立管理） ==========
 

@@ -66,6 +66,10 @@ class WeixinCommandsMixin:
         elif cmd == "/quota":
             await self._cmd_quota(from_user_id, account_bot_id)
 
+        # /queuemode - 切换消息排队模式（引导/排队）
+        elif cmd == "/queuemode":
+            await self._cmd_queuemode(from_user_id, account_bot_id)
+
         # 未知命令
         else:
             help_text = (
@@ -74,6 +78,7 @@ class WeixinCommandsMixin:
                 "`/status` - 查看会话状态\n\n"
                 "`/abort` - 中止当前响应\n\n"
                 "`/quota` - 查询剩余额度\n\n"
+                "`/queuemode` - 切换排队模式\n\n"
                 "`/stop` - 停止服务（需确认）\n\n"
                 "`/restart` - 重启服务"
             )
@@ -346,16 +351,47 @@ class WeixinCommandsMixin:
             # 停止正在输入状态
             await self.stop_typing_indicator(message_to_abort.id)
 
-            msg = (
-                f"**🛑 已请求中止**\n\n"
-                f"已请求中止消息 `#{message_to_abort.id}` 的处理\n\n"
-                f"Claude 响应将在几秒内停止..."
-            )
-            await self._send_direct_message(from_user_id, account_bot_id, msg)
-            log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}")
+            # 引导模式下静默中止：不发送确认消息
+            queue_mode = self.message_queue.get_channel_queue_mode(user_id_int)
+            if queue_mode != self.message_queue.QUEUE_MODE_GUIDE:
+                msg = (
+                    f"**🛑 已请求中止**\n\n"
+                    f"已请求中止消息 `#{message_to_abort.id}` 的处理\n\n"
+                    f"Claude 响应将在几秒内停止..."
+                )
+                await self._send_direct_message(from_user_id, account_bot_id, msg)
+            log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}（{'引导模式静默' if queue_mode == self.message_queue.QUEUE_MODE_GUIDE else '排队模式'}）")
         else:
             msg = "**❌ 中止请求失败**\n\n中止请求失败，请稍后重试。"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
+
+    async def _cmd_queuemode(self, from_user_id: str, account_bot_id: str):
+        """切换消息排队模式（引导/排队）"""
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
+            return
+
+        current = self.message_queue.get_channel_queue_mode(user_id_int)
+        new_mode = (self.message_queue.QUEUE_MODE_QUEUE
+                    if current == self.message_queue.QUEUE_MODE_GUIDE
+                    else self.message_queue.QUEUE_MODE_GUIDE)
+        self.message_queue.set_channel_queue_mode(user_id_int, new_mode)
+
+        if new_mode == self.message_queue.QUEUE_MODE_QUEUE:
+            note = "新消息会排队等待当前回复处理完，排队时会收到提醒；需要打断时用 `/abort`"
+            mode_name = "排队模式"
+        else:
+            note = "发送新消息时会自动静默打断当前回复，优先处理最新消息（默认模式）"
+            mode_name = "引导模式"
+
+        msg = (
+            f"**🚦 消息排队模式**\n\n"
+            f"已切换为：**{mode_name}**\n\n"
+            f"{note}"
+        )
+        await self._send_direct_message(from_user_id, account_bot_id, msg)
+        log.log(f"[QueueMode命令] 用户 {from_user_id} 切换 queue_mode 为 {new_mode}")
 
     async def _send_direct_message(self, to_user_id: str, account_bot_id: str, text: str):
         """直接发送消息到微信（绕过消息队列）

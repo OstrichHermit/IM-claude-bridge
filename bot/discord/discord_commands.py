@@ -505,14 +505,20 @@ class DiscordCommandsMixin:
             success = self.message_queue.request_abort(message_to_abort.id)
 
             if success:
-                embed = discord.Embed(
-                    title="已请求中止",
-                    description=f"已请求中止消息 #{message_to_abort.id} 的处理",
-                    color=discord.Color.orange()
-                )
-                embed.add_field(name="说明", value="Claude 响应将在几秒内停止...", inline=False)
-                await interaction.response.send_message(embed=embed)
-                log.log(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
+                # 引导模式下静默中止：仅确认交互，不发送命令卡片
+                queue_mode = self.message_queue.get_channel_queue_mode(interaction.channel.id)
+                if queue_mode == self.message_queue.QUEUE_MODE_GUIDE:
+                    await interaction.response.defer(ephemeral=True)
+                    log.log(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}（引导模式静默）")
+                else:
+                    embed = discord.Embed(
+                        title="已请求中止",
+                        description=f"已请求中止消息 #{message_to_abort.id} 的处理",
+                        color=discord.Color.orange()
+                    )
+                    embed.add_field(name="说明", value="Claude 响应将在几秒内停止...", inline=False)
+                    await interaction.response.send_message(embed=embed)
+                    log.log(f"[中止命令] 用户 {interaction.user.display_name} 请求中止消息 #{message_to_abort.id}")
 
                 # 停止正在输入状态
                 self.stop_typing_indicator(message_to_abort.id)
@@ -691,6 +697,60 @@ class DiscordCommandsMixin:
 
             await interaction.response.send_message(embed=embed)
             log.log(f"[Retain命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 retain_unmentioned 为 {new_value}")
+
+        @self.tree.command(name="queuemode", description="切换当前频道的消息排队模式（引导/排队）")
+        async def queuemode_command(interaction: discord.Interaction):
+            """切换当前频道的 queue_mode 设置"""
+            # 检查用户权限
+            if self.config.allowed_users:
+                if interaction.user.id not in self.config.allowed_users:
+                    embed = discord.Embed(
+                        title="无权限",
+                        description=f"{interaction.user.display_name}，您没有权限执行此操作。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
+            # 私聊中不可用
+            if isinstance(interaction.channel, discord.DMChannel):
+                embed = discord.Embed(
+                    title="不可用",
+                    description="私聊中无需此设置，私聊始终使用引导模式。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+            # 切换当前频道的设置
+            channel_id = interaction.channel.id
+            current = self.message_queue.get_channel_queue_mode(channel_id)
+            new_mode = (self.message_queue.QUEUE_MODE_QUEUE
+                        if current == self.message_queue.QUEUE_MODE_GUIDE
+                        else self.message_queue.QUEUE_MODE_GUIDE)
+            self.message_queue.set_channel_queue_mode(channel_id, new_mode)
+
+            # 构建响应
+            target = f"频道 #{interaction.channel.name}"
+            desc = f"{target} 的消息排队模式已切换为：**{'排队模式' if new_mode == self.message_queue.QUEUE_MODE_QUEUE else '引导模式'}**"
+            if new_mode == self.message_queue.QUEUE_MODE_QUEUE:
+                note = "新消息会排队等待当前回复处理完，排队时会收到提醒卡片；需要打断时用 /abort"
+            else:
+                note = "发送新消息时会自动静默打断当前回复，优先处理最新消息（默认模式）"
+
+            embed = discord.Embed(
+                title="🚦 消息排队模式",
+                description=desc,
+                color=discord.Color.green()
+            )
+            embed.add_field(name="说明", value=note, inline=False)
+
+            await interaction.response.send_message(embed=embed)
+            log.log(f"[QueueMode命令] 用户 {interaction.user.display_name} 在{target}({channel_id}) 切换 queue_mode 为 {new_mode}")
 
         @self.tree.context_menu(name="下载附件")
         async def download_context_menu(interaction: discord.Interaction, message: discord.Message):
