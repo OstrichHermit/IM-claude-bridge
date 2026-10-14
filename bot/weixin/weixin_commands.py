@@ -109,8 +109,8 @@ class WeixinCommandsMixin:
                 # 发送提示消息
                 msg = (
                     f"**⏳ 正在进行会话收尾工作...**\n\n"
-                    f"**提示词内容**\n{preset_msg}\n\n"
-                    f"**说明**\n处理完成后将自动重置会话。"
+                    f"**提示词内容**\n\n{preset_msg}\n\n"
+                    f"**说明**\n\n处理完成后将自动重置会话。"
                 )
                 await self._send_direct_message(from_user_id, account_bot_id, msg)
 
@@ -225,13 +225,13 @@ class WeixinCommandsMixin:
 
         msg = (
             f"**📊 IM-Claude-Bridge 状态**\n\n"
-            f"**📋 会话类型**\n私聊会话\n\n"
+            f"**📋 会话类型**\n\n私聊会话\n\n"
             f"**{'✅' if session_created else '⏳'} 当前会话**\n\n"
-            f"Session ID: `{session_id[:8] if session_id else '未生成'}...`\n"
+            f"Session ID: `{session_id[:8] if session_id else '未生成'}...`\n\n"
             f"状态: {'已创建' if session_created else '未创建'}\n\n"
             f"**📂 工作目录**\n\n`{working_dir}`\n\n"
-            f"**💬 对话模式**\n不需要 @（私聊）\n\n"
-            f"**🚦 消息排队**\n{queue_status}"
+            f"**💬 对话模式**\n\n不需要 @（私聊）\n\n"
+            f"**🚦 消息排队**\n\n{queue_status}"
         )
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
