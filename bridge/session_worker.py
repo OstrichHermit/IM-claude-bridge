@@ -110,6 +110,9 @@ class SessionWorker:
                 # 更新活动时间（消息出队时）
                 self.last_activity_time = time.time()
 
+                # ====== 排队消息合并：把队列中等待的其余消息并入本条一次性处理 ======
+                await self._merge_queued_messages(message)
+
                 # 处理消息
                 await self._process_message(message)
 
@@ -124,6 +127,61 @@ class SessionWorker:
                 self._log.log(traceback.format_exc())
 
         self._log.log(f"✅ Worker {self.session_key} 已退出")
+
+    def _drain_queue(self) -> list:
+        """取出队列中当前所有等待的消息（worker 按 session 隔离，队列内全是本 session 消息）"""
+        drained = []
+        while True:
+            try:
+                drained.append(self.queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        return drained
+
+    async def _merge_queued_messages(self, message: Message):
+        """把队列中等待的其余消息合并进当前消息，一次性处理
+
+        当前消息出队时，同 session 的后续消息可能：
+        a) 已在 worker 队列中（调度器已分配）——直接取出
+        b) 刚入库还是 PENDING（调度器尚未扫描）——等一轮调度周期后再收集一次
+
+        合并块以"[排队消息合并]"前缀追加到当前消息 content 末尾（时序在后），
+        被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器走完完成流程
+        （停 typing、标 COMPLETED），复用现有清理机制。
+        """
+        try:
+            merged = self._drain_queue()
+
+            # 等一轮调度周期，收走刚入库还没被调度器分配的消息
+            await asyncio.sleep(self.config.poll_interval / 1000)
+            merged.extend(self._drain_queue())
+
+            if not merged:
+                return
+
+            lines = [f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理："]
+            for m in merged:
+                lines.append(f"{m.username} 说：{m.content}")
+                if m.attachments:
+                    for att in m.attachments:
+                        lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+            message.content = message.content + "\n\n" + "\n".join(lines)
+
+            # 微信回复使用最新的 context_token（最后一条消息携带）
+            if message.channel_type == 'weixin' and merged[-1].context_token:
+                message.context_token = merged[-1].context_token
+
+            for m in merged:
+                self.message_queue.update_status(
+                    m.id, MessageStatus.SKIPPED,
+                    error=f"已合并到消息 #{message.id} 一起处理"
+                )
+                self.message_queue.add_message_sequence(m.id, 0, 0, 'text', {'text': ''})
+
+            self._log.log(f"🔗 [消息 #{message.id}] 已合并 {len(merged)} 条排队消息一起处理: {[m.id for m in merged]}")
+
+        except Exception as e:
+            self._log.log(f"⚠️ 排队消息合并失败（按原样单独处理）: {e}")
 
     async def _process_message(self, message: Message) -> bool:
         """

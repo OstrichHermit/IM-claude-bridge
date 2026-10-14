@@ -949,11 +949,14 @@ class MessageQueue:
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.cursor()
+            # response IS NULL：PROCESSING 且响应已写入 = AI 阶段已结束、正在发送序列的尾巴期，
+            # worker 实际已空闲，不算忙碌（否则会误触发排队提醒/误打断）
             if message.is_dm:
                 cursor.execute("""
                     SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status, created_at
                     FROM messages
                     WHERE status IN (?, ?, ?, ?)
+                      AND response IS NULL
                       AND tag = ?
                       AND channel_type = ?
                       AND discord_user_id = ?
@@ -965,6 +968,7 @@ class MessageQueue:
                     SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status, created_at
                     FROM messages
                     WHERE status IN (?, ?, ?, ?)
+                      AND response IS NULL
                       AND tag = ?
                       AND channel_type = ?
                       AND discord_channel_id = ?
