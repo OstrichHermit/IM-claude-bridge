@@ -485,9 +485,15 @@ class DiscordBot(
             inline=False
         )
 
+        embed.add_field(
+            name="🚦 消息排队模式：引导模式（默认）",
+            value="引导模式：新消息会自动静默打断当前响应，优先处理最新消息\n排队模式：新消息排队等待处理完，每条排队消息收到提醒卡片\n使用 `/queuemode` 切换（每个频道独立），`/status` 可查看当前模式",
+            inline=False
+        )
+
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/retain` - 切换保留未@消息\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/retain` - 切换保留未@消息\n`/queuemode` - 切换排队模式\n`/quota` - 查询剩余额度\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 
