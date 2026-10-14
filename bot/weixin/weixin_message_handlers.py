@@ -177,13 +177,13 @@ class WeixinMessageHandlersMixin:
                 state = self.message_queue.get_session_queue_state(queue_msg)
 
                 if queue_mode == self.message_queue.QUEUE_MODE_QUEUE:
-                    # 排队模式：会话忙碌且这是第一条排队消息时，发送提醒
-                    if state["busy"] and state["waiting"] == 1:
+                    # 排队模式：会话忙碌时，每条排队消息都发送提醒
+                    if state["busy"]:
                         await self._send_direct_message(
                             from_user_id, account_id,
-                            "**📋 消息已排队**\n\n当前有消息正在处理，处理完后会自动处理这条"
+                            f"**📋 消息已排队**\n\n当前有消息正在处理，这条消息排在第 {state['waiting']} 位，前面处理完后会自动开始"
                         )
-                        log.log(f"[排队模式] 消息 #{message_id} 已排队，已发送提醒")
+                        log.log(f"[排队模式] 消息 #{message_id} 已排队（第 {state['waiting']} 位），已发送提醒")
                 elif state["busy"]:
                     # 引导模式：会话忙碌且无挂起提问时，自动静默打断当前处理
                     session_key = self.message_queue._calculate_session_key(queue_msg)
