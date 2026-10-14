@@ -951,7 +951,7 @@ class MessageQueue:
             cursor = conn.cursor()
             if message.is_dm:
                 cursor.execute("""
-                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status, created_at
                     FROM messages
                     WHERE status IN (?, ?, ?, ?)
                       AND tag = ?
@@ -962,7 +962,7 @@ class MessageQueue:
                       MessageTag.DEFAULT.value, message.channel_type, message.discord_user_id))
             else:
                 cursor.execute("""
-                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, tag, status, created_at
                     FROM messages
                     WHERE status IN (?, ?, ?, ?)
                       AND tag = ?
@@ -974,6 +974,11 @@ class MessageQueue:
             rows = cursor.fetchall()
         finally:
             conn.close()
+
+        # 排队位次只统计最近 10 分钟内入队的消息：更早的 PENDING/QUEUED 属于历史残留（僵尸），
+        # 计入会污染位次；busy 不限时间（长任务处理 10 分钟以上仍算忙碌，僵尸由启动清理兜底）
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
 
         busy = False
         waiting = 0
@@ -988,7 +993,7 @@ class MessageQueue:
                 continue
             if row[5] in (MessageStatus.PROCESSING.value, MessageStatus.AI_STARTED.value):
                 busy = True
-            else:
+            elif row[6] and row[6] >= cutoff:
                 waiting += 1
 
         return {"busy": busy, "waiting": waiting}
