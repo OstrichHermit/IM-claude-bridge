@@ -446,7 +446,7 @@ class WeixinPollersMixin:
                         notification_text = tool_title
 
                         if tool_desc and tool_desc != "无参数":
-                            notification_text += f"\n{tool_desc}"
+                            notification_text += f"\n\n{tool_desc}"
 
                         # 确保 typing_ticket 存在（如果不存在，自动获取）
                         if username not in self.typing_tickets:
