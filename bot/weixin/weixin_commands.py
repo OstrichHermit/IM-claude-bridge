@@ -351,16 +351,13 @@ class WeixinCommandsMixin:
             # 停止正在输入状态
             await self.stop_typing_indicator(message_to_abort.id)
 
-            # 引导模式下静默中止：不发送确认消息
-            queue_mode = self.message_queue.get_channel_queue_mode(user_id_int)
-            if queue_mode != self.message_queue.QUEUE_MODE_GUIDE:
-                msg = (
-                    f"**🛑 已请求中止**\n\n"
-                    f"已请求中止消息 `#{message_to_abort.id}` 的处理\n\n"
-                    f"Claude 响应将在几秒内停止..."
-                )
-                await self._send_direct_message(from_user_id, account_bot_id, msg)
-            log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}（{'引导模式静默' if queue_mode == self.message_queue.QUEUE_MODE_GUIDE else '排队模式'}）")
+            msg = (
+                f"**🛑 已请求中止**\n\n"
+                f"已请求中止消息 `#{message_to_abort.id}` 的处理\n\n"
+                f"Claude 响应将在几秒内停止..."
+            )
+            await self._send_direct_message(from_user_id, account_bot_id, msg)
+            log.log(f"[中止命令] 用户 {from_user_id} 请求中止消息 #{message_to_abort.id}")
         else:
             msg = "**❌ 中止请求失败**\n\n中止请求失败，请稍后重试。"
             await self._send_direct_message(from_user_id, account_bot_id, msg)
@@ -379,7 +376,7 @@ class WeixinCommandsMixin:
         self.message_queue.set_channel_queue_mode(user_id_int, new_mode)
 
         if new_mode == self.message_queue.QUEUE_MODE_QUEUE:
-            note = "新消息会排队等待当前回复处理完，排队时会收到提醒；需要打断时用 `/abort`"
+            note = "新消息会排队等待当前回复处理完，每条排队消息都会收到提醒；需要打断时用 `/abort`"
             mode_name = "排队模式"
         else:
             note = "发送新消息时会自动静默打断当前回复，优先处理最新消息（默认模式）"

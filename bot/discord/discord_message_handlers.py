@@ -156,15 +156,15 @@ class DiscordMessageHandlersMixin:
                 state = self.message_queue.get_session_queue_state(msg)
 
                 if queue_mode == self.message_queue.QUEUE_MODE_QUEUE:
-                    # 排队模式：会话忙碌且这是第一条排队消息时，发送提醒卡片
-                    if state["busy"] and state["waiting"] == 1:
+                    # 排队模式：会话忙碌时，每条排队消息都发送提醒卡片
+                    if state["busy"]:
                         notice_embed = discord.Embed(
                             title="📋 消息已排队",
-                            description="当前有消息正在处理，这条消息已加入队列，前面处理完后会自动开始",
+                            description=f"当前有消息正在处理，这条消息排在第 {state['waiting']} 位，前面处理完后会自动开始",
                             color=discord.Color.orange()
                         )
                         await message.channel.send(embed=notice_embed)
-                        log.log(f"[排队模式] 消息 #{message_id} 已排队，已发送提醒卡片")
+                        log.log(f"[排队模式] 消息 #{message_id} 已排队（第 {state['waiting']} 位），已发送提醒卡片")
                 elif state["busy"]:
                     # 引导模式：会话忙碌且无挂起提问时，自动静默打断当前处理
                     session_key = self.message_queue._calculate_session_key(msg)
