@@ -219,6 +219,10 @@ class WeixinCommandsMixin:
             temp_session_key=None
         )
 
+        # 消息排队模式（微信按用户独立设置）
+        queue_mode = self.message_queue.get_channel_queue_mode(user_id_int)
+        queue_status = "排队模式" if queue_mode == self.message_queue.QUEUE_MODE_QUEUE else "引导模式"
+
         msg = (
             f"**📊 IM-Claude-Bridge 状态**\n\n"
             f"**📋 会话类型**\n私聊会话\n\n"
@@ -226,7 +230,8 @@ class WeixinCommandsMixin:
             f"Session ID: `{session_id[:8] if session_id else '未生成'}...`\n"
             f"状态: {'已创建' if session_created else '未创建'}\n\n"
             f"**📂 工作目录**\n\n`{working_dir}`\n\n"
-            f"**💬 对话模式**\n不需要 @（私聊）"
+            f"**💬 对话模式**\n不需要 @（私聊）\n\n"
+            f"**🚦 消息排队**\n{queue_status}"
         )
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
