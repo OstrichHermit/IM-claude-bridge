@@ -143,24 +143,39 @@ class SessionWorker:
 
         当前消息出队时，立即收走队列中已排队的其余消息（不等待）合并处理；
         晚到的消息正常排队，等本条处理完再被取出合并。
+        同时捞回此前被引导模式自动打断、内容未送达 AI 的消息（避免连发时丢消息）。
 
-        合并块以"[排队消息合并]"前缀追加到当前消息 content 末尾（时序在后），
-        被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器走完完成流程
-        （停 typing、标 COMPLETED），复用现有清理机制。
+        合并块以"[排队消息合并]"/"[此前被自动打断的消息]"前缀追加到当前消息
+        content 末尾，被合并消息标记 SKIPPED 并写入一条空文本序列，让发送器
+        走完完成流程（停 typing、标 COMPLETED），复用现有清理机制。
         """
         try:
             merged = self._drain_queue()
+            # 捞回被自动打断、内容未送达 AI 的消息
+            recovered = self.message_queue.get_auto_aborted_for_merge(message)
 
-            if not merged:
+            if not merged and not recovered:
                 return
 
-            lines = [f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理："]
-            for m in merged:
-                lines.append(f"{m.username} 说：{m.content}")
-                if m.attachments:
-                    for att in m.attachments:
-                        lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+            lines = []
+            if recovered:
+                lines.append(f"[此前被自动打断的消息] 以下是引导模式下被后续消息打断、AI 未处理到的 {len(recovered)} 条用户消息，请一并了解：")
+                for m in recovered:
+                    lines.append(f"{m.username} 说：{m.content}")
+                    if m.attachments:
+                        for att in m.attachments:
+                            lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
+            if merged:
+                lines.append(f"[排队消息合并] 以下是本条消息处理排队期间用户连续发来的 {len(merged)} 条消息，请一并处理：")
+                for m in merged:
+                    lines.append(f"{m.username} 说：{m.content}")
+                    if m.attachments:
+                        for att in m.attachments:
+                            lines.append(f"（附件：{att.local_filename or att.filename}，路径 {att.url}）")
             message.content = message.content + "\n\n" + "\n".join(lines)
+
+            if recovered:
+                self._log.log(f"🔗 [消息 #{message.id}] 已捞回 {len(recovered)} 条被自动打断的消息合并处理: {[m.id for m in recovered]}")
 
             # 微信回复使用最新的 context_token（最后一条消息携带）
             if message.channel_type == 'weixin' and merged[-1].context_token:
@@ -270,10 +285,10 @@ class SessionWorker:
                 self._pending_ask_payload = None
                 return True  # 处理"成功"（被拦截不视为失败）
 
-            # 引导模式自动打断且无部分响应：中止分支已将消息标记 COMPLETED，直接返回（不写占位响应）
+            # 引导模式自动打断且无部分响应：中止分支已标记 SKIPPED（待捞回），直接返回（不写占位响应）
             if response is None and message.id:
                 status = self.message_queue.get_message_status(message.id)
-                if status == MessageStatus.COMPLETED:
+                if status in (MessageStatus.COMPLETED, MessageStatus.SKIPPED):
                     self._log.log(f"[消息 #{message.id}] 自动打断静默完成，跳过响应发送")
                     return True
 
@@ -686,9 +701,16 @@ class SessionWorker:
                             is_auto_abort = abort_status == MessageStatus.AUTO_ABORTING
                             partial_response = '\n'.join(response_lines).strip()
                             if is_auto_abort and not partial_response:
-                                # 引导模式自动打断且无部分响应：静默完成，不发送占位提示
-                                self.message_queue.update_status(message_id, MessageStatus.COMPLETED)
-                                self._log.log(f"🤫 [消息 #{message_id}] 自动打断且无部分响应，静默完成")
+                                # 引导模式自动打断且无部分响应：不发送占位提示；
+                                # 标记"内容未送达 AI"（error 字段标记，status 会被发送器
+                                # 完成流程覆盖为 COMPLETED 不影响），待下一条消息出队时捞回合并
+                                self.message_queue.update_status(
+                                    message_id, MessageStatus.SKIPPED,
+                                    error='auto_aborted_pending_merge'
+                                )
+                                # 空文本序列让发送器走完完成流程（停 typing、清理缓存）
+                                self.message_queue.add_message_sequence(message_id, 0, 0, 'text', {'text': ''})
+                                self._log.log(f"🤫 [消息 #{message_id}] 自动打断且无部分响应，内容待下一条消息捞回")
                                 return None
 
                             abort_msg = partial_response if partial_response else "(响应被用户中止)"

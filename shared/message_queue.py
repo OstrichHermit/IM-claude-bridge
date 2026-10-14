@@ -997,6 +997,81 @@ class MessageQueue:
 
         return {"busy": busy, "waiting": waiting}
 
+    def get_auto_aborted_for_merge(self, message: Message) -> List[Message]:
+        """取同会话中"被自动打断且内容未送达 AI"的消息，并标记为已捞回
+
+        引导模式自动打断时，无部分响应的消息内容 AI 从未见过（静默丢弃会丢消息），
+        由下一条出队的消息通过本方法捞回，合并进上下文。
+
+        Args:
+            message: 刚出队的消息（用于定位同 session）
+
+        Returns:
+            被捞回的消息列表（按 id 升序，即按发送时间排序）
+        """
+        import sqlite3
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            if message.is_dm:
+                cursor.execute("""
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments
+                    FROM messages
+                    WHERE error = 'auto_aborted_pending_merge'
+                      AND tag = 'default'
+                      AND channel_type = ?
+                      AND discord_user_id = ?
+                    ORDER BY id ASC
+                """, (message.channel_type, message.discord_user_id))
+            else:
+                cursor.execute("""
+                    SELECT id, is_dm, discord_channel_id, discord_user_id, username, content, attachments
+                    FROM messages
+                    WHERE error = 'auto_aborted_pending_merge'
+                      AND tag = 'default'
+                      AND channel_type = ?
+                      AND discord_channel_id = ?
+                    ORDER BY id ASC
+                """, (message.channel_type, message.discord_channel_id))
+            rows = cursor.fetchall()
+
+            recovered = []
+            for row in rows:
+                # 原子标记已捞回（防止并发重复捞回）
+                cursor.execute(
+                    "UPDATE messages SET error = ? WHERE id = ? AND error = 'auto_aborted_pending_merge'",
+                    (f"auto_aborted_merged_to_{message.id}", row[0])
+                )
+                if cursor.rowcount > 0:
+                    attachments = None
+                    if row[6]:
+                        try:
+                            attachments_data = json.loads(row[6])
+                            attachments = [
+                                AttachmentInfo(
+                                    id=a["id"], filename=a["filename"],
+                                    local_filename=a.get("local_filename"), size=a["size"],
+                                    url=a["url"], description=a.get("description")
+                                )
+                                for a in attachments_data
+                            ]
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+                    recovered.append(Message(
+                        id=row[0], direction=MessageDirection.TO_CLAUDE.value,
+                        content=row[5], status=MessageStatus.SKIPPED.value,
+                        discord_channel_id=row[2], discord_message_id=0,
+                        discord_user_id=row[3], username=row[4],
+                        is_dm=bool(row[1]), tag=MessageTag.DEFAULT.value,
+                        channel_type=message.channel_type, attachments=attachments
+                    ))
+            conn.commit()
+        finally:
+            conn.close()
+
+        return recovered
+
     # ========== 频道设置管理（retain_unmentioned 按频道独立管理） ==========
 
     def get_channel_retain_unmentioned(self, channel_id: int, default: bool = False) -> bool:
