@@ -254,6 +254,16 @@ class DiscordCommandsMixin:
                 mention_status = "需要 @" if mention_required else "不需要 @"
             embed.add_field(name="💬 对话模式", value=mention_status, inline=False)
 
+            # 消息排队模式（私聊固定引导模式）
+            if is_dm:
+                queue_status = "引导模式"
+            else:
+                queue_mode = self.message_queue.get_channel_queue_mode(interaction.channel.id)
+                queue_status = ("排队模式"
+                                if queue_mode == self.message_queue.QUEUE_MODE_QUEUE
+                                else "引导模式")
+            embed.add_field(name="🚦 消息排队", value=queue_status, inline=False)
+
             if is_dm:
                 split_status = f"{'已开启' if self.config.enable_message_splitting else '已关闭'}（全局配置）"
             else:
