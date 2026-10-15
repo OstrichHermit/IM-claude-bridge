@@ -839,55 +839,40 @@ class SessionWorker:
 
         return None
 
+    def _build_session_target(self, channel_type: str, is_dm: bool, channel_id: int, user_id: int, username: str) -> str:
+        """构建"当前会话"描述（任务/提醒执行所处的位置）"""
+        platform = "微信" if channel_type == 'weixin' else "Discord"
+        if is_dm:
+            return f"{platform} 私聊（{username}，{user_id}）"
+        if channel_type == 'weixin':
+            return f"{platform} 群聊（{channel_id}）"
+        return f"{platform} 频道（{channel_id}）"
+
+    def _build_creator_line(self, username: str, user_id: int) -> str:
+        """构建创建人行（频道模式 user_id 为 0，只显示用户名）"""
+        if user_id:
+            return f"{username}（{user_id}）"
+        return f"{username}"
+
     def _build_task_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, channel_type: str = 'discord') -> str:
         """构建任务消息结构"""
-        if is_dm:
-            return f"""🔔 定时任务已触发！
+        target = self._build_session_target(channel_type, is_dm, channel_id, user_id, username)
+        creator = self._build_creator_line(username, user_id)
+        return f"""🔔 定时任务已触发
 
-任务创建人：{username}（{user_id}）
-任务内容：{content}
-
-请按以下步骤执行：
-1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求完成会话启动流程；
-2、理解任务需求；
-3、加载相关Skill或Mcp服务；
-4、直接执行并完成任务；
-5、完成后回复消息。"""
-        else:
-            return f"""🔔 定时任务已触发！
-
-任务创建人：{username}（{user_id}）
-任务创建频道：{channel_id}
-任务内容：{content}
-
-请按以下步骤执行：
-1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求完成会话启动流程；
-2、理解任务需求；
-3、加载相关Skill或Mcp服务；
-4、直接执行并完成任务；
-5、完成后回复消息。"""
+当前会话：{target}
+创建人：{creator}
+内容：{content}"""
 
     def _build_reminder_prompt(self, content: str, username: str, user_id: int, is_dm: bool, channel_id: int, channel_type: str = 'discord') -> str:
         """构建提醒消息结构"""
-        if is_dm:
-            return f"""🔔 定时提醒已触发！
+        target = self._build_session_target(channel_type, is_dm, channel_id, user_id, username)
+        creator = self._build_creator_line(username, user_id)
+        return f"""🔔 定时提醒已触发
 
-提醒创建人：{username}（{user_id}）
-提醒内容：{content}
-
-请按以下步骤执行：
-1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求完成会话启动流程；
-2、直接回复需要提醒的内容。"""
-        else:
-            return f"""🔔 定时提醒已触发！
-
-提醒创建人：{username}（{user_id}）
-提醒内容：{content}
-提醒创建频道：{channel_id}
-
-请按以下步骤执行：
-1、仔细阅读并遵守 CLAUDE.md 中的要求，按要求完成会话启动流程；
-2、直接回复需要提醒的内容。"""
+当前会话：{target}
+创建人：{creator}
+内容：{content}"""
 
     def _build_sender_info(self, username: str, user_id: int, is_dm: bool, channel_id: int, attachments: list = None, channel_type: str = 'discord') -> str:
         """构建发送者信息"""
