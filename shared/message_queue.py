@@ -504,6 +504,56 @@ class MessageQueue:
         conn.close()
         return bool(row) and row[0] in (MessageStatus.ABORTING.value, MessageStatus.AUTO_ABORTING.value)
 
+    def mark_message_aborted(self, message_id: int):
+        """给已结束的消息打打断标记（写 error 字段，不动 status/response）
+
+        用于区分"正常完成"和"被打断后结束"：后者不发送智谱额度提示。
+        abort 分支 update_status 时 response 优先写入会跳过 error，
+        因此必须在 update_status 之后单独调用本方法补标记。
+        """
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE messages SET error = ?, updated_at = ? WHERE id = ?",
+                    ("aborted", datetime.now().isoformat(), message_id)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            log.log(f"⚠️ 打打断标记失败: 消息 #{message_id}: {e}")
+
+    def is_message_aborted(self, message_id: int) -> bool:
+        """检查消息是否因打断而结束（引导模式自动打断或手动中止）
+
+        判定依据：状态为 SKIPPED（自动打断无部分响应），或 error 字段
+        含 "aborted" 标记（手动中止/有部分响应的打断，状态会流转回
+        PROCESSING，只能靠 error 标记识别）。
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            消息是否因打断而结束
+        """
+        status = self.get_message_status(message_id)
+        if status == MessageStatus.SKIPPED:
+            return True
+        if status is None:
+            return False
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT error FROM messages WHERE id = ?", (message_id,))
+            row = cursor.fetchone()
+            return bool(row) and bool(row[0]) and "aborted" in row[0]
+        finally:
+            conn.close()
+
     def get_message_status(self, message_id: int) -> Optional[MessageStatus]:
         """获取消息状态
 

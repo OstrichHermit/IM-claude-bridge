@@ -776,6 +776,9 @@ class SessionWorker:
                                 MessageStatus.COMPLETED,
                                 response=abort_msg
                             )
+                            # 打打断标记：被打断结束的消息不发送智谱额度提示
+                            # （update_status 的 response 优先写入会跳过 error，需单独补）
+                            self.message_queue.mark_message_aborted(message_id)
 
                             return partial_response if partial_response else "(响应被用户中止)"
 

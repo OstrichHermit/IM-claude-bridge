@@ -21,10 +21,13 @@ log = get_logger("DiscordBot", "discord")
 class DiscordSequenceSenderMixin:
     """消息序列发送 Mixin"""
 
-    async def _send_quota_notice(self, channel):
-        """响应全部发送完后追加智谱额度提示（失败静默）"""
+    async def _send_quota_notice(self, channel, message_id=None):
+        """响应全部发送完后追加智谱额度提示（失败静默；被打断的响应不提示）"""
         try:
             if not channel or not self.config.quota_monitor_enabled:
+                return
+            # 打断结束的响应（引导模式自动打断 / 手动中止）不发额度提示
+            if message_id is not None and self.message_queue.is_message_aborted(message_id):
                 return
             summary = await asyncio.to_thread(fetch_quota_summary)
             if not summary:
@@ -56,7 +59,7 @@ class DiscordSequenceSenderMixin:
                         if stats["total"] > 0 and stats["total"] == stats["sent"] and self.message_queue.is_ai_response_complete(message_id):
                             # 先取 channel 引用（必须在清理缓存前），发送智谱额度提示
                             channel = (self.pending_messages.get(message_id) or {}).get("channel")
-                            await self._send_quota_notice(channel)
+                            await self._send_quota_notice(channel, message_id)
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
@@ -147,7 +150,7 @@ class DiscordSequenceSenderMixin:
                             log.log(f"✅ [消息 #{message_id}] 所有序列已发送，停止 typing indicator")
                             # 先取 channel 引用（必须在清理缓存前），发送智谱额度提示
                             channel = (self.pending_messages.get(message_id) or {}).get("channel")
-                            await self._send_quota_notice(channel)
+                            await self._send_quota_notice(channel, message_id)
                             # 1. 停止正在输入状态
                             self.stop_typing_indicator(message_id)
                             # 2. 所有序列都已发送，清理数据库相关序列
