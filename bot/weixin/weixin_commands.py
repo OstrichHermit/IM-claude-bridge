@@ -137,7 +137,7 @@ class WeixinCommandsMixin:
                     discord_user_id=user_id_int,
                     username=from_user_id,
                     is_dm=True,
-                    tag=MessageTag.DEFAULT.value,
+                    tag=MessageTag.SYSTEM.value,
                     channel_type=ChannelType.WEIXIN.value,
                     attachments=[]
                 )
@@ -214,7 +214,7 @@ class WeixinCommandsMixin:
                     discord_user_id=user_id_int,
                     username=from_user_id,
                     is_dm=True,
-                    tag=MessageTag.DEFAULT.value,
+                    tag=MessageTag.SYSTEM.value,
                     channel_type=ChannelType.WEIXIN.value,
                     attachments=[]
                 )
