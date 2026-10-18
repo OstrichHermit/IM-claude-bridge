@@ -304,17 +304,17 @@ message_splitting:
 voice_message:
   enabled: true                        # Voice message direct trigger (auto-trigger AI with file path after download; configure your own speech-to-text tools for the AI; WeChat voice additionally includes automatic transcription injected into the prompt; when disabled, old behavior is restored: WeChat voice ignored, voice messages cached as normal attachments)
 
-auto_load:
-  enabled: true                        # Auto-inject prompt for first message of a new session
-  prompt_text: "Read and follow CLAUDE.md..."  # Prompt text to inject
-
 auto_trigger_before_new:
   enabled: false                       # Auto-send prompt before /new (lets Claude do final tasks in old session, e.g. save memories)
-  prompt_text: "Session is about to reset, please save important memories."  # Preset user message to send automatically
+  prompt_text: "Session is about to reset, please save important memories."  # Preset user message (supports {username} placeholders)
 
 auto_trigger_after_new:
   enabled: true                        # Auto-trigger conversation after /new command
-  prompt_text: "Execute session startup."  # Preset user message to send automatically
+  prompt_text: "Execute session startup."  # Preset user message (supports {username} placeholders)
+
+session_restart:
+  default_delay: 5                     # Default wake delay (seconds) for the restart_session tool
+  wake_message: "[System] Session restarted automatically, tool list refreshed"  # Wake message content
 
 typing_indicator:
   max_retries: 3                       # Max consecutive retries (network fluctuations)

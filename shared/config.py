@@ -158,16 +158,6 @@ class Config:
         return str(download_dir)
 
     @property
-    def auto_load_enabled(self) -> bool:
-        """获取是否启用首次对话提示词注入"""
-        return self._config.get('auto_load', {}).get('enabled', False)
-
-    @property
-    def auto_load_prompt_text(self) -> str:
-        """获取首次对话提示词注入的文本"""
-        return self._config.get('auto_load', {}).get('prompt_text', '加载记忆')
-
-    @property
     def auto_trigger_before_new_enabled(self) -> bool:
         """获取是否启用 /new 前自动发送提示词"""
         return self._config.get('auto_trigger_before_new', {}).get('enabled', False)
@@ -186,6 +176,19 @@ class Config:
     def auto_trigger_after_new_message(self) -> str:
         """获取 /new 后自动触发的预设用户消息内容"""
         return self._config.get('auto_trigger_after_new', {}).get('prompt_text', '')
+
+    # 会话重启（restart_session 工具）配置
+
+    @property
+    def session_restart_default_delay(self) -> int:
+        """获取会话重启默认唤醒延迟（秒）"""
+        return int(self._config.get('session_restart', {}).get('default_delay', 5))
+
+    @property
+    def session_restart_wake_message(self) -> str:
+        """获取会话重启自动唤醒消息内容"""
+        return self._config.get('session_restart', {}).get(
+            'wake_message', '[系统消息] 会话重启自动唤醒已成功，工具列表已刷新')
 
     # Typing indicator 配置
 

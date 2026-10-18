@@ -312,17 +312,17 @@ message_splitting:
 voice_message:
   enabled: true                        # 语音消息直接触发（下载后以文件路径自动触发 AI，用户可自行给 AI 配置转文字工具；微信语音额外自带自动转写，转写文本直接注入提示词；关闭则恢复旧行为：微信语音忽略、语音条按普通附件缓存）
 
-auto_load:
-  enabled: true                        # 首次对话提示词注入（会添加到新会话第一条消息前面）
-  prompt_text: "先仔细阅读并遵守 CLAUDE.md..."  # 提示词注入文本
-
 auto_trigger_before_new:
   enabled: false                       # /new 前自动发送提示词（让 Claude 在旧会话中做最后处理，如保存记忆）
-  prompt_text: "会话即将重置，请保存或更新重要记忆。"  # 自动发送的预设用户消息
+  prompt_text: "会话即将重置，请保存或更新重要记忆。"  # 自动发送的预设用户消息（支持 {username} 等占位符）
 
 auto_trigger_after_new:
   enabled: true                        # /new 后自动触发对话
-  prompt_text: "执行会话启动流程。"      # 自动发送的预设用户消息
+  prompt_text: "执行会话启动流程。"      # 自动发送的预设用户消息（支持 {username} 等占位符）
+
+session_restart:
+  default_delay: 5                     # restart_session 工具默认唤醒延迟（秒）
+  wake_message: "[系统消息] 会话重启自动唤醒已成功，工具列表已刷新"  # 唤醒消息内容
 
 typing_indicator:
   max_retries: 3                       # 最大连续重试次数（网络波动时）

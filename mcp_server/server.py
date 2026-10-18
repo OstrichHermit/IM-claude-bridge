@@ -549,6 +549,44 @@ async def get_current_time(timezone: str = "Asia/Taipei") -> str:
     return await _get_current_time_impl(timezone)
 
 
+@mcp.tool
+async def restart_session(delay_seconds: int = 5) -> str:
+    """
+    中断当前会话进程，并在数秒后自动唤醒同一会话（进程重启、对话上下文保留、MCP 工具列表刷新）
+
+    工作方式：调用后当前回复会立即中断（未输出的内容不再发送），约 delay_seconds 秒后
+    系统自动注入唤醒消息继续本会话，此时 MCP 工具列表已按最新配置重新挂载。
+
+    适用场景：
+    - 用 mcp-manager 启用/禁用 MCP 服务器之后，使其生效
+    - Unity 等外部程序启动后，需要重连其 MCP 工具
+    - 修改 .mcp.json 或其他需要重新挂载 MCP 的场景
+
+    Args:
+        delay_seconds: 延迟秒数（可选，默认 5，范围 3-3600）
+
+    Returns:
+        JSON 格式的受理结果
+
+    Examples:
+        # 启用新 MCP 后刷新工具列表（默认 5 秒后唤醒）
+        restart_session()
+
+        # 10 秒后唤醒（给外部程序启动留时间）
+        restart_session(delay_seconds=10)
+
+    Note:
+        - 重要：调用前先把该说的话说完，调用后当前回复会立即中断
+        - 唤醒后上下文完整保留，像什么都没发生过一样继续工作
+        - 唤醒消息内容可在 config.yaml 的 session_restart.wake_message 配置
+    """
+    return json.dumps({
+        "success": True,
+        "message": f"已受理，会话将在 {delay_seconds} 秒后重启唤醒",
+        "delay_seconds": delay_seconds
+    }, ensure_ascii=False)
+
+
 # ==================== 启动入口 ====================
 
 def run_server(
@@ -600,6 +638,7 @@ def run_server(
     log.log("    其他:")
     log.log("      8. get_current_time             - 获取当前时间（支持多时区）")
     log.log("      9. notify_weixin                - 发送微信通知给爸爸")
+    log.log("      10. restart_session             - 重启会话进程刷新 MCP 工具列表（上下文保留）")
     log.log("")
     log.log("  架构说明:")
     log.log("    - MCP Server 通过消息队列与 Discord/微信 Bot 通信")

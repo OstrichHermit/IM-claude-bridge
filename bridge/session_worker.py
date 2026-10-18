@@ -14,7 +14,7 @@ from typing import Optional
 from pathlib import Path
 
 from shared.config import Config
-from shared.message_queue import MessageQueue, Message, MessageStatus, MessageTag
+from shared.message_queue import MessageQueue, Message, MessageStatus, MessageTag, MessageDirection
 from shared.logger import get_logger
 from datetime import datetime
 
@@ -350,8 +350,8 @@ class SessionWorker:
                     return True
 
             if response:
-                # 判断是否为外部消息（task/reminder）
-                if message.is_external:
+                # 判断是否为外部消息（task/reminder 等；system 标签除外，需走 Bot 发送流程）
+                if message.is_external and message.tag != MessageTag.SYSTEM.value:
                     # 外部消息：直接标记为完成（不需要 Discord Bot 发送）
                     self.message_queue.update_status(
                         message.id,
@@ -428,15 +428,15 @@ class SessionWorker:
             prompt = self._build_task_prompt(prompt, username, user_id, is_dm, channel_id, channel_type)
         elif message_tag == MessageTag.REMINDER.value:
             prompt = self._build_reminder_prompt(prompt, username, user_id, is_dm, channel_id, channel_type)
+        elif message_tag == MessageTag.SYSTEM.value:
+            # 系统注入消息：content 原文直接作为 prompt，不拼 sender_info/历史前缀
+            pass
         else:
             sender_info = self._build_sender_info(username, user_id, is_dm, channel_id, attachments, channel_type)
 
             # retain 模式：未@历史补发块拼在最前面（sender_info 之前），与当前消息间以空行分隔
             history_prefix = f"{pending_history}\n\n" if pending_history else ""
-            if self.config.auto_load_enabled and not session_created:
-                prompt = f"{self.config.auto_load_prompt_text}{history_prefix}{sender_info}{prompt}"
-            else:
-                prompt = f"{history_prefix}{sender_info}{prompt}"
+            prompt = f"{history_prefix}{sender_info}{prompt}"
 
         while retries < max_attempts:
             try:
@@ -650,6 +650,26 @@ class SessionWorker:
                                                     f"[NotifyWeixin] 已受理微信通知, message #{message_id}, "
                                                     f"session {session_key}"
                                                 )
+
+                                        # ====== restart_session 拦截：安排延迟唤醒消息 + 触发当前会话中断 ======
+                                        if tool_name in ('restart_session', 'mcp__im-claude-bridge__restart_session'):
+                                            try:
+                                                delay_seconds = max(3, min(3600, int(tool_input.get('delay_seconds') or self.config.session_restart_default_delay)))
+                                            except (TypeError, ValueError):
+                                                delay_seconds = self.config.session_restart_default_delay
+                                            wake_message = self.config.session_restart_wake_message
+                                            # 捕获当前消息上下文（延迟任务触发时进程可能已退出）
+                                            _ctx = {
+                                                'channel_id': channel_id, 'user_id': user_id, 'is_dm': is_dm,
+                                                'channel_type': channel_type, 'username': username,
+                                                'wake_message': wake_message, 'delay': delay_seconds,
+                                            }
+                                            asyncio.create_task(self._delayed_insert_wake_message(_ctx))
+                                            # 触发中止：读取循环将在 0.5 秒内检测到并优雅终止进程
+                                            self.message_queue.request_abort(message_id)
+                                            self._log.log(
+                                                f"[RestartSession] 已安排 {delay_seconds}s 后注入唤醒消息, message #{message_id}, session {session_key}"
+                                            )
 
                                         # ====== AskUserQuestion 拦截（阶段一） ======
                                         # Claude Code 在 -p 模式下调用 AskUserQuestion 时会被内部立即注入"用户拒绝"的 tool_result，
@@ -908,6 +928,33 @@ class SessionWorker:
                 sender_info = f"{sender_base}说："
 
         return sender_info
+
+    async def _delayed_insert_wake_message(self, ctx: dict):
+        """延迟注入会话重启唤醒消息（system 标签，走原频道会话）
+
+        bridge 进程重启会导致本任务丢失（可接受：仅丢失一条确认消息）。
+        """
+        try:
+            await asyncio.sleep(ctx['delay'])
+            wake = Message(
+                id=None,
+                direction=MessageDirection.TO_CLAUDE.value,
+                content=ctx['wake_message'],
+                status=MessageStatus.PENDING.value,
+                discord_channel_id=0 if ctx['is_dm'] else ctx['channel_id'],
+                discord_message_id=int(time.time() * 1000),
+                discord_user_id=ctx['user_id'] or 0,
+                username=ctx['username'] or '系统',
+                is_dm=ctx['is_dm'],
+                is_external=True,
+                tag=MessageTag.SYSTEM.value,
+                channel_type=ctx['channel_type'],
+                attachments=[]
+            )
+            msg_id = self.message_queue.add_message(wake)
+            self._log.log(f"[RestartSession] 唤醒消息已注入 #{msg_id} (延迟 {ctx['delay']}s)")
+        except Exception as e:
+            self._log.log(f"❌ [RestartSession] 注入唤醒消息失败: {e}")
 
     def is_idle(self, current_time: float, timeout: int) -> bool:
         """
