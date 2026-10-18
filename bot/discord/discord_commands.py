@@ -128,7 +128,7 @@ class DiscordCommandsMixin:
                     discord_user_id=interaction.user.id,
                     username=interaction.user.display_name,
                     is_dm=is_dm,
-                    tag=MessageTag.DEFAULT.value,
+                    tag=MessageTag.SYSTEM.value,
                     channel_type=ChannelType.DISCORD.value,
                     attachments=[]
                 )
@@ -216,7 +216,7 @@ class DiscordCommandsMixin:
                         discord_user_id=interaction.user.id,
                         username=interaction.user.display_name,
                         is_dm=is_dm,
-                        tag=MessageTag.DEFAULT.value,
+                        tag=MessageTag.SYSTEM.value,
                         channel_type=ChannelType.DISCORD.value,
                         attachments=[]
                     )
