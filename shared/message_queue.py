@@ -56,6 +56,7 @@ class MessageTag(Enum):
     DEFAULT = "default"          # 默认标签
     TASK = "task"                # 任务消息
     REMINDER = "reminder"          # 提醒消息
+    SYSTEM = "system"            # 系统注入消息（会话重启唤醒等，走原会话、不拼 sender_info、响应照常发送）
 
 
 class ChannelType(Enum):

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary
+from shared.text_template import fill_template
 
 log = get_logger("DiscordBot", "discord")
 
@@ -113,7 +114,14 @@ class DiscordCommandsMixin:
                 auto_msg = Message(
                     id=None,
                     direction=MessageDirection.TO_CLAUDE.value,
-                    content=preset_msg,
+                    content=fill_template(
+                        preset_msg,
+                        username=interaction.user.display_name,
+                        user_id=interaction.user.id,
+                        channel_id=interaction.channel.id if not is_dm else 0,
+                        channel_type='discord',
+                        channel_name=interaction.channel.name if not is_dm else ''
+                    ),
                     status=MessageStatus.PENDING.value,
                     discord_channel_id=interaction.channel.id if not is_dm else 0,
                     discord_message_id=0,
@@ -194,7 +202,14 @@ class DiscordCommandsMixin:
                     auto_msg = Message(
                         id=None,
                         direction=MessageDirection.TO_CLAUDE.value,
-                        content=preset_msg,
+                        content=fill_template(
+                            preset_msg,
+                            username=interaction.user.display_name,
+                            user_id=interaction.user.id,
+                            channel_id=interaction.channel.id if not is_dm else 0,
+                            channel_type='discord',
+                            channel_name=interaction.channel.name if not is_dm else ''
+                        ),
                         status=MessageStatus.PENDING.value,
                         discord_channel_id=interaction.channel.id if not is_dm else 0,
                         discord_message_id=0,

@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary
+from shared.text_template import fill_template
 
 log = get_logger("WeixinBot", "weixin")
 
@@ -122,7 +123,14 @@ class WeixinCommandsMixin:
                 auto_msg = Message(
                     id=None,
                     direction=MessageDirection.TO_CLAUDE.value,
-                    content=preset_msg,
+                    content=fill_template(
+                        preset_msg,
+                        username=from_user_id,
+                        user_id=user_id_int,
+                        channel_id=0,
+                        channel_type='weixin',
+                        channel_name=''
+                    ),
                     status=MessageStatus.PENDING.value,
                     discord_channel_id=0,
                     discord_message_id=0,
@@ -192,7 +200,14 @@ class WeixinCommandsMixin:
                 auto_msg = Message(
                     id=None,
                     direction=MessageDirection.TO_CLAUDE.value,
-                    content=preset_msg,
+                    content=fill_template(
+                        preset_msg,
+                        username=from_user_id,
+                        user_id=user_id_int,
+                        channel_id=0,
+                        channel_type='weixin',
+                        channel_name=''
+                    ),
                     status=MessageStatus.PENDING.value,
                     discord_channel_id=0,
                     discord_message_id=0,
