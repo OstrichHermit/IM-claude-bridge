@@ -1957,21 +1957,6 @@ class MessageQueue:
         conn.close()
         return used
 
-    def get_weixin_quota_updated_at(self, username: str) -> Optional[tuple]:
-        """查询微信额度记录（token, updated_at），无记录返回 None"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT token, updated_at FROM weixin_quota WHERE username = ?
-        """, (username,))
-        row = cursor.fetchone()
-        conn.close()
-
-        if row and row[1]:
-            return (row[0], row[1])
-        return None
-
     def mark_notify_finished(self, notify_id: int, error: Optional[str] = None):
         """标记微信通知为终态（error 为空 → sent，否则 failed）"""
         conn = sqlite3.connect(self.db_path)

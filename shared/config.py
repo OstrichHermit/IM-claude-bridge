@@ -326,8 +326,8 @@ class Config:
 
     @property
     def token_expiry_reminder_enabled(self) -> bool:
-        """获取 context_token 过期前提醒开关（默认关闭）"""
-        return bool(self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('enabled', False))
+        """获取 context_token 过期前提醒开关（默认开启）"""
+        return bool(self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('enabled', True))
 
     @property
     def token_expiry_hours(self) -> float:

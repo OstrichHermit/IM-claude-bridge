@@ -287,13 +287,7 @@ class WeixinPollersMixin:
 
                 for username, token in self.context_tokens.get_all().items():
                     updated = self.context_tokens.get_updated_at(username)
-                    if not updated:
-                        # 无时间基准时用 weixin_quota 表的 updated_at 兜底
-                        # （quota 表的 updated_at 只可能晚于 token 签发时间，偏保守方向，安全）
-                        fallback = self.message_queue.get_weixin_quota_updated_at(username)
-                        if fallback and fallback[0] == token:
-                            updated = fallback[1]
-
+                    # 无时间基准（老数据且未刷新过）时跳过，等用户下次发消息 set 后才开始计时
                     if not updated:
                         continue
 
