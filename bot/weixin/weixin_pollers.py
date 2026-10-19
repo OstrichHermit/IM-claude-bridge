@@ -4,6 +4,7 @@
 """
 import asyncio
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -259,6 +260,62 @@ class WeixinPollersMixin:
                 log.log(f"❌ check_notify_outbox_loop 错误: {e}")
 
             await asyncio.sleep(0.5)
+
+    async def check_token_expiry_loop(self):
+        """轮询 context_token 最后刷新时间，过期前发一条固定提醒（只做 24 小时超时维度）
+
+        token 距最后刷新超过 (expiry_hours - remind_before_hours) 小时且未提醒过时，
+        通过 message_queue.add_notify 发提醒；token 刷新（set）后自动可再次提醒。
+        """
+        log.log("⏰ [TokenExpiry] context_token 过期提醒任务已启动")
+        while self.running:
+            try:
+                # 未启用时跳过处理，但继续运行循环以便配置更改后能生效
+                if not self.config.token_expiry_reminder_enabled:
+                    await asyncio.sleep(60)
+                    continue
+
+                # 提醒接收人：优先配置的 recipient，为空则 fallback 到 notify_weixin_username
+                recipient = self.config.token_expiry_reminder_recipient or self.config.notify_weixin_username
+                if not recipient:
+                    log.log("⚠️ [TokenExpiry] 未配置提醒接收人（recipient / notify_weixin_username），跳过本轮")
+                    await asyncio.sleep(60)
+                    continue
+
+                now = datetime.now()
+                threshold_hours = self.config.token_expiry_hours - self.config.token_remind_before_hours
+
+                for username, token in self.context_tokens.get_all().items():
+                    updated = self.context_tokens.get_updated_at(username)
+                    if not updated:
+                        # 无时间基准时用 weixin_quota 表的 updated_at 兜底
+                        # （quota 表的 updated_at 只可能晚于 token 签发时间，偏保守方向，安全）
+                        fallback = self.message_queue.get_weixin_quota_updated_at(username)
+                        if fallback and fallback[0] == token:
+                            updated = fallback[1]
+
+                    if not updated:
+                        continue
+
+                    try:
+                        dt = datetime.fromisoformat(updated)
+                    except (ValueError, TypeError):
+                        continue
+
+                    age_hours = (now - dt).total_seconds() / 3600
+
+                    # 达到提醒阈值且该 token 未提醒过
+                    if age_hours >= threshold_hours and self._expiry_reminded.get(username) != token:
+                        self.message_queue.add_notify(recipient, self.config.token_expiry_reminder_message)
+                        self._expiry_reminded[username] = token
+                        log.log(
+                            f"⏰ [TokenExpiry] 已发送过期提醒: username={username}, "
+                            f"age_hours={age_hours:.2f}, threshold_hours={threshold_hours}, recipient={recipient}"
+                        )
+            except Exception as e:
+                log.log(f"❌ check_token_expiry_loop 错误: {e}")
+
+            await asyncio.sleep(60)
 
     async def check_tool_use_results(self):
         """定期检查工具执行结果并发送工具调用通知"""

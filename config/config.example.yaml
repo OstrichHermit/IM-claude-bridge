@@ -241,6 +241,19 @@ weixin:
   # 微信剩余额度提示开关（消息末尾拼接"剩余可发送消息数量：x"，默认开启；关闭后只计数不拼提示）
   quota_hint_enabled: true
 
+  # context_token 过期前刷新提醒（token 距最后刷新超过 expiry_hours - remind_before_hours 小时时，发一条固定提醒）
+  token_expiry_reminder:
+    # 是否启用
+    enabled: true
+    # context_token 有效期（小时）
+    expiry_hours: 24
+    # 过期前多少小时提醒
+    remind_before_hours: 1
+    # 固定提醒内容
+    message: "⏰ 微信 token 将在1小时后过期，给猪猪发条消息刷新一下哦～"
+    # 提醒接收人（微信备注名，对应账号文件 username 字段；留空则用 notify_weixin_username）
+    recipient: ""
+
   # 微信消息分割配置（独立开关，不影响 Discord）
   message_splitting:
     # 是否启用消息按空行分割功能

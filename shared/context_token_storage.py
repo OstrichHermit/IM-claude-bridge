@@ -4,6 +4,7 @@ Context Token 持久化存储模块
 直接存储在 weixin_accounts.json 每个账号对象中
 """
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,7 @@ class ContextTokenStorage:
         """
         self.storage_file = Path(storage_file)
         self._tokens: dict[str, str] = {}  # username -> token
+        self._updated_at: dict[str, str] = {}  # username -> token 最后刷新时间（ISO 时间字符串）
         self._load()
 
     def _load(self):
@@ -40,6 +42,10 @@ class ContextTokenStorage:
                                 token = account.get('context_token')
                                 if username and token:
                                     self._tokens[username] = token
+                                    # 时间戳字段存在才加载（老数据没有该字段时保持无时间基准，属正常情况）
+                                    updated_at = account.get('context_token_updated_at')
+                                    if updated_at:
+                                        self._updated_at[username] = updated_at
                 log.log(f"从 {self.storage_file.name} 加载了 {len(self._tokens)} 个 context token")
         except Exception as e:
             log.log(f"⚠️  加载 context token 失败: {e}")
@@ -63,6 +69,9 @@ class ContextTokenStorage:
                     username = account.get('username')
                     if username and username in self._tokens:
                         account['context_token'] = self._tokens[username]
+                        # 时间戳与 token 同步写回
+                        if username in self._updated_at:
+                            account['context_token_updated_at'] = self._updated_at[username]
 
             with open(self.storage_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -93,6 +102,7 @@ class ContextTokenStorage:
         if not username or not token:
             return
         self._tokens[username] = token
+        self._updated_at[username] = datetime.now().isoformat()
         self._save()
 
     def delete(self, username: str):
@@ -105,6 +115,8 @@ class ContextTokenStorage:
         if username in self._tokens:
             del self._tokens[username]
             self._save()
+        if username in self._updated_at:
+            del self._updated_at[username]
 
     def get_all(self) -> dict[str, str]:
         """
@@ -115,7 +127,20 @@ class ContextTokenStorage:
         """
         return self._tokens.copy()
 
+    def get_updated_at(self, username: str) -> Optional[str]:
+        """
+        获取用户 token 的最后刷新时间
+
+        Args:
+            username: 用户名
+
+        Returns:
+            ISO 时间字符串，如果不存在则返回 None
+        """
+        return self._updated_at.get(username)
+
     def clear(self):
         """清空所有 token"""
         self._tokens = {}
+        self._updated_at = {}
         self._save()
