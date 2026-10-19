@@ -322,6 +322,33 @@ class Config:
         """获取微信剩余额度提示开关（默认开启；关闭后只计数不拼提示）"""
         return bool(self._config.get('weixin', {}).get('quota_hint_enabled', True))
 
+    # context_token 过期前刷新提醒配置
+
+    @property
+    def token_expiry_reminder_enabled(self) -> bool:
+        """获取 context_token 过期前提醒开关（默认关闭）"""
+        return bool(self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('enabled', False))
+
+    @property
+    def token_expiry_hours(self) -> float:
+        """获取 context_token 有效期（小时，默认 24）"""
+        return float(self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('expiry_hours', 24.0))
+
+    @property
+    def token_remind_before_hours(self) -> float:
+        """获取过期前多少小时提醒（默认 1）"""
+        return float(self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('remind_before_hours', 1.0))
+
+    @property
+    def token_expiry_reminder_message(self) -> str:
+        """获取固定提醒内容"""
+        return self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('message', '')
+
+    @property
+    def token_expiry_reminder_recipient(self) -> str:
+        """获取提醒接收人 username（空则运行时 fallback 到 notify_weixin_username）"""
+        return self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('recipient', '')
+
     @property
     def quota_monitor_enabled(self) -> bool:
         """获取智谱额度提示开关（每次响应发送完后追加智谱额度提示，默认开启）"""

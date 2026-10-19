@@ -72,6 +72,9 @@ class WeixinBot(
         # 文件缓存：{from_user_id: [AttachmentInfo, ...]}
         self.pending_attachments: Dict[str, list] = {}
 
+        # token 过期提醒防重缓存（username -> 已提醒过的 token；token 刷新后自动可再次提醒）
+        self._expiry_reminded: Dict[str, str] = {}
+
         # 账号管理
         self.account_manager = WeixinAccountManager(config.weixin_accounts_file)
         self._load_accounts()
@@ -204,6 +207,9 @@ class WeixinBot(
         # 启动微信通知 outbox 轮询任务（notify_weixin）
         self.notify_outbox_check_task = asyncio.create_task(self.check_notify_outbox_loop())
 
+        # 启动 context_token 过期前提醒任务
+        self.token_expiry_check_task = asyncio.create_task(self.check_token_expiry_loop())
+
         log.log(f"✅ 微信 Bot 已启动，{len(self.accounts)} 个账号正在监听")
 
         # 等待所有任务完成
@@ -212,7 +218,8 @@ class WeixinBot(
             self.sequence_check_task,
             self.tool_result_check_task,
             self.pending_ask_check_task,
-            self.notify_outbox_check_task
+            self.notify_outbox_check_task,
+            self.token_expiry_check_task
         )
         log.log("✓ 微信 Bot 已停止")
 
@@ -238,6 +245,8 @@ class WeixinBot(
             self.pending_ask_check_task.cancel()
         if hasattr(self, 'notify_outbox_check_task') and self.notify_outbox_check_task:
             self.notify_outbox_check_task.cancel()
+        if hasattr(self, 'token_expiry_check_task') and self.token_expiry_check_task:
+            self.token_expiry_check_task.cancel()
 
         # 等待任务取消完成
         await asyncio.gather(
@@ -246,6 +255,7 @@ class WeixinBot(
             self.tool_result_check_task if hasattr(self, 'tool_result_check_task') else None,
             self.pending_ask_check_task if hasattr(self, 'pending_ask_check_task') else None,
             self.notify_outbox_check_task if hasattr(self, 'notify_outbox_check_task') else None,
+            self.token_expiry_check_task if hasattr(self, 'token_expiry_check_task') else None,
             return_exceptions=True
         )
         log.log("微信 Bot 已停止")
