@@ -40,6 +40,11 @@ class Config:
         return token
 
     @property
+    def discord_proxy(self) -> str:
+        """获取 Discord Bot 代理地址（http:// 格式，空字符串表示不配置代理）"""
+        return str(self._config.get('discord', {}).get('proxy', '') or '')
+
+    @property
     def allowed_channels(self) -> List[int]:
         """获取允许的频道 ID 列表"""
         return self._config.get('discord', {}).get('allowed_channels', [])
