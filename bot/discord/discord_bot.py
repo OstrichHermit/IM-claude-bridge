@@ -8,9 +8,11 @@ from discord import app_commands
 import asyncio
 import sys
 import time
+import socket
 import sqlite3
 from pathlib import Path
 from typing import Dict, List
+from urllib.parse import urlparse
 
 # 添加 shared 目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -44,8 +46,15 @@ class DiscordBot(
         intents.message_content = True  # 需要在 Discord Developer Portal 启用
         intents.messages = True
 
+        # discord.py 不走系统代理，需显式传入；代理端口无监听时自动直连
+        # （在家无 clash 时自动直连走软路由透明代理，在外开 clash 时自动走代理）
+        proxy = self._resolve_proxy(config.discord_proxy)
+        if config.discord_proxy:
+            log.log(f"🌐 代理探测: {'使用代理 ' + proxy if proxy else '代理端口无监听，直连'}")
+
         super().__init__(
-            intents=intents
+            intents=intents,
+            proxy=proxy
         )
 
         # 手动创建命令树（discord.Client 需要，commands.Bot 自带）
@@ -65,6 +74,20 @@ class DiscordBot(
         # ⏰ 定时任务调度器
         self.cron_scheduler = None
         self.cron_scan_task = None
+
+    @staticmethod
+    def _resolve_proxy(proxy: str):
+        """配置了代理且本地端口有监听时返回代理地址，否则返回 None（直连）"""
+        if not proxy:
+            return None
+        parsed = urlparse(proxy)
+        host = parsed.hostname or '127.0.0.1'
+        port = parsed.port or (1080 if parsed.scheme == 'socks5' else 8080)
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return proxy
+        except OSError:
+            return None
 
     async def setup_hook(self):
         """Bot 启动后的钩子"""
