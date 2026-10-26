@@ -253,6 +253,8 @@ weixin:
     message: "⏰ 微信 token 将在1小时后过期，给猪猪发条消息刷新一下哦～"
     # 提醒接收人（微信备注名，对应账号文件 username 字段；留空则用 notify_weixin_username）
     recipient: ""
+    # 启用过期提醒计时的用户名白名单（仅白名单内的用户计时提醒，不在名单内的用户 token 过期不提醒）
+    whitelist: []
 
   # 微信消息分割配置（独立开关，不影响 Discord）
   message_splitting:

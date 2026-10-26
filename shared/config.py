@@ -355,6 +355,14 @@ class Config:
         return self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('recipient', '')
 
     @property
+    def token_expiry_reminder_whitelist(self) -> list:
+        """获取启用过期提醒计时的用户名白名单（仅白名单内的用户计时提醒）"""
+        raw = self._config.get('weixin', {}).get('token_expiry_reminder', {}).get('whitelist', [])
+        if isinstance(raw, list):
+            return [str(u) for u in raw if u]
+        return []
+
+    @property
     def quota_monitor_enabled(self) -> bool:
         """获取智谱额度提示开关（每次响应发送完后追加智谱额度提示，默认开启）"""
         return bool(self._config.get('quota_monitor_enabled', True))

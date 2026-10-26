@@ -284,8 +284,13 @@ class WeixinPollersMixin:
 
                 now = datetime.now()
                 threshold_hours = self.config.token_expiry_hours - self.config.token_remind_before_hours
+                whitelist = self.config.token_expiry_reminder_whitelist
 
                 for username, token in self.context_tokens.get_all().items():
+                    # 白名单外的用户不启用过期计时
+                    if username not in whitelist:
+                        continue
+
                     updated = self.context_tokens.get_updated_at(username)
                     # 无时间基准（老数据且未刷新过）时跳过，等用户下次发消息 set 后才开始计时
                     if not updated:
