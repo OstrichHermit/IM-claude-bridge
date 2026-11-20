@@ -309,20 +309,27 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             entries = await asyncio.to_thread(fetch_quota_summary)
             if entries:
-                # 窗口名（5小时 / 1个月）作说明标题，进度条用行内代码。第一条放说明区、其余各占一个字段：
-                # 说明区文本与下方字段标题之间由 Discord 自然留出间距（与 /restart 等卡片一致）
-                window, bar, text = parse_quota_entry(entries[0])
-                head = f"`{bar}` {text}"
-                if window:
-                    head = f"**{window}**\n{head}"
+                # 窗口名（5小时 / 1个月）作说明标题，进度条用行内代码
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description=head,
                     color=discord.Color.green()
                 )
-                for entry in entries[1:]:
-                    window, bar, text = parse_quota_entry(entry)
-                    embed.add_field(name=window or "额度", value=f"`{bar}` {text}", inline=False)
+                parsed = [parse_quota_entry(entry) for entry in entries]
+                if len(parsed) == 1:
+                    # 只有一条时放说明区（没有窗口名时与最初版本一致）
+                    window, bar, text = parsed[0]
+                    head = f"`{bar}` {text}"
+                    if window:
+                        head = f"**{window}**\n{head}"
+                    embed.description = head
+                else:
+                    # 多条时每条一个字段，保证各条"标题到文本"的间距一致；
+                    # 除最后一条外在文本下方补一个空行，把各条隔开
+                    for i, (window, bar, text) in enumerate(parsed):
+                        value = f"`{bar}` {text}"
+                        if i < len(parsed) - 1:
+                            value += "\n" + chr(0x200B)
+                        embed.add_field(name=window or "额度", value=value, inline=False)
             else:
                 embed = discord.Embed(
                     title="⚠️ 额度查询失败",
