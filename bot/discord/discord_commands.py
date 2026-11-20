@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.logger import get_logger
-from shared.quota_monitor import fetch_quota_summary
+from shared.quota_monitor import fetch_quota_summary, parse_quota_entry
 from shared.text_template import fill_template
 
 log = get_logger("DiscordBot", "discord")
@@ -309,11 +309,12 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             entries = await asyncio.to_thread(fetch_quota_summary)
             if entries:
-                # 进度条用行内代码，多条之间直接换行
+                # 窗口名（5小时 / 1个月）作小标题，进度条用行内代码
                 lines = []
                 for entry in entries:
-                    bar, _, text = entry.partition(" ")
-                    lines.append(f"`{bar}` {text}")
+                    window, bar, text = parse_quota_entry(entry)
+                    title = f"**{window}**\n" if window else ""
+                    lines.append(f"{title}`{bar}` {text}")
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
                     description="\n".join(lines),

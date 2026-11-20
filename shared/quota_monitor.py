@@ -69,3 +69,12 @@ def fetch_quota_summary() -> Optional[List[str]]:
     except Exception as e:
         log.log(f"⚠️ 查询智谱额度失败: {e}")
         return None
+
+
+def parse_quota_entry(entry: str) -> tuple:
+    """把 fetch_quota_summary 的条目拆成（窗口名, 进度条, 其余文字），没有窗口名时第一项为空串"""
+    bar, _, rest = entry.partition(" ")
+    window, sep, text = rest.partition(" 已用 ")
+    if sep:
+        return window, bar, f"已用 {text}"
+    return "", bar, rest
