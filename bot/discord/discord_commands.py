@@ -309,20 +309,17 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             entries = await asyncio.to_thread(fetch_quota_summary)
             if entries:
-                # 每条额度单独发一条消息，标题只放第一条
-                for i, entry in enumerate(entries):
-                    embed = discord.Embed(
-                        title="🔋 剩余额度查询" if i == 0 else None,
-                        description=f"```\n{entry}\n```",
-                        color=discord.Color.green()
-                    )
-                    await interaction.followup.send(embed=embed)
+                embed = discord.Embed(
+                    title="🔋 剩余额度查询",
+                    description="\n".join(f"```\n{entry}\n```" for entry in entries),
+                    color=discord.Color.green()
+                )
             else:
                 embed = discord.Embed(
                     title="⚠️ 额度查询失败",
                     color=discord.Color.red()
                 )
-                await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed)
 
         @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
         async def stop_command(interaction: discord.Interaction):
