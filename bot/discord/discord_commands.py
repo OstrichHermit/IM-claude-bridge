@@ -309,9 +309,14 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             entries = await asyncio.to_thread(fetch_quota_summary)
             if entries:
+                # 进度条用行内代码，多条之间直接换行
+                lines = []
+                for entry in entries:
+                    bar, _, text = entry.partition(" ")
+                    lines.append(f"`{bar}` {text}")
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description="\n".join(f"```\n{entry}\n```" for entry in entries),
+                    description="\n".join(lines),
                     color=discord.Color.green()
                 )
             else:
