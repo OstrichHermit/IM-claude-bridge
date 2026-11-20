@@ -323,9 +323,13 @@ class DiscordCommandsMixin:
                         head = f"**{window}**\n{head}"
                     embed.description = head
                 else:
-                    # 多条时每条一个字段，保证各条"标题到文本"的间距一致
-                    for window, bar, text in parsed:
-                        embed.add_field(name=window or "额度", value=f"`{bar}` {text}", inline=False)
+                    # 多条时每条一个字段，保证各条"标题到文本"的间距一致；
+                    # 除最后一条外在文本下方补一个空行，把各条隔开
+                    for i, (window, bar, text) in enumerate(parsed):
+                        value = f"`{bar}` {text}"
+                        if i < len(parsed) - 1:
+                            value += "\n" + chr(0x200B)
+                        embed.add_field(name=window or "额度", value=value, inline=False)
             else:
                 embed = discord.Embed(
                     title="⚠️ 额度查询失败",
