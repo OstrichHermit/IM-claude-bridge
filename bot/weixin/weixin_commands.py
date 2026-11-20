@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 from shared.logger import get_logger
-from shared.quota_monitor import fetch_quota_summary
+from shared.quota_monitor import fetch_quota_summary, parse_quota_entry
 from shared.text_template import fill_template
 
 log = get_logger("WeixinBot", "weixin")
@@ -266,7 +266,14 @@ class WeixinCommandsMixin:
         """查询智谱 GLM Coding Plan 剩余额度"""
         entries = await asyncio.to_thread(fetch_quota_summary)
         if entries:
-            msg = "**🔋 剩余额度查询**\n\n" + "\n\n".join(f"`{entry}`" for entry in entries)
+            # 与 Discord 的 /quota 同一格式：窗口名作标题，下面是进度条文本，各条之间空一行
+            # （微信单换行显示有问题，所以标题和文本之间也空一行）
+            parsed = [parse_quota_entry(entry) for entry in entries]
+            blocks = []
+            for window, bar, text in parsed:
+                title = f"**{window or '额度'}**\n\n" if len(parsed) > 1 or window else ""
+                blocks.append(f"{title}`{bar}` {text}")
+            msg = "**🔋 剩余额度查询**\n\n" + "\n\n".join(blocks)
         else:
             msg = "**⚠️ 额度查询失败**"
         await self._send_direct_message(from_user_id, account_bot_id, msg)
