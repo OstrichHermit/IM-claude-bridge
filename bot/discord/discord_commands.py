@@ -309,12 +309,18 @@ class DiscordCommandsMixin:
             await interaction.response.defer()
             entries = await asyncio.to_thread(fetch_quota_summary)
             if entries:
-                # 窗口名（5小时 / 1个月）作说明标题，进度条用行内代码，沿用其他卡片的字段样式
+                # 窗口名（5小时 / 1个月）作说明标题，进度条用行内代码。第一条放说明区、其余各占一个字段：
+                # 说明区文本与下方字段标题之间由 Discord 自然留出间距（与 /restart 等卡片一致）
+                window, bar, text = parse_quota_entry(entries[0])
+                head = f"`{bar}` {text}"
+                if window:
+                    head = f"**{window}**\n{head}"
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
+                    description=head,
                     color=discord.Color.green()
                 )
-                for entry in entries:
+                for entry in entries[1:]:
                     window, bar, text = parse_quota_entry(entry)
                     embed.add_field(name=window or "额度", value=f"`{bar}` {text}", inline=False)
             else:
