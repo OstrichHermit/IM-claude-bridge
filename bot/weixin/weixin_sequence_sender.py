@@ -282,15 +282,16 @@ class WeixinSequenceSenderMixin:
                                 try:
                                     # 组装发送文本：每段都计数并拼接额度提示（开关关闭时只计数不拼提示）
                                     send_text = text.strip()
+                                    quota_hint = ""
                                     try:
                                         quota_used = self.message_queue.incr_weixin_quota(username, context_token)
                                         if self.config.quota_hint_enabled:
                                             remaining = WEIXIN_QUOTA_LIMIT - quota_used
-                                            send_text = f"{send_text}\n\n`剩余可发送消息数量：{remaining}`"
+                                            quota_hint = f"\n\n`剩余可发送消息数量：{remaining}`"
                                     except Exception as quota_error:
                                         log.log(f"⚠️ [消息 #{message_id}] 累加额度失败，不拼额度提示: {quota_error}")
 
-                                    # 最后一条 text 序列末尾拼接智谱额度
+                                    # 最后一条 text 序列拼接智谱额度，排在剩余消息数之前
                                     try:
                                         if self.config.quota_monitor_enabled and self.message_queue.is_last_text_sequence(message_id, seq_id):
                                             entries = await asyncio.to_thread(fetch_quota_summary)
@@ -299,6 +300,7 @@ class WeixinSequenceSenderMixin:
                                                 send_text = f"{send_text}\n\n{quota_text}"
                                     except Exception as e:
                                         log.log(f"⚠️ [消息 #{message_id}] 拼接智谱额度失败（已忽略）: {e}")
+                                    send_text = f"{send_text}{quota_hint}"
 
                                     # 直接发送文本
                                     await client.send_message(
