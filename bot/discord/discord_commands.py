@@ -307,11 +307,11 @@ class DiscordCommandsMixin:
 
             # 额度接口最长 10 秒，先 defer 避免交互超时
             await interaction.response.defer()
-            summary = await asyncio.to_thread(fetch_quota_summary)
-            if summary:
+            entries = await asyncio.to_thread(fetch_quota_summary)
+            if entries:
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description=f"```{summary}```",
+                    description="\n\n".join(f"```\n{entry}\n```" for entry in entries),
                     color=discord.Color.green()
                 )
             else:

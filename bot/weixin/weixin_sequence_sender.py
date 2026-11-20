@@ -293,9 +293,10 @@ class WeixinSequenceSenderMixin:
                                     # 最后一条 text 序列末尾拼接智谱额度
                                     try:
                                         if self.config.quota_monitor_enabled and self.message_queue.is_last_text_sequence(message_id, seq_id):
-                                            summary = await asyncio.to_thread(fetch_quota_summary)
-                                            if summary:
-                                                send_text = f"{send_text}\n\n`{summary}`"
+                                            entries = await asyncio.to_thread(fetch_quota_summary)
+                                            if entries:
+                                                quota_text = "\n\n".join(f"`{entry}`" for entry in entries)
+                                                send_text = f"{send_text}\n\n{quota_text}"
                                     except Exception as e:
                                         log.log(f"⚠️ [消息 #{message_id}] 拼接智谱额度失败（已忽略）: {e}")
 

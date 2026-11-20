@@ -29,10 +29,10 @@ class DiscordSequenceSenderMixin:
             # 打断结束的响应（引导模式自动打断 / 手动中止）不发额度提示
             if message_id is not None and self.message_queue.is_message_aborted(message_id):
                 return
-            summary = await asyncio.to_thread(fetch_quota_summary)
-            if not summary:
+            entries = await asyncio.to_thread(fetch_quota_summary)
+            if not entries:
                 return
-            await channel.send(f"```\n{summary}\n```")
+            await channel.send("\n\n".join(f"```\n{entry}\n```" for entry in entries))
         except Exception as e:
             log.log(f"⚠️ 额度提示发送失败（已忽略）: {e}")
 

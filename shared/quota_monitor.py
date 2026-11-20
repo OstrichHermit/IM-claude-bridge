@@ -6,7 +6,7 @@ import os
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from shared.logger import get_logger
 
@@ -18,8 +18,8 @@ CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 CREDIT_WINDOW_UNITS = {3: "小时", 6: "个月"}
 
 
-def fetch_quota_summary() -> Optional[str]:
-    """查询智谱 GLM Coding Plan 剩余额度，返回格式化摘要（任何失败返回 None，绝不抛异常）；TOKENS_LIMIT 一条、CREDIT_LIMIT 两条，每条一行"""
+def fetch_quota_summary() -> Optional[List[str]]:
+    """查询智谱 GLM Coding Plan 剩余额度，返回格式化条目列表，每个额度窗口一条（任何失败返回 None，绝不抛异常）"""
     try:
         # 读取 API Key：优先环境变量，其次 Claude Code 配置
         api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN", "").strip()
@@ -42,7 +42,7 @@ def fetch_quota_summary() -> Optional[str]:
             data = json.loads(resp.read().decode("utf-8"))
 
         limits = (data.get("data") or {}).get("limits") or []
-        lines = []
+        entries = []
         for item in limits:
             item_type = item.get("type")
             percentage = item.get("percentage")
@@ -60,12 +60,12 @@ def fetch_quota_summary() -> Optional[str]:
             bar = bar + "░" * max(0, 10 - len(bar))
             reset_dt = datetime.fromtimestamp(next_reset / 1000)
             reset_str = reset_dt.strftime("%H:%M") if reset_dt.date() == datetime.now().date() else reset_dt.strftime("%m-%d %H:%M")
-            lines.append(f"{bar} {window}已用 {percentage}% / {reset_str} 重置")
+            entries.append(f"{bar} {window}已用 {percentage}% / {reset_str} 重置")
 
-        if not lines:
+        if not entries:
             log.log("⚠️ 额度接口响应中没有 TOKENS_LIMIT / CREDIT_LIMIT 条目")
             return None
-        return "\n".join(lines)
+        return entries
     except Exception as e:
         log.log(f"⚠️ 查询智谱额度失败: {e}")
         return None
