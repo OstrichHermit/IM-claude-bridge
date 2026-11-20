@@ -32,7 +32,7 @@ class DiscordSequenceSenderMixin:
             entries = await asyncio.to_thread(fetch_quota_summary)
             if not entries:
                 return
-            await channel.send("\n\n".join(f"```\n{entry}\n```" for entry in entries))
+            await channel.send("\n".join(f"```\n{entry}\n```" for entry in entries))
         except Exception as e:
             log.log(f"⚠️ 额度提示发送失败（已忽略）: {e}")
 

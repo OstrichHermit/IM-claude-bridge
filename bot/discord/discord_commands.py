@@ -311,7 +311,7 @@ class DiscordCommandsMixin:
             if entries:
                 embed = discord.Embed(
                     title="🔋 剩余额度查询",
-                    description="\n\n".join(f"```\n{entry}\n```" for entry in entries),
+                    description="\n".join(f"```\n{entry}\n```" for entry in entries),
                     color=discord.Color.green()
                 )
             else:

@@ -266,7 +266,7 @@ class WeixinCommandsMixin:
         """查询智谱 GLM Coding Plan 剩余额度"""
         entries = await asyncio.to_thread(fetch_quota_summary)
         if entries:
-            msg = "**🔋 剩余额度查询**\n\n" + "\n\n".join(f"`{entry}`" for entry in entries)
+            msg = "**🔋 剩余额度查询**\n\n" + "\n".join(f"`{entry}`" for entry in entries)
         else:
             msg = "**⚠️ 额度查询失败**"
         await self._send_direct_message(from_user_id, account_bot_id, msg)
