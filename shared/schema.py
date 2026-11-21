@@ -321,6 +321,15 @@ MIGRATIONS: List[Dict] = [
             "ALTER TABLE messages ADD COLUMN recovered_groups TEXT",  # 合并后完整条目时序，链式捞回时直接还原，免字符串解析
         ]
     },
+
+    # Version 14: sessions / messages 表 - 添加 context_usage（上下文已用 tokens；列名不用 context_tokens，避免和微信凭证 context_token 混淆）
+    {
+        "version": 14,
+        "alterations": [
+            "ALTER TABLE sessions ADD COLUMN context_usage INTEGER",  # 会话级：最后一次统计值（提示词注入 / context 命令查询用）
+            "ALTER TABLE messages ADD COLUMN context_usage INTEGER",  # 消息级：该消息那次 Claude 调用结束时的统计值（响应发送完追加提示用）
+        ]
+    },
 ]
 
 

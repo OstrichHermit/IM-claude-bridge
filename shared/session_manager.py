@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 import platform
+from typing import Optional
 
 from shared.logger import get_logger
 
@@ -536,3 +537,63 @@ class SessionManager:
         except Exception as e:
             log.log(f"❌ 清除 ask_view 失败: {e}")
             return False
+
+    # ========== 上下文用量相关 ==========
+
+    def update_context_usage(self, session_key: str, tokens: int) -> bool:
+        """记录会话当前的上下文已用 tokens（覆盖式）
+
+        不改 last_used_at：它由 get_or_create_session 在每条消息到达时维护，这里只做数据记录。
+        每轮回复都会调用，成功时不写日志（避免刷屏），只有出错才记。
+
+        Args:
+            session_key: 会话标识
+            tokens: 上下文已用 tokens
+
+        Returns:
+            是否成功更新（找不到 session 时返回 False）
+        """
+        try:
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE sessions SET context_usage = ?
+                    WHERE session_key = ?
+                """, (int(tokens), session_key))
+                updated = cursor.rowcount > 0
+                conn.commit()
+            finally:
+                conn.close()
+            return updated
+        except Exception as e:
+            log.log(f"❌ 更新上下文用量失败: {e}")
+            return False
+
+    def get_context_usage(self, session_key: str) -> Optional[int]:
+        """读取会话当前的上下文已用 tokens
+
+        Args:
+            session_key: 会话标识
+
+        Returns:
+            上下文已用 tokens，没有记录或为 NULL 时返回 None
+        """
+        try:
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT context_usage FROM sessions WHERE session_key = ?
+                """, (session_key,))
+                row = cursor.fetchone()
+            finally:
+                conn.close()
+
+            if not row or row[0] is None:
+                return None
+
+            return int(row[0])
+        except Exception as e:
+            log.log(f"❌ 读取上下文用量失败: {e}")
+            return None

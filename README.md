@@ -19,6 +19,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - 工具调用通知（在 Discord 中以 Embed 卡片形式发送）
 - 图片表情包（自动检测 `<:文件名.扩展名>` 格式并发送图片）
 - **微信主动通知与额度提示**（`notify_weixin` 让 AI 随时发微信消息，自动带引用块来源前缀；每条发出的微信消息末尾实时拼接"剩余可发送消息数量：x"，回消息即重置 10 条额度）
+- **上下文用量监控**（`/context` 随时查当前会话占用了多少上下文；每条回复发完后自动追加用量进度条，排在智谱额度提示前面；同时把用量注入下一条消息的开头，让 AI 自己知道该什么时候省着用上下文。Discord 和微信都支持）
 
 **📁 文件传输**
 - 支持所有文件类型（图片、文档、压缩包等）
@@ -47,7 +48,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 
 **🎯 服务管理**
 - Windows 守护进程（自动监控重启）
-- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`、`/quota`、`/mention`、`/split`、`/queuemode`）
+- Discord 斜杠命令控制（`/new`、`/status`、`/restart`、`/stop`、`/abort`、`/quota`、`/context`、`/mention`、`/split`、`/queuemode`）
 - 消息排队模式（引导模式：新消息自动静默打断；排队模式：排队提醒卡片）
 - 上下文菜单（右键消息下载附件）
 - 消息队列系统（SQLite 持久化）
@@ -151,6 +152,7 @@ Bot 会接收消息并显示正在输入，并在响应完成后停止。
 - `/status` - 查看系统状态（会话 ID、数据库统计等）
 - `/abort` - 中止当前正在处理的输出
 - `/quota` - 查询 GLM Coding Plan 剩余额度
+- `/context` - 查询当前会话的上下文用量
 - `/mention` - 切换当前频道是否需要 @机器人 才能触发对话（每个频道独立管理）
 - `/split` - 切换当前频道的换行分割模式（每个频道独立管理）
 - `/queuemode` - 切换当前频道的消息排队模式（每个频道独立管理）
@@ -333,6 +335,14 @@ timeout:
 
 tool_use_notification:
   enabled: true                        # 是否启用工具调用通知（以 Embed 卡片形式转发）
+
+# 每次 AI 响应发送完后追加智谱 GLM Coding Plan 剩余额度提示（Discord 单发代码块，微信拼在最后一条文本末尾）
+quota_monitor_enabled: true
+
+# 上下文用量监控（用量取自 Claude Code 输出流里每次 API 调用收尾的 usage）
+context_monitor_enabled: true           # 每条回复发完后追加上下文用量进度条（Discord 单发代码块，微信拼在最后一条文本末尾，排在智谱额度提示前面）
+context_prompt_enabled: true            # 每条消息发给 AI 前，在提示词开头附上当前上下文用量（上一轮回复结束时的统计）
+context_window_tokens: 1000000          # 模型上下文窗口 tokens（模型名带 [1m] 的填 1000000，换模型时记得同步）
 
 # 微信 Bot 配置（可选）
 weixin:

@@ -1405,6 +1405,65 @@ class MessageQueue:
         """同时清除 pending_ask 和 ask_view_message_id（代理到 SessionManager）"""
         return self._sessions.clear_ask_view(session_key)
 
+    # ========== 上下文用量相关 ==========
+
+    def save_context_usage(self, session_key: Optional[str], message_id: Optional[int], tokens: int):
+        """记录一次 Claude 调用结束时的上下文已用 tokens（绝不抛异常，失败只打日志）
+
+        tokens <= 0 直接返回；session_key 非空则更新 sessions 表（会话级，供提示词注入 / 查询命令用），
+        message_id 非空则更新 messages 表对应行（消息级，供响应发送完后追加上下文用量提示）。
+
+        Args:
+            session_key: 会话标识（临时会话在 sessions 表里没有记录，更新不到也不算错）
+            message_id: 消息 ID
+            tokens: 上下文已用 tokens
+        """
+        try:
+            if not tokens or tokens <= 0:
+                return
+            if session_key:
+                self._sessions.update_context_usage(session_key, tokens)
+            if message_id:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE messages SET context_usage = ? WHERE id = ?",
+                        (int(tokens), message_id)
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception as e:
+            log.log(f"⚠️ 保存上下文用量失败（已忽略）: {e}")
+
+    def get_message_context_usage(self, message_id: Optional[int]) -> Optional[int]:
+        """读取某条消息对应那次 Claude 调用结束时的上下文已用 tokens
+
+        Args:
+            message_id: 消息 ID
+
+        Returns:
+            上下文已用 tokens，没有记录返回 None（出错也返回 None，只打日志）
+        """
+        try:
+            if not message_id:
+                return None
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT context_usage FROM messages WHERE id = ?", (message_id,))
+                row = cursor.fetchone()
+            finally:
+                conn.close()
+
+            if not row or row[0] is None:
+                return None
+            return int(row[0])
+        except Exception as e:
+            log.log(f"⚠️ 读取消息上下文用量失败（已忽略）: {e}")
+            return None
+
     def get_message_by_id(self, message_id: int) -> Optional[Message]:
         """根据消息 ID 查询消息（完整字段）
 

@@ -82,6 +82,13 @@ message_splitting:
 # 每次 AI 响应发送完后追加智谱额度提示
 quota_monitor_enabled: true
 
+# 上下文用量提示开关：每次 AI 响应发送完后追加上下文用量提示（排在智谱额度提示前面）
+context_monitor_enabled: true
+# 上下文用量注入开关：每条消息发给 AI 前，在提示词开头附上当前上下文用量
+context_prompt_enabled: true
+# 模型上下文窗口 tokens：模型名带 [1m] 的填 1000000，换模型时记得同步
+context_window_tokens: 1000000
+
 # 语音消息直接触发配置
 voice_message:
   # 是否启用语音消息直接触发（微信语音消息 + Discord 语音条）

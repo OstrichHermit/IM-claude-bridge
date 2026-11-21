@@ -15,6 +15,7 @@ from pathlib import Path
 
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageStatus, MessageTag, MessageDirection
+from shared.context_usage import usage_to_context_tokens, format_usage_text
 from shared.logger import get_logger
 from shared.process_utils import (
     KILL_TREE_GONE,
@@ -520,6 +521,16 @@ class SessionWorker:
             history_prefix = f"{pending_history}\n\n" if pending_history else ""
             prompt = f"{history_prefix}{sender_info}{prompt}"
 
+        # 上下文用量注入：把当前上下文用量拼在提示词最前面（系统注入消息不注入）。
+        # 先判 session_key 再读 config 开关：没有会话就没有用量可查。
+        # 注意这里取到的是"上一轮回复结束时"的统计值——本轮的用量要等这次调用结束才会落库。
+        context_line = None
+        if (session_key and self.config.context_prompt_enabled
+                and message_tag != MessageTag.SYSTEM.value):
+            context_line = self._build_context_line(session_key)
+        if context_line:
+            prompt = f"{context_line}\n\n{prompt}"
+
         while retries < max_attempts:
             # 本次尝试拉起的进程及其身份校验；异常收场时进程还活着的话要连带子进程树收掉
             process = None
@@ -530,6 +541,8 @@ class SessionWorker:
                 cmd_args.append('--verbose')
                 cmd_args.append('--output-format')
                 cmd_args.append('stream-json')
+                # 上下文用量要从 stream_event 的 message_delta 里取（见 process_json_object），不开这个开关流里没有这类事件
+                cmd_args.append('--include-partial-messages')
 
                 # 会话处理逻辑
                 if session_key:
@@ -591,6 +604,7 @@ class SessionWorker:
                 sequence_index = 0
                 aborted = False
                 pending_ask_signal = None  # AskUserQuestion 拦截信号
+                last_usage = None  # 最后一次主线程 API 调用收尾时的 usage（后到的覆盖先到的，绝不累加）
 
                 try:
                     # 按块读取
@@ -599,7 +613,19 @@ class SessionWorker:
 
                     def process_json_object(data: dict):
                         """处理流式输出的单个 JSON 对象（内层函数，直接捕获外层变量）"""
-                        nonlocal ai_started_notified, response_lines, last_update_time, sequence_index, pending_ask_signal
+                        nonlocal ai_started_notified, response_lines, last_update_time, sequence_index, pending_ask_signal, last_usage
+
+                        if data.get('type') == 'stream_event':
+                            # 上下文用量：assistant 事件自带的 usage 全是 0，result 事件的是整轮累加值，
+                            # 真实数字只在每次 API 调用收尾的 message_delta 里（需要 --include-partial-messages）。
+                            # 子代理（Agent 工具）的调用带 parent_tool_use_id，算的是子代理自己的上下文，不能记
+                            event = data.get('event')
+                            if (isinstance(event, dict) and event.get('type') == 'message_delta'
+                                    and not data.get('parent_tool_use_id')):
+                                usage = event.get('usage')
+                                if usage_to_context_tokens(usage) > 0:
+                                    last_usage = usage
+                            return
 
                         if not ai_started_notified and data.get('type') == 'system' and data.get('subtype') == 'init':
                             self._log.log(f"🚀 [消息 #{message_id}] AI 开始工作")
@@ -923,6 +949,16 @@ class SessionWorker:
                     # 这一支基本走不到（读循环的超时被内层接住了）：真走到这里同样杀整棵进程树（卡住的 MCP 子进程等不留）
                     await terminate_process_tree(process, log=self._log, verify=verify)
                     raise Exception(f"Claude Code 启动超时（超过 {self.config.claude_timeout} 秒）")
+                finally:
+                    # 落库上下文用量。放在 finally 是为了覆盖所有出口（成功 / 被打断 / AskUserQuestion 拦截 / 失败重试）：
+                    # 已经发生过的 API 调用已经占用了上下文，所以打断或失败也要记。
+                    if last_usage is not None:
+                        try:
+                            self.message_queue.save_context_usage(
+                                session_key, message_id, usage_to_context_tokens(last_usage)
+                            )
+                        except Exception as e:
+                            self._log.log(f"⚠️ [消息 #{message_id}] 保存上下文用量失败（已忽略）: {e}")
 
             except FileNotFoundError:
                 error_msg = (
@@ -1016,6 +1052,27 @@ class SessionWorker:
                 sender_info = f"{sender_base}说："
 
         return sender_info
+
+    def _build_context_line(self, session_key: Optional[str]) -> Optional[str]:
+        """构建注入提示词开头的上下文用量行
+
+        从库里取该会话上一轮回复结束时的上下文已用 tokens；没有会话或还没统计过时返回 None（不注入）。
+        任何出错都返回 None：注入用量只是锦上添花，绝不能影响正常调用。
+
+        Returns:
+            形如 "[上下文用量] 已用 12% / 1M Tokens"，取不到用量返回 None
+        """
+        try:
+            if not session_key:
+                return None
+            tokens = self.message_queue.sessions.get_context_usage(session_key)
+            if not tokens:
+                return None
+
+            return f"[上下文用量] {format_usage_text(tokens, self.config.context_window_tokens)}"
+        except Exception as e:
+            self._log.log(f"⚠️ 读取上下文用量失败（已忽略）: {e}")
+            return None
 
     async def _delayed_insert_wake_message(self, ctx: dict):
         """延迟注入会话重启唤醒消息（system 标签，走原频道会话）

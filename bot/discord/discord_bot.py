@@ -516,7 +516,7 @@ class DiscordBot(
 
         embed.add_field(name="📂 工作目录", value=f"`{self.config.working_directory}`", inline=False)
 
-        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/retain` - 切换保留未@消息\n`/queuemode` - 切换排队模式\n`/quota` - 查询剩余额度\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
+        embed.add_field(name="🔧 可用命令", value="`/new` - 新会话\n`/status` - 查看状态\n`/abort` - 中止输出\n`/mention` - 切换是否需要 @\n`/split` - 切换换行分割\n`/retain` - 切换保留未@消息\n`/queuemode` - 切换排队模式\n`/quota` - 查询剩余额度\n`/context` - 查询上下文用量\n`/restart` - 重启服务\n`/stop` - 停止服务\n`下载附件` - 右键消息下载附件", inline=False)
 
         embed.set_footer(text=f"Bot: {self.user.name}")
 

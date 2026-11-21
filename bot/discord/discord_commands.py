@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType, AttachmentInfo
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary, parse_quota_entry
+from shared.context_usage import build_context_bar
 from shared.text_template import fill_template
 
 log = get_logger("DiscordBot", "discord")
@@ -336,6 +337,40 @@ class DiscordCommandsMixin:
                     color=discord.Color.red()
                 )
             await interaction.followup.send(embed=embed)
+
+        @self.tree.command(name="context", description="查询当前会话的上下文用量")
+        async def context_command(interaction: discord.Interaction):
+            """查询当前会话的上下文用量（只读本地库，不需要 defer）"""
+            # 检查私聊权限
+            if not await self._check_dm_permission(interaction):
+                return
+
+            # 判断当前是频道还是私聊（取会话方式与 /status 一致）
+            is_dm = isinstance(interaction.channel, discord.DMChannel)
+
+            session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
+                self.config.working_directory,
+                channel_id=interaction.channel.id if not is_dm else None,
+                user_id=interaction.user.id if is_dm else None,
+                is_dm=is_dm,
+                use_temp_session=False,
+                temp_session_key=None
+            )
+
+            embed = discord.Embed(
+                title="🧠 上下文用量",
+                color=discord.Color.green()
+            )
+
+            tokens = self.message_queue.sessions.get_context_usage(session_key)
+            if tokens:
+                # 与 /quota 单条时的展示方式一致：进度条用行内代码
+                bar, text = build_context_bar(tokens, self.config.context_window_tokens)
+                embed.description = f"`{bar}` {text}"
+            else:
+                embed.description = "暂无数据：当前会话还没有产生过回复"
+
+            await interaction.response.send_message(embed=embed)
 
         @self.tree.command(name="stop", description="停止 Discord Bridge 服务")
         async def stop_command(interaction: discord.Interaction):

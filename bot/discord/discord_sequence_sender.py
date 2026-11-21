@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import MessageStatus
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary
+from shared.context_usage import format_context_usage
 
 log = get_logger("DiscordBot", "discord")
 
@@ -22,18 +23,27 @@ class DiscordSequenceSenderMixin:
     """消息序列发送 Mixin"""
 
     async def _send_quota_notice(self, channel, message_id=None):
-        """响应全部发送完后追加智谱额度提示（失败静默；被打断的响应不提示）"""
+        """响应全部发送完后追加提示：先上下文用量、后智谱额度（失败静默；被打断的响应不提示）"""
         try:
-            if not channel or not self.config.quota_monitor_enabled:
+            context_enabled = self.config.context_monitor_enabled
+            quota_enabled = self.config.quota_monitor_enabled
+            if not channel or not (context_enabled or quota_enabled):
                 return
-            # 打断结束的响应（引导模式自动打断 / 手动中止）不发额度提示
+            # 打断结束的响应（引导模式自动打断 / 手动中止）不发提示
             if message_id is not None and self.message_queue.is_message_aborted(message_id):
                 return
-            entries = await asyncio.to_thread(fetch_quota_summary)
-            if not entries:
-                return
-            for entry in entries:
-                await channel.send(f"```\n{entry}\n```")
+            # 1. 上下文用量：读本地库（消息级），有统计值才发
+            if context_enabled and message_id is not None:
+                tokens = self.message_queue.get_message_context_usage(message_id)
+                if tokens:
+                    await channel.send(f"```\n{format_context_usage(tokens, self.config.context_window_tokens)}\n```")
+            # 2. 智谱额度
+            if quota_enabled:
+                entries = await asyncio.to_thread(fetch_quota_summary)
+                if not entries:
+                    return
+                for entry in entries:
+                    await channel.send(f"```\n{entry}\n```")
         except Exception as e:
             log.log(f"⚠️ 额度提示发送失败（已忽略）: {e}")
 

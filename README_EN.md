@@ -19,6 +19,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 - Tool use notification (forward as Embed cards in Discord)
 - Image Stickers (auto-detect `<:filename.extension>` format and send images)
 - **WeChat proactive notification & quota hint** (`notify_weixin` lets the AI send WeChat messages anytime, with a blockquote source prefix added automatically; every outgoing WeChat message gets a real-time "remaining messages" hint at the end, resetting to 10 when the user replies)
+- **Context usage monitoring** (`/context` shows how much context the current session has used; a usage progress bar is appended after every reply, right before the GLM quota hint; the usage is also injected at the start of the next message so the AI knows when to conserve context. Works on Discord and WeChat)
 
 **📁 File Transfer**
 - Support all file types (images, documents, archives, etc.)
@@ -47,7 +48,7 @@ A two-way communication system that bridges Discord/WeChat messages to your loca
 
 **🎯 Service Management**
 - Windows daemon process (auto monitor & restart)
-- Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`, `/quota`, `/mention`, `/split`)
+- Discord slash commands (`/new`, `/status`, `/abort`, `/restart`, `/stop`, `/quota`, `/context`, `/mention`, `/split`)
 - Context menus (right-click message to download attachments)
 - Message queue system (SQLite persistence)
 - **Parallel Bot Architecture** (Discord Bot and WeChat Bot run independently)
@@ -150,6 +151,7 @@ The bot will receive messages and display that it is typing, and then stop when 
 - `/status` - View system status (session ID, database statistics, etc.)
 - `/abort` - Abort current ongoing output
 - `/quota` - Query GLM Coding Plan remaining quota
+- `/context` - Query current session context usage
 - `/mention` - Toggle whether @mention is required for the current channel (per-channel setting)
 - `/split` - Toggle newline splitting mode for the current channel (per-channel setting)
 - `/restart` - Restart service
@@ -325,6 +327,14 @@ timeout:
 
 tool_use_notification:
   enabled: true                        # Enable tool use notification (forward as Embed cards)
+
+# Append GLM Coding Plan remaining quota hint after every AI response (Discord: standalone code block; WeChat: appended to the last text segment)
+quota_monitor_enabled: true
+
+# Context usage monitoring (usage comes from the usage in Claude Code's output stream at the end of each API call)
+context_monitor_enabled: true           # Append a context usage progress bar after every reply (Discord: standalone code block; WeChat: appended to the last text segment, before the quota hint)
+context_prompt_enabled: true            # Prepend the current context usage to the prompt of every message sent to the AI (as of the end of the previous reply)
+context_window_tokens: 1000000          # Model context window in tokens (1000000 for model names containing [1m]; update when switching models)
 
 # WeChat Bot configuration (optional)
 weixin:

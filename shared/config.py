@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Dict, List, Any
 
+from shared.context_usage import DEFAULT_CONTEXT_WINDOW
+
 
 class Config:
     """配置管理类"""
@@ -366,6 +368,26 @@ class Config:
     def quota_monitor_enabled(self) -> bool:
         """获取智谱额度提示开关（每次响应发送完后追加智谱额度提示，默认开启）"""
         return bool(self._config.get('quota_monitor_enabled', True))
+
+    @property
+    def context_monitor_enabled(self) -> bool:
+        """获取上下文用量提示开关（每次响应发送完后追加上下文用量提示，排在智谱额度提示前面，默认开启）"""
+        return bool(self._config.get('context_monitor_enabled', True))
+
+    @property
+    def context_prompt_enabled(self) -> bool:
+        """获取上下文用量注入开关（每条消息发给 AI 前在提示词开头附上当前上下文用量，默认开启）"""
+        return bool(self._config.get('context_prompt_enabled', True))
+
+    @property
+    def context_window_tokens(self) -> int:
+        """获取模型上下文窗口 tokens（默认 100 万；配置了非正数或非法值时回退默认值）"""
+        raw = self._config.get('context_window_tokens', DEFAULT_CONTEXT_WINDOW)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_CONTEXT_WINDOW
+        return value if value > 0 else DEFAULT_CONTEXT_WINDOW
 
     @property
     def file_mapping_path(self) -> str:

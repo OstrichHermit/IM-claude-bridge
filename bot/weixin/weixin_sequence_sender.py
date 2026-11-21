@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import MessageStatus
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary
+from shared.context_usage import format_context_usage
 from bot.weixin.weixin_pollers import WEIXIN_QUOTA_LIMIT
 
 log = get_logger("WeixinBot", "weixin")
@@ -237,9 +238,10 @@ class WeixinSequenceSenderMixin:
                             # 发送文本消息
                             text = item_data.get("text", "")
                             if text and text.strip():
-                                # 智谱额度拼在最后一条 text：若该段是当前最大 text 序列但 AI 还没跑完，先等下一轮
-                                # （多轮回复时每段写入后 AI 还要跑工具，此时它暂时是 MAX，直接发会被误判为最后一句而重复拼额度）
-                                if (self.config.quota_monitor_enabled
+                                # 上下文用量 / 智谱额度拼在最后一条 text：若该段是当前最大 text 序列但 AI 还没跑完，先等下一轮
+                                # （多轮回复时每段写入后 AI 还要跑工具，此时它暂时是 MAX，直接发会被误判为最后一句而重复拼提示；
+                                #   上下文用量要等这次 Claude 调用结束才落库，所以任一开关开着都需要等 AI 跑完再发）
+                                if ((self.config.quota_monitor_enabled or self.config.context_monitor_enabled)
                                         and self.message_queue.is_last_text_sequence(message_id, seq_id)
                                         and not self.message_queue.is_ai_response_complete(message_id)):
                                     await asyncio.sleep(0.3)
@@ -289,6 +291,15 @@ class WeixinSequenceSenderMixin:
                                             send_text = f"{send_text}\n\n`剩余可发送消息数量：{remaining}`"
                                     except Exception as quota_error:
                                         log.log(f"⚠️ [消息 #{message_id}] 累加额度失败，不拼额度提示: {quota_error}")
+
+                                    # 最后一条 text 序列末尾拼接上下文用量（排在智谱额度前面）
+                                    try:
+                                        if self.config.context_monitor_enabled and self.message_queue.is_last_text_sequence(message_id, seq_id):
+                                            tokens = self.message_queue.get_message_context_usage(message_id)
+                                            if tokens:
+                                                send_text = f"{send_text}\n\n`{format_context_usage(tokens, self.config.context_window_tokens)}`"
+                                    except Exception as e:
+                                        log.log(f"⚠️ [消息 #{message_id}] 拼接上下文用量失败（已忽略）: {e}")
 
                                     # 最后一条 text 序列末尾拼接智谱额度
                                     try:

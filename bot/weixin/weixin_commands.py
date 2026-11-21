@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from shared.message_queue import Message, MessageDirection, MessageStatus, MessageTag, ChannelType
 from shared.logger import get_logger
 from shared.quota_monitor import fetch_quota_summary, parse_quota_entry
+from shared.context_usage import build_context_bar
 from shared.text_template import fill_template
 
 log = get_logger("WeixinBot", "weixin")
@@ -67,6 +68,10 @@ class WeixinCommandsMixin:
         elif cmd == "/quota":
             await self._cmd_quota(from_user_id, account_bot_id)
 
+        # /context - 查询当前会话的上下文用量
+        elif cmd == "/context":
+            await self._cmd_context(from_user_id, account_bot_id)
+
         # /queuemode - 切换消息排队模式（引导/排队）
         elif cmd == "/queuemode":
             await self._cmd_queuemode(from_user_id, account_bot_id)
@@ -83,6 +88,7 @@ class WeixinCommandsMixin:
                 "`/status` - 查看会话状态\n\n"
                 "`/abort` - 中止当前响应\n\n"
                 "`/quota` - 查询剩余额度\n\n"
+                "`/context` - 查询上下文用量\n\n"
                 "`/queuemode` - 切换排队模式\n\n"
                 "`/split` - 切换换行分割\n\n"
                 "`/stop` - 停止服务（需确认）\n\n"
@@ -276,6 +282,34 @@ class WeixinCommandsMixin:
             msg = "**🔋 剩余额度查询**\n\n" + "\n\n".join(blocks)
         else:
             msg = "**⚠️ 额度查询失败**"
+        await self._send_direct_message(from_user_id, account_bot_id, msg)
+
+    async def _cmd_context(self, from_user_id: str, account_bot_id: str):
+        """查询当前会话的上下文用量（只读本地库）"""
+        # 从配置中获取 user_id
+        user_id_int = self.username_to_userid.get(from_user_id)
+        if user_id_int is None:
+            await self._send_direct_message(from_user_id, account_bot_id, f"**⚠️ 未找到用户配置**\n\n用户 `{from_user_id}` 的配置不存在")
+            return
+
+        # 获取会话信息（取会话方式与 /status 一致）
+        session_key, session_id, session_created, working_dir = self.message_queue.get_or_create_session(
+            self.config.working_directory,
+            channel_id=None,
+            user_id=user_id_int,
+            is_dm=True,
+            use_temp_session=False,
+            temp_session_key=None
+        )
+
+        # 与 /quota 同一格式：标题，下面是进度条文本（微信单换行显示有问题，所以标题和文本之间空一行）
+        tokens = self.message_queue.sessions.get_context_usage(session_key)
+        if tokens:
+            bar, text = build_context_bar(tokens, self.config.context_window_tokens)
+            msg = f"**🧠 上下文用量**\n\n`{bar}` {text}"
+        else:
+            msg = "**🧠 上下文用量**\n\n暂无数据：当前会话还没有产生过回复"
+
         await self._send_direct_message(from_user_id, account_bot_id, msg)
 
     async def _cmd_stop(self, from_user_id: str, account_bot_id: str):
