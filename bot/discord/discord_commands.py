@@ -358,7 +358,7 @@ class DiscordCommandsMixin:
             )
 
             embed = discord.Embed(
-                title="🧠 上下文用量",
+                title="🧠 上下文用量查询",
                 color=discord.Color.green()
             )
 

@@ -306,9 +306,9 @@ class WeixinCommandsMixin:
         tokens = self.message_queue.sessions.get_context_usage(session_key)
         if tokens:
             bar, text = build_context_bar(tokens, self.config.context_window_tokens)
-            msg = f"**🧠 上下文用量**\n\n`{bar}` {text}"
+            msg = f"**🧠 上下文用量查询**\n\n`{bar}` {text}"
         else:
-            msg = "**🧠 上下文用量**\n\n暂无数据：当前会话还没有产生过回复"
+            msg = "**🧠 上下文用量查询**\n\n暂无数据：当前会话还没有产生过回复"
 
         await self._send_direct_message(from_user_id, account_bot_id, msg)
 

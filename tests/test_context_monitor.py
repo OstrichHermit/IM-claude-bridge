@@ -1052,7 +1052,7 @@ def test_discord_context_command_with_data(tmp_path, queue):
 
     ((_, kwargs),) = interaction.response.sent
     embed = kwargs["embed"]
-    assert embed.title == "🧠 上下文用量"
+    assert embed.title == "🧠 上下文用量查询"
     assert embed.color == discord.Color.green()
     assert embed.description == "`▓░░░░░░░░░` 上下文 已用 12% / 1M Tokens"
 
@@ -1065,7 +1065,7 @@ def test_discord_context_command_without_data(tmp_path, queue):
     asyncio.run(handler(interaction))
 
     ((_, kwargs),) = interaction.response.sent
-    assert kwargs["embed"].title == "🧠 上下文用量"
+    assert kwargs["embed"].title == "🧠 上下文用量查询"
     assert kwargs["embed"].description == "暂无数据：当前会话还没有产生过回复"
 
 
@@ -1094,7 +1094,7 @@ def test_weixin_context_command_with_data(tmp_path, queue):
 
     asyncio.run(harness._cmd_context(USERNAME, "bot-1"))
 
-    assert sent == ["**🧠 上下文用量**\n\n`▓░░░░░░░░░` 上下文 已用 12% / 1M Tokens"]
+    assert sent == ["**🧠 上下文用量查询**\n\n`▓░░░░░░░░░` 上下文 已用 12% / 1M Tokens"]
 
 
 def test_weixin_context_command_without_data(tmp_path, queue):
@@ -1102,7 +1102,7 @@ def test_weixin_context_command_without_data(tmp_path, queue):
 
     asyncio.run(harness._cmd_context(USERNAME, "bot-1"))
 
-    assert sent == ["**🧠 上下文用量**\n\n暂无数据：当前会话还没有产生过回复"]
+    assert sent == ["**🧠 上下文用量查询**\n\n暂无数据：当前会话还没有产生过回复"]
 
 
 def test_weixin_context_command_unknown_user(tmp_path, queue):
@@ -1118,7 +1118,7 @@ def test_weixin_context_dispatch_and_help(tmp_path, queue):
     harness, sent = _weixin_commands(queue, tmp_path)
 
     asyncio.run(harness._handle_command(USERNAME, "/context", "bot-1"))
-    assert sent == ["**🧠 上下文用量**\n\n暂无数据：当前会话还没有产生过回复"]
+    assert sent == ["**🧠 上下文用量查询**\n\n暂无数据：当前会话还没有产生过回复"]
 
     asyncio.run(harness._handle_command(USERNAME, "/noop", "bot-1"))
     assert "`/quota` - 查询剩余额度\n\n`/context` - 查询上下文用量\n\n`/queuemode`" in sent[-1]
