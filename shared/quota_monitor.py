@@ -14,7 +14,7 @@ log = get_logger("QuotaMonitor", "bridge")
 
 QUOTA_API_URL = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-# CREDIT_LIMIT 的 unit 时间单位（按接口返回的 nextResetTime 反推）
+# TOKENS_LIMIT / CREDIT_LIMIT 的 unit 时间单位（按接口返回的 nextResetTime 反推）
 CREDIT_WINDOW_UNITS = {3: "小时", 6: "个月"}
 
 
@@ -49,9 +49,7 @@ def fetch_quota_summary() -> Optional[List[str]]:
             next_reset = item.get("nextResetTime")
             if percentage is None or next_reset is None:
                 continue
-            if item_type == "TOKENS_LIMIT":
-                window = ""
-            elif item_type == "CREDIT_LIMIT":
+            if item_type in ("TOKENS_LIMIT", "CREDIT_LIMIT"):
                 unit = CREDIT_WINDOW_UNITS.get(item.get("unit"), f"单位{item.get('unit')}")
                 window = f"{item.get('number')}{unit} "
             else:
