@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.config import Config
 from shared.logger import get_logger
 from shared.message_queue import MessageQueue, Message, MessageDirection, MessageStatus
+from shared.process_utils import reclaim_orphan_processes
 from bridge.session_worker import SessionWorker
 
 log = get_logger("ClaudeBridge", "bridge")
@@ -230,6 +231,9 @@ class ClaudeBridge:
         log.log(f"⏱️  超时时间: {self.config.claude_timeout}秒")
         log.log(f"🔄 最大尝试次数: {self.config.max_attempts}次")
         log.log(f"⚡ 最大并发 session 数: {self.max_concurrent_sessions}")
+
+        # 先回收上次运行遗留的孤儿 claude 进程（父进程已死、输出没人接收），再清理数据库里的残留消息
+        reclaim_orphan_processes(log=log)
 
         # 启动时清理旧的 PENDING 消息
         await self.cleanup_pending_messages()

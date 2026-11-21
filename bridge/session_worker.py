@@ -16,7 +16,89 @@ from pathlib import Path
 from shared.config import Config
 from shared.message_queue import MessageQueue, Message, MessageStatus, MessageTag, MessageDirection
 from shared.logger import get_logger
+from shared.process_utils import (
+    KILL_TREE_GONE,
+    KILL_TREE_KILLED,
+    KILL_TREE_KILLED_PARTIAL,
+    kill_process_tree_detail,
+)
 from datetime import datetime
+
+
+async def _force_kill(process):
+    """兜底：强制终止主进程并等它退出"""
+    try:
+        process.kill()
+    except (ProcessLookupError, OSError):
+        pass
+    await process.wait()
+
+
+def _log_terminate(log, message: str):
+    if log is not None:
+        try:
+            getattr(log, "log", log)(message)
+        except Exception:
+            pass
+
+
+async def terminate_process_tree(process, log=None, verify=None) -> str:
+    """终止 claude 子进程，Windows 上连带整棵进程树（MCP 服务、卡住的 Bash 后台任务等）
+
+    verify 为杀树前的身份校验（{"name": ..., "cmdline_contains": [...]}），对不上就不杀树。
+    返回："tree" 已终止整棵进程树 / "exited" 进程本来就已退出 / "terminated" 回退：只终止了主进程 / "forced" 回退：强制终止
+    目标是当前进程的祖先时（中断路径上不会出现，这里只是保证逻辑完整）只终止它和其余后代、保留通往当前进程的链路，同样算 "tree"。
+    """
+    pid = process.pid
+
+    if process.returncode is not None:
+        await process.wait()
+        return "exited"
+
+    if sys.platform == 'win32':
+        try:
+            status, count = await asyncio.to_thread(kill_process_tree_detail, pid, verify=verify)
+        except Exception as e:
+            status, count = "failed", 0
+            _log_terminate(log, f"⚠️ 进程树终止出错，已回退为只终止主进程: {e}")
+
+        if status == KILL_TREE_GONE:
+            await process.wait()
+            return "exited"
+        if status in (KILL_TREE_KILLED, KILL_TREE_KILLED_PARTIAL):
+            _log_terminate(log, f"🌳 已终止进程树 PID={pid}（连带 {count} 个子进程）")
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+                return "tree"
+            except asyncio.TimeoutError:
+                await _force_kill(process)
+                return "forced"
+        _log_terminate(log, "⚠️ 进程树终止失败，已回退为只终止主进程")
+
+    # 回退链：terminate → 等 5 秒 → 超时 kill
+    try:
+        process.terminate()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5.0)
+        return "terminated"
+    except asyncio.TimeoutError:
+        await _force_kill(process)
+        return "forced"
+
+
+async def cleanup_leftover_process(process, verify=None, log=None) -> Optional[str]:
+    """一次尝试异常收场后的善后：把本次拉起的、还活着的 claude 进程连同子进程树收掉；绝不抛异常（不能掩盖原来的异常）
+
+    进程已经退出时 terminate_process_tree 立即返回，不会多等。
+    返回 terminate_process_tree 的结果；它自己出错了返回 None。
+    """
+    try:
+        return await terminate_process_tree(process, log=log, verify=verify)
+    except Exception as e:
+        _log_terminate(log, f"⚠️ 清理残留进程出错（忽略）: {e}")
+        return None
 
 
 class SessionWorker:
@@ -439,6 +521,9 @@ class SessionWorker:
             prompt = f"{history_prefix}{sender_info}{prompt}"
 
         while retries < max_attempts:
+            # 本次尝试拉起的进程及其身份校验；异常收场时进程还活着的话要连带子进程树收掉
+            process = None
+            verify = None
             try:
                 # 构建命令参数
                 cmd_args = ['-p']
@@ -472,6 +557,12 @@ class SessionWorker:
                         self._log.log(f"⚠️  警告：session_id 为空，将使用 Claude 默认会话")
 
                 cmd_args.append(prompt)
+
+                # 中断时杀进程树用的身份校验：确认 PID 仍是本次拉起的 claude 进程（防 PID 复用误杀）
+                verify = {
+                    "name": os.path.basename(self.config.claude_executable.replace("\\", "/")),
+                    "cmdline_contains": ["--output-format stream-json"],
+                }
 
                 # 使用 claude 命令进行非交互式调用
                 # Windows 下使用 CREATE_NO_WINDOW 防止弹出窗口
@@ -743,18 +834,14 @@ class SessionWorker:
 
                     # ====== AskUserQuestion 拦截：kill 进程 + 保留 PROCESSING 状态 ======
                     if pending_ask_signal is not None:
-                        # 1. kill 进程（复用 abort 的优雅终止路径）
-                        process.terminate()
-                        try:
-                            returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
-                            self._log.log(
-                                f"✅ [消息 #{message_id}] AskUserQuestion 拦截，进程已优雅终止 (退出码: {returncode})"
-                            )
-                        except asyncio.TimeoutError:
-                            self._log.log(f"⚠️ [消息 #{message_id}] AskUserQuestion 拦截，进程未在 5 秒内退出，强制终止...")
-                            process.kill()
-                            await process.wait()
-                            self._log.log(f"✅ [消息 #{message_id}] AskUserQuestion 拦截，进程已强制终止")
+                        # 1. kill 进程（复用 abort 的优雅终止路径；Windows 上连带整棵进程树）
+                        tag = f"[消息 #{message_id}] AskUserQuestion 拦截，"
+                        result = await terminate_process_tree(process, log=self._log, verify=verify)
+                        if result == "forced":
+                            self._log.log(f"⚠️ {tag}进程未在 5 秒内退出，强制终止...")
+                            self._log.log(f"✅ {tag}进程已强制终止")
+                        else:
+                            self._log.log(f"✅ {tag}进程已优雅终止 (退出码: {process.returncode})")
 
                         # 2. 暴露信号给 _process_message（实例属性，单 worker 串行处理无竞态）
                         self._pending_ask_payload = pending_ask_signal
@@ -763,15 +850,12 @@ class SessionWorker:
                         return None
 
                     if aborted:
-                        process.terminate()
-                        try:
-                            returncode = await asyncio.wait_for(process.wait(), timeout=5.0)
-                            self._log.log(f"✅ [消息 #{message_id}] 进程已优雅终止 (退出码: {returncode})")
-                        except asyncio.TimeoutError:
+                        result = await terminate_process_tree(process, log=self._log, verify=verify)
+                        if result == "forced":
                             self._log.log(f"⚠️ [消息 #{message_id}] 进程未在 5 秒内退出，强制终止...")
-                            process.kill()
-                            await process.wait()
                             self._log.log(f"✅ [消息 #{message_id}] 进程已强制终止")
+                        else:
+                            self._log.log(f"✅ [消息 #{message_id}] 进程已优雅终止 (退出码: {process.returncode})")
 
                         if message_id:
                             abort_status = self.message_queue.get_message_status(message_id)
@@ -836,8 +920,8 @@ class SessionWorker:
                         raise Exception(error_msg)
 
                 except asyncio.TimeoutError:
-                    process.kill()
-                    await process.wait()
+                    # 这一支基本走不到（读循环的超时被内层接住了）：真走到这里同样杀整棵进程树（卡住的 MCP 子进程等不留）
+                    await terminate_process_tree(process, log=self._log, verify=verify)
                     raise Exception(f"Claude Code 启动超时（超过 {self.config.claude_timeout} 秒）")
 
             except FileNotFoundError:
@@ -850,6 +934,10 @@ class SessionWorker:
                 raise Exception(error_msg)
 
             except Exception as e:
+                # 启动超时、读输出出错等异常收场时 claude 进程可能还活着：不留成 bridge 名下没人管的子进程
+                # （bridge 一重启它就是孤儿）。进程已经退出的（如返回错误码 1）这里不做任何等待。
+                if process is not None and process.returncode is None:
+                    await cleanup_leftover_process(process, verify=verify, log=self._log)
                 retries += 1
                 self._log.log(f"❌ 调用失败 (尝试 {retries}/{max_attempts}): {e}")
 
